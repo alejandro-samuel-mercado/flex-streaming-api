@@ -1,0 +1,33 @@
+export declare const env: {
+    NODE_ENV: "development" | "production" | "test";
+    BACKEND_PORT: number;
+    DATABASE_URL: string;
+    REDIS_URL: string;
+    JWT_ACCESS_SECRET: string;
+    JWT_REFRESH_SECRET: string;
+    JWT_ACCESS_EXPIRES_IN: string;
+    JWT_REFRESH_EXPIRES_IN: string;
+    TMDB_BASE_URL: string;
+    UPLOAD_DIR: string;
+    MAX_FILE_SIZE_MB: number;
+    FRONTEND_URL: string;
+    BACKEND_URL: string;
+    STREAM_SECRET: string;
+    MEDIA_PATH: string;
+    UPLOADS_PATH: string;
+    HLS_PATH: string;
+    THUMBNAILS_PATH: string;
+    SUBTITLES_PATH: string;
+    FFMPEG_PATH: string;
+    FFPROBE_PATH: string;
+    MAX_CONCURRENT_ENCODING: number;
+    GOOGLE_CLIENT_ID?: string | undefined;
+    GOOGLE_CLIENT_SECRET?: string | undefined;
+    SMTP_HOST?: string | undefined;
+    SMTP_PORT?: number | undefined;
+    SMTP_USER?: string | undefined;
+    SMTP_PASS?: string | undefined;
+    SMTP_FROM?: string | undefined;
+    TMDB_API_KEY?: string | undefined;
+};
+//# sourceMappingURL=env.d.ts.map

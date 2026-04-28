@@ -1,0 +1,729 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// PeliPlus — Schema Prisma (PROMPT MAESTRO)
+// Stack: PostgreSQL + Prisma 5
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  GUEST
+  REGISTERED
+  MEMBER
+  ADMIN
+}
+
+enum ContentType {
+  MOVIE
+  SERIES
+  DOCUMENTARY
+  ANIME
+  NOVELA
+  SHORT
+  BIOGRAPHY
+}
+
+enum ContentStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  ERROR
+  DRAFT
+  PENDING
+  ACTIVE
+  INACTIVE
+  UPCOMING
+}
+
+enum ProcessingStatus {
+  PENDING
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ThumbnailType {
+  POSTER
+  BACKDROP
+  PREVIEW
+  LOGO
+  STILL
+}
+
+enum AdType {
+  VIDEO
+  IMAGE
+}
+
+enum AdPosition {
+  PRE_ROLL
+  MID_ROLL
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ─── USERS & AUTH ────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String?
+  role          UserRole  @default(REGISTERED)
+  isActive      Boolean   @default(true)
+  googleId      String?   @unique
+  appleId       String?   @unique
+  preferredLang String?   @default("es")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  profiles      Profile[]
+  refreshTokens RefreshToken[]
+  memberships   UserMembership[]
+  rentals       Rental[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Profile {
+  id        String  @id @default(cuid())
+  userId    String
+  name      String
+  avatar    String?
+  isKids    Boolean @default(false)
+  pin       String?
+  language  String  @default("es")
+  preferredTheme String?
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchHistory  WatchHistory[]
+  favorites     Favorite[]
+  myList        MyList[]
+  reviews       Review[]
+  watchSessions WatchSession[]
+  comments      Comment[]
+
+  @@index([userId])
+  @@map("profiles")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ─── PLANS & MEMBERSHIPS ─────────────────────────────────────────────────────
+
+model Plan {
+  id            String  @id @default(cuid())
+  name          String
+  description   String?
+  price         Decimal @db.Decimal(10, 2)
+  durationDays  Int
+  maxDevices    Int     @default(1)
+  hasHd         Boolean @default(true)
+  has4k         Boolean @default(false)
+  allowDownload Boolean @default(false)
+  noAds         Boolean @default(false)
+  isActive      Boolean @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  memberships UserMembership[]
+
+  @@map("plans")
+}
+
+model UserMembership {
+  id        String   @id @default(cuid())
+  userId    String
+  planId    String
+  startsAt  DateTime @default(now())
+  expiresAt DateTime
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  plan Plan @relation(fields: [planId], references: [id])
+
+  @@index([userId])
+  @@map("user_memberships")
+}
+
+// ─── PLATFORMS (MAGISTV STYLE) ────────────────────────────────────────────────
+
+model Platform {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  logoUrl     String?
+  isFeatured  Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  contents    Content[]
+
+  @@map("platforms")
+}
+
+// ─── CONTENT (FILMS, SERIES, DOCUMENTARIES...) ───────────────────────────────
+
+model Content {
+  id          String        @id @default(cuid())
+  type        ContentType
+  status      ContentStatus @default(DRAFT)
+  slug        String        @unique
+  releaseYear Int?
+  duration    Int?
+  rating      Float?
+  reviewCount Int           @default(0)
+  viewCount   BigInt        @default(0)
+  downloadCount BigInt      @default(0)
+  featured    Boolean       @default(false)
+  country     String?
+  languages   String[]
+  subtitleLangs String[]
+  platformId  String?
+  trailerUrl  String?
+  rentalPrice Decimal?      @db.Decimal(10, 2)
+  isFreeWithMembership Boolean @default(true)
+  downloadAllowed Boolean  @default(false)
+  tmdbId      String?       @unique
+  imdbId      String?       @unique
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+
+  translations    ContentTranslation[]
+  videoFiles      VideoFile[]
+  seasons         Season[]
+  genres          ContentGenre[]
+  tags            ContentTag[]
+  thumbnails      Thumbnail[]
+  reviews         Review[]
+  watchHistory    WatchHistory[]
+  favorites       Favorite[]
+  myList          MyList[]
+  recommendations RecommendationItem[]
+  actors          ContentActor[]
+  directors       ContentDirector[]
+  adTargets       AdTarget[]
+  rentals         Rental[]
+  comments        Comment[]
+
+  ageRatingId String?
+
+  platform         Platform?               @relation(fields: [platformId], references: [id])
+  ageRating        AgeRating?              @relation(fields: [ageRatingId], references: [id])
+
+  @@index([type, status])
+  @@index([slug])
+  @@index([featured])
+  @@index([status])
+  @@map("contents")
+}
+
+model ContentTranslation {
+  id        String @id @default(cuid())
+  contentId String
+  language  String
+  title     String
+  description String @db.Text
+  tagline   String?
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, language])
+  @@index([contentId])
+  @@map("content_translations")
+}
+
+// ─── VIDEO FILES & HLS PIPELINE ──────────────────────────────────────────────
+
+model VideoFile {
+  id              String           @id @default(cuid())
+  contentId       String?
+  episodeId       String?
+  status          ProcessingStatus @default(PENDING)
+  originalPath    String
+  hlsPath         String?
+  masterPlaylist  String?
+  duration        Int?
+  fileSize        BigInt?
+  errorMessage    String?
+  processingJobId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  content        Content?       @relation(fields: [contentId], references: [id])
+  episode        Episode?       @relation(fields: [episodeId], references: [id])
+  qualities      VideoQuality[]
+  audioTracks    AudioTrack[]
+  subtitleTracks SubtitleTrack[]
+
+  @@index([contentId])
+  @@index([episodeId])
+  @@index([status])
+  @@map("video_files")
+}
+
+model VideoQuality {
+  id          String @id @default(cuid())
+  videoFileId String
+  resolution  String
+  width       Int
+  height      Int
+  bitrate     Int
+  playlistUrl String
+  codec       String @default("h264")
+
+  videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
+
+  @@index([videoFileId])
+  @@map("video_qualities")
+}
+
+model AudioTrack {
+  id          String  @id @default(cuid())
+  videoFileId String
+  language    String
+  label       String
+  isDefault   Boolean @default(false)
+  trackIndex  Int
+  codec       String  @default("aac")
+
+  videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
+
+  @@index([videoFileId])
+  @@map("audio_tracks")
+}
+
+model SubtitleTrack {
+  id          String  @id @default(cuid())
+  videoFileId String
+  language    String
+  label       String
+  format      String  @default("vtt")
+  url         String
+  isDefault   Boolean @default(false)
+  isForced    Boolean @default(false)
+
+  videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
+
+  @@index([videoFileId])
+  @@map("subtitle_tracks")
+}
+
+// ─── SERIES, SEASONS, EPISODES ───────────────────────────────────────────────
+
+model Season {
+  id        String   @id @default(cuid())
+  contentId String
+  number    Int
+  year      Int?
+  posterUrl String?
+  createdAt DateTime @default(now())
+
+  content      Content              @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  translations SeasonTranslation[]
+  episodes     Episode[]
+
+  @@unique([contentId, number])
+  @@map("seasons")
+}
+
+model SeasonTranslation {
+  id          String  @id @default(cuid())
+  seasonId    String
+  language    String
+  title       String
+  description String? @db.Text
+
+  season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, language])
+  @@map("season_translations")
+}
+
+model Episode {
+  id        String   @id @default(cuid())
+  seasonId  String
+  number    Int
+  duration  Int?
+  createdAt DateTime @default(now())
+
+  season       Season               @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  translations EpisodeTranslation[]
+  videoFiles   VideoFile[]
+  thumbnails   Thumbnail[]
+  watchHistory WatchHistory[]
+
+  @@unique([seasonId, number])
+  @@map("episodes")
+}
+
+model EpisodeTranslation {
+  id          String  @id @default(cuid())
+  episodeId   String
+  language    String
+  title       String
+  description String? @db.Text
+
+  episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@unique([episodeId, language])
+  @@map("episode_translations")
+}
+
+// ─── CATEGORIES, GENRES, TAGS ────────────────────────────────────────────────
+
+model Genre {
+  id   String  @id @default(cuid())
+  slug String  @unique
+  name String  @unique
+  icon String?
+
+  contents ContentGenre[]
+
+  @@map("genres")
+}
+
+model ContentGenre {
+  contentId String
+  genreId   String
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  genre   Genre   @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, genreId])
+  @@map("content_genres")
+}
+
+model Tag {
+  id   String @id @default(cuid())
+  name String @unique
+  slug String @unique
+
+  contents ContentTag[]
+
+  @@map("tags")
+}
+
+model ContentTag {
+  contentId String
+  tagId     String
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, tagId])
+  @@map("content_tags")
+}
+
+model AgeRating {
+  id       String @id @default(cuid())
+  code     String @unique
+  label    String
+  contents Content[]
+
+  @@map("age_ratings")
+}
+
+// ─── ACTORS & DIRECTORS ──────────────────────────────────────────────────────
+
+model Actor {
+  id          String    @id @default(cuid())
+  name        String
+  photoUrl    String?
+  birthDate   DateTime?
+  nationality String?
+  biography   String?   @db.Text
+  tmdbId      String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  contents ContentActor[]
+
+  @@index([name])
+  @@map("actors")
+}
+
+model Director {
+  id          String    @id @default(cuid())
+  name        String
+  photoUrl    String?
+  birthDate   DateTime?
+  nationality String?
+  biography   String?   @db.Text
+  tmdbId      String?   @unique
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  contents ContentDirector[]
+
+  @@index([name])
+  @@map("directors")
+}
+
+model ContentActor {
+  contentId String
+  actorId   String
+  character String?
+  order     Int     @default(0)
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  actor   Actor   @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, actorId])
+  @@map("content_actors")
+}
+
+model ContentDirector {
+  contentId  String
+  directorId String
+
+  content  Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  director Director @relation(fields: [directorId], references: [id], onDelete: Cascade)
+
+  @@id([contentId, directorId])
+  @@map("content_directors")
+}
+
+// ─── THUMBNAILS ──────────────────────────────────────────────────────────────
+
+model Thumbnail {
+  id        String        @id @default(cuid())
+  contentId String?
+  episodeId String?
+  type      ThumbnailType
+  url       String
+  width     Int?
+  height    Int?
+
+  content Content? @relation(fields: [contentId], references: [id])
+  episode Episode? @relation(fields: [episodeId], references: [id])
+
+  @@unique([contentId, type])
+  @@map("thumbnails")
+}
+
+// ─── USER ACTIVITY ───────────────────────────────────────────────────────────
+
+model WatchHistory {
+  id        String   @id @default(cuid())
+  profileId String
+  contentId String?
+  episodeId String?
+  progress  Int      @default(0)
+  duration  Int?
+  completed Boolean  @default(false)
+  watchedAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content Content? @relation(fields: [contentId], references: [id])
+  episode Episode? @relation(fields: [episodeId], references: [id])
+
+  @@unique([profileId, contentId, episodeId])
+  @@index([profileId])
+  @@index([updatedAt])
+  @@map("watch_history")
+}
+
+model WatchSession {
+  id           String    @id @default(cuid())
+  profileId    String
+  videoFileId  String
+  quality      String
+  audioLang    String
+  subtitleLang String?
+  startedAt    DateTime  @default(now())
+  endedAt      DateTime?
+  ipAddress    String?
+  userAgent    String?
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+  @@map("watch_sessions")
+}
+
+model Favorite {
+  profileId String
+  contentId String
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, contentId])
+  @@map("favorites")
+}
+
+model MyList {
+  profileId String
+  contentId String
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, contentId])
+  @@map("my_list")
+}
+
+// ─── REVIEWS & COMMENTS ─────────────────────────────────────────────────────
+
+model Review {
+  id        String   @id @default(cuid())
+  profileId String
+  contentId String
+  rating    Float
+  title     String?
+  body      String?  @db.Text
+  language  String   @default("es")
+  likes     Int      @default(0)
+  isHidden  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, contentId])
+  @@index([contentId])
+  @@map("reviews")
+}
+
+model Comment {
+  id        String        @id @default(cuid())
+  contentId String
+  profileId String
+  parentId  String?
+  body      String
+  status    CommentStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  content Content  @relation(fields: [contentId], references: [id])
+  profile Profile  @relation(fields: [profileId], references: [id])
+  parent  Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies Comment[] @relation("CommentReplies")
+
+  @@index([contentId])
+  @@map("comments")
+}
+
+// ─── RECOMMENDATIONS ─────────────────────────────────────────────────────────
+
+model RecommendationItem {
+  id        String   @id @default(cuid())
+  contentId String
+  score     Float
+  reason    String
+  updatedAt DateTime @updatedAt
+
+  content Content @relation(fields: [contentId], references: [id])
+
+  @@map("recommendation_items")
+}
+
+// ─── RENTALS ─────────────────────────────────────────────────────────────────
+
+model Rental {
+  id         String   @id @default(cuid())
+  userId     String
+  contentId  String
+  pricePaid  Decimal  @db.Decimal(10, 2)
+  expiresAt  DateTime
+  paymentRef String?
+  createdAt  DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id])
+  content Content @relation(fields: [contentId], references: [id])
+
+  @@index([userId])
+  @@index([contentId])
+  @@map("rentals")
+}
+
+// ─── ADVERTISING ─────────────────────────────────────────────────────────────
+
+model Ad {
+  id           String     @id @default(cuid())
+  name         String
+  type         AdType
+  fileUrl      String
+  linkUrl      String?
+  position     AdPosition
+  midRollSec   Int?
+  skipAfterSec Int        @default(5)
+  isActive     Boolean    @default(true)
+  targetAll    Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  targets AdTarget[]
+
+  @@map("ads")
+}
+
+model AdTarget {
+  adId      String
+  contentId String
+
+  ad      Ad      @relation(fields: [adId], references: [id], onDelete: Cascade)
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@id([adId, contentId])
+  @@map("ad_targets")
+}
+
+// ─── SITE CONFIG ─────────────────────────────────────────────────────────────
+
+model SiteConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("site_config")
+}
+
+// ─── UPLOADS ─────────────────────────────────────────────────────────────────
+
+model Upload {
+  id           String   @id @default(cuid())
+  originalName String
+  storedName   String
+  mimeType     String
+  sizeBytes    BigInt
+  path         String
+  uploadedBy   String?
+  createdAt    DateTime @default(now())
+
+  @@map("uploads")
+}
