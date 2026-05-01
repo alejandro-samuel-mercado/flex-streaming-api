@@ -106,7 +106,7 @@ const streamLimiter = rateLimit({
 
 const uploadLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5,
+  max: 100,
   message: { success: false, error: 'Too many uploads' },
   standardHeaders: true,
   legacyHeaders: false,
