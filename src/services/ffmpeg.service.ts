@@ -24,6 +24,7 @@ export class FFmpegService {
       // In a full production system, we would map multiple variants (360p, 720p, 1080p, 4K)
       ffmpeg(inputPath)
         .outputOptions([
+          '-preset superfast',
           '-profile:v main',
           '-vf scale=w=1280:h=720:force_original_aspect_ratio=decrease',
           '-c:a aac',

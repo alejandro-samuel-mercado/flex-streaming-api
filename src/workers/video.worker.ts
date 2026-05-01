@@ -10,7 +10,7 @@ const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 export const videoWorker = new Worker(
   'video-processing',
   async (job: Job) => {
-    const { contentId, episodeId, videoPath } = job.data;
+    const { videoFileId, contentId, episodeId, videoPath } = job.data;
     
     const outputFolder = path.join(env.MEDIA_PATH, 'hls', contentId);
 
@@ -21,13 +21,10 @@ export const videoWorker = new Worker(
     job.log(`Starting HLS processing for contentId: ${contentId}`);
 
     try {
-      const videoFile = await prisma.videoFile.create({
-        data: {
-          contentId: contentId,
-          episodeId: episodeId || null,
-          originalPath: videoPath,
-          status: 'PROCESSING'
-        }
+      // Update existing record to PROCESSING
+      await prisma.videoFile.update({
+        where: { id: videoFileId },
+        data: { status: 'PROCESSING' }
       });
 
       await onProgress(5);
@@ -46,7 +43,7 @@ export const videoWorker = new Worker(
 
       // Wait until Prisma is available correctly
       await prisma.videoFile.update({
-        where: { id: videoFile.id },
+        where: { id: videoFileId },
         data: {
           status: 'COMPLETED',
           masterPlaylist: `/media/hls/${contentId}/master.m3u8`,
@@ -76,24 +73,31 @@ export const videoWorker = new Worker(
       }
 
       // Update the content poster if needed
-      await prisma.thumbnail.upsert({
-        where: { 
-          contentId_type: {
-            contentId: contentId,
-            type: 'POSTER'
-          }
-        },
-        update: {
-          url: `/media/thumbnails/${contentId}/poster.jpg`,
-        },
-        create: {
+      const existingPoster = await prisma.thumbnail.findFirst({
+        where: {
           contentId: contentId,
-          type: 'POSTER',
-          url: `/media/thumbnails/${contentId}/poster.jpg`,
-          width: 1280,
-          height: 720
+          type: 'POSTER'
         }
       });
+
+      const posterUrl = `/media/thumbnails/${contentId}/poster.jpg`;
+
+      if (existingPoster) {
+        await prisma.thumbnail.update({
+          where: { id: existingPoster.id },
+          data: { url: posterUrl }
+        });
+      } else {
+        await prisma.thumbnail.create({
+          data: {
+            contentId: contentId,
+            type: 'POSTER',
+            url: posterUrl,
+            width: 1280,
+            height: 720
+          }
+        });
+      }
 
       await onProgress(100);
       return { success: true, path: hlsResult.path };

@@ -7,6 +7,7 @@ const CACHE_TTL = {
   trending: 2 * 60,
   recommendations: 15 * 60,
   search: 2 * 60,
+  homepage: 5 * 60,
 } as const;
 
 export type CacheCategory = keyof typeof CACHE_TTL;

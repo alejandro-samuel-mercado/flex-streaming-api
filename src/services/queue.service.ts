@@ -11,6 +11,7 @@ export const videoQueue = new Queue('video-processing', { connection });
 export const videoQueueEvents = new QueueEvents('video-processing', { connection });
 
 export async function addVideoJob(jobData: {
+  videoFileId: string;
   contentId: string;
   seasonId?: string;
   episodeId?: string;

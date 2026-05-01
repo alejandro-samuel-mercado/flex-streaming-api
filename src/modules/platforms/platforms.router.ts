@@ -1,5 +1,6 @@
-import { Router } from 'express';
+import { Router, RequestHandler } from 'express';
 import { PlatformsService } from './platforms.service';
+import { authenticate, requireRole } from '../../shared/middleware/auth.middleware';
 
 export const platformsRouter = Router();
 
@@ -21,10 +22,25 @@ platformsRouter.get('/:slug', async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-platformsRouter.post('/', async (req, res, next) => {
+// Admin Only
+platformsRouter.post('/', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, async (req, res, next) => {
   try {
     const { name, slug, logoUrl } = req.body;
     const platform = await PlatformsService.create({ name, slug, logoUrl });
     res.status(201).json({ success: true, data: platform });
+  } catch (error) { next(error); }
+});
+
+platformsRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, async (req, res, next) => {
+  try {
+    const platform = await PlatformsService.update(req.params.id, req.body);
+    res.json({ success: true, data: platform });
+  } catch (error) { next(error); }
+});
+
+platformsRouter.delete('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, async (req, res, next) => {
+  try {
+    await PlatformsService.delete(req.params.id);
+    res.json({ success: true, deleted: true });
   } catch (error) { next(error); }
 });

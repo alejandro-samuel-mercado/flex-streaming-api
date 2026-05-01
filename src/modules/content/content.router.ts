@@ -9,15 +9,20 @@ export const contentRouter = Router();
 
 const ContentFiltersSchema = z.object({
   page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(50).default(20),
+  limit: z.coerce.number().min(1).max(100).default(50), // Increased max for better browsing
   search: z.string().optional(),
   type: z.string().optional(),
   status: z.string().optional(),
   genreId: z.string().optional(),
   tagId: z.string().optional(),
   actorId: z.string().optional(),
-  year: z.coerce.number().optional(),
-  sort: z.enum(['recent', 'popular', 'rating', 'az', 'za']).default('recent'),
+  platformId: z.string().optional(),
+  isFree: z.preprocess((v) => v === 'true', z.boolean()).optional(),
+  minYear: z.coerce.number().optional(),
+  maxYear: z.coerce.number().optional(),
+  minDuration: z.coerce.number().optional(),
+  maxDuration: z.coerce.number().optional(),
+  sort: z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
   lang: z.string().default('es'),
 });
 
@@ -46,6 +51,7 @@ contentRouter.get('/recent', cacheMiddleware('catalog'), (async (_req, res, next
 
 contentRouter.get('/', (async (req, res, next) => {
   try {
+    console.log('[ContentRouter] Query received:', req.query);
     const filters = ContentFiltersSchema.parse(req.query);
     const { data, total, page, limit } = await ContentService.getAllContent(filters);
     ok(res, data, paginate(page, limit, total));

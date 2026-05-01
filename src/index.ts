@@ -39,8 +39,14 @@ import { reviewsRouter } from './modules/reviews/reviews.router';
 import { adminRouter } from './modules/admin/admin.router';
 import { uploadRouter } from './modules/upload/upload.router';
 import { platformsRouter } from './modules/platforms/platforms.router';
+import { plansRouter } from './modules/plans/plans.router';
+import { homepageRouter } from './modules/homepage/homepage.router';
 
 const app = express();
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
@@ -128,6 +134,8 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/upload', uploadLimiter, authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, uploadRouter);
 app.use('/api/platforms', platformsRouter);
+app.use('/api/plans', plansRouter);
+app.use('/api/homepage', homepageRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

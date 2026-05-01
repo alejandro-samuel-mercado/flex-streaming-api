@@ -109,6 +109,11 @@ adminRouter.put('/settings', (async (req: AuthenticatedRequest, res: Response, n
         })
       )
     );
+
+    // Invalidate homepage cache when settings change
+    const { invalidateCache } = await import('../../shared/middleware/cache.middleware');
+    await invalidateCache('*homepage*');
+
     ok(res, { updated: entries.length });
   } catch (err) { next(err); }
 }) as RequestHandler);

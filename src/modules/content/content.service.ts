@@ -30,36 +30,79 @@ export class ContentService {
     genreId?: string;
     tagId?: string;
     actorId?: string;
-    year?: number;
+    platformId?: string;
+    isFree?: boolean;
+    minYear?: number;
+    maxYear?: number;
+    minDuration?: number;
+    maxDuration?: number;
     sort: string;
     lang: string;
   }) {
-    const { page, limit, search, type, status, genreId, tagId, actorId, year, sort } = filters;
+    const { 
+      page, limit, search, type, status, genreId, tagId, actorId, 
+      platformId, isFree, minYear, maxYear, minDuration, maxDuration, sort 
+    } = filters;
+    
     const skip = (page - 1) * limit;
 
+    // 1. Initialize an empty AND array
+    const conditions: Prisma.ContentWhereInput[] = [
+      { deletedAt: null }
+    ];
+
+    // 2. Status condition
+    if (status) {
+      conditions.push({ status: status as ContentStatus });
+    } else {
+      conditions.push({ status: { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING', 'DRAFT'] } });
+    }
+
+    // 3. Type condition
+    if (type) conditions.push({ type: type as ContentType });
+    
+    // 4. Platform filter - THE IMPORTANT ONE
+    if (platformId && platformId !== 'null' && platformId !== 'undefined' && platformId !== '') {
+      console.log(`[DEBUG] PLATFORM FILTER DETECTED: "${platformId}"`);
+      conditions.push({ platformId: platformId });
+    }
+
+    // 5. Genre filter
+    if (genreId) conditions.push({ genres: { some: { genreId } } });
+    
+    // 6. Search filter
+    if (search) {
+      conditions.push({
+        translations: { some: { title: { contains: search, mode: 'insensitive' } } }
+      });
+    }
+
+    // 7. Assemble the final where
     const where: Prisma.ContentWhereInput = {
-      deletedAt: null,
-      status: (status as ContentStatus) || { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING'] },
+      AND: conditions
     };
 
-    if (type) where.type = type as ContentType;
-    if (year) where.releaseYear = year;
-    if (genreId) where.genres = { some: { genreId } };
-    if (tagId) where.tags = { some: { tagId } };
-    if (actorId) where.actors = { some: { actorId } };
-    if (search) {
-      where.translations = { some: { title: { contains: search, mode: 'insensitive' } } };
-    }
+    console.log('[DEBUG] Final Prisma Where:', JSON.stringify(where, null, 2));
 
     const orderBy: Prisma.ContentOrderByWithRelationInput =
       sort === 'popular' ? { viewCount: 'desc' } :
       sort === 'rating' ? { rating: 'desc' } :
       sort === 'az' ? { slug: 'asc' } :
       sort === 'za' ? { slug: 'desc' } :
+      sort === 'oldest' ? { createdAt: 'asc' } :
       { createdAt: 'desc' };
 
     const [data, total] = await Promise.all([
-      prisma.content.findMany({ where, skip, take: limit, orderBy, select: CONTENT_LIST_SELECT }),
+      prisma.content.findMany({ 
+        where, 
+        skip, 
+        take: limit, 
+        orderBy, 
+        select: {
+          ...CONTENT_LIST_SELECT,
+          platform: { select: { id: true, name: true, logoUrl: true } }
+        } 
+      }),
       prisma.content.count({ where }),
     ]);
 
@@ -71,8 +114,14 @@ export class ContentService {
       where: { id, deletedAt: null },
       include: {
         translations: { where: { language: { in: [lang, 'es'] } } },
+        genres: { include: { genre: true } },
+        tags: { include: { tag: true } },
+        actors: { include: { actor: true }, orderBy: { order: 'asc' } },
+        directors: { include: { director: true } },
+        platform: true,
+        ageRating: true,
+        thumbnails: true,
         videoFiles: {
-          where: { status: 'COMPLETED' },
           include: { qualities: true, audioTracks: true, subtitleTracks: true },
         },
         seasons: {
@@ -89,12 +138,6 @@ export class ContentService {
           },
           orderBy: { number: 'asc' },
         },
-        thumbnails: true,
-        genres: { include: { genre: true } },
-        tags: { include: { tag: true } },
-        actors: { include: { actor: true }, orderBy: { order: 'asc' } },
-        directors: { include: { director: true } },
-        ageRating: true,
         _count: { select: { reviews: true, watchHistory: true } },
       },
     });
@@ -222,6 +265,15 @@ export class ContentService {
           create: directorIds.map((id: string) => ({ directorId: id }))
         } : undefined,
       },
+      include: {
+        translations: true,
+        genres: { include: { genre: true } },
+        tags: { include: { tag: true } },
+        actors: { include: { actor: true }, orderBy: { order: 'asc' } },
+        directors: { include: { director: true } },
+        thumbnails: true,
+        videoFiles: { include: { qualities: true } }
+      }
     });
   }
 
