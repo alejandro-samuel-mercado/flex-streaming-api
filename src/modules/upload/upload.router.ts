@@ -163,3 +163,13 @@ uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
     return next(error);
   }
 });
+
+uploadRouter.delete('/video/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await prisma.videoFile.delete({ where: { id } });
+    return res.json({ success: true, message: 'Video deleted' });
+  } catch (error) {
+    return next(error);
+  }
+});
