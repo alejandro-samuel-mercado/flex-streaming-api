@@ -43,8 +43,8 @@ import { plansRouter } from './modules/plans/plans.router';
 import { homepageRouter } from './modules/homepage/homepage.router';
 
 const app = express();
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+app.use((_req, _res, next) => {
+  console.log(`[${new Date().toISOString()}] ${_req.method} ${_req.url}`);
   next();
 });
 const httpServer = createServer(app);

@@ -46,7 +46,7 @@ const imageUpload = multer({
   }
 });
 
-uploadRouter.post('/image', (req, res, next) => {
+uploadRouter.post('/image', (_req, _res, next) => {
   console.log('📸 [UploadRouter] POST /image request received');
   next();
 }, imageUpload.single('image'), async (req, res, next) => {
@@ -106,7 +106,7 @@ uploadRouter.post('/image', (req, res, next) => {
 
     return res.json({ success: true, url: imageUrl });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
