@@ -10,7 +10,7 @@ const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 export const videoWorker = new Worker(
   'video-processing',
   async (job: Job) => {
-    const { videoFileId, contentId, _episodeId, videoPath } = job.data;
+    const { videoFileId, contentId, videoPath } = job.data;
     
     const outputFolder = path.join(env.MEDIA_PATH, 'hls', contentId);
 

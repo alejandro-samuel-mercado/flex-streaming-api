@@ -40,8 +40,8 @@ export class ContentService {
     lang: string;
   }) {
     const { 
-      page, limit, search, type, status, genreId, _tagId, _actorId, 
-      platformId, _isFree, _minYear, _maxYear, _minDuration, _maxDuration, sort 
+      page, limit, search, type, status, genreId,
+      platformId, sort 
     } = filters;
     
     const skip = (page - 1) * limit;
