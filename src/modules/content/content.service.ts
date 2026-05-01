@@ -18,7 +18,7 @@ const CONTENT_LIST_SELECT = {
   thumbnails: { where: { type: 'POSTER' }, take: 1 },
   genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
   ageRating: { select: { id: true, code: true, label: true } },
-  videoFiles: { select: { type: true, status: true } },
+  videoFiles: { select: { status: true } },
 } satisfies Prisma.ContentSelect;
 
 export class ContentService {
