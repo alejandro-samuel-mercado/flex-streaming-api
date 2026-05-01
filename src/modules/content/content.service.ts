@@ -123,7 +123,7 @@ export class ContentService {
                 ageRating: true,
                 thumbnails: true,
                 videoFiles: {
-                    include: { qualities: true, audioTracks: true, subtitleTracks: true, masterPlaylist: true },
+                    include: { qualities: true, audioTracks: true, subtitleTracks: true },
                 },
                 seasons: {
                     include: {
