@@ -67,5 +67,27 @@ export declare class PlatformsService {
         logoUrl: string | null;
         isFeatured: boolean;
     }>;
+    static update(id: string, data: {
+        name?: string;
+        slug?: string;
+        logoUrl?: string;
+    }): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        logoUrl: string | null;
+        isFeatured: boolean;
+    }>;
+    static delete(id: string): Promise<{
+        id: string;
+        name: string;
+        createdAt: Date;
+        updatedAt: Date;
+        slug: string;
+        logoUrl: string | null;
+        isFeatured: boolean;
+    }>;
 }
 //# sourceMappingURL=platforms.service.d.ts.map

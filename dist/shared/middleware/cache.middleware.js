@@ -9,6 +9,7 @@ const CACHE_TTL = {
     trending: 2 * 60,
     recommendations: 15 * 60,
     search: 2 * 60,
+    homepage: 5 * 60,
 };
 function cacheMiddleware(category) {
     return async (req, res, next) => {

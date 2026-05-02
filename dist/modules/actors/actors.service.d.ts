@@ -25,9 +25,9 @@ export declare class ActorsService {
             };
         } & {
             contentId: string;
-            actorId: string;
             order: number;
             character: string | null;
+            actorId: string;
         })[];
     } & {
         id: string;

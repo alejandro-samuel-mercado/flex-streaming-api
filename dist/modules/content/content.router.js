@@ -10,15 +10,20 @@ const zod_1 = require("zod");
 exports.contentRouter = (0, express_1.Router)();
 const ContentFiltersSchema = zod_1.z.object({
     page: zod_1.z.coerce.number().min(1).default(1),
-    limit: zod_1.z.coerce.number().min(1).max(50).default(20),
+    limit: zod_1.z.coerce.number().min(1).max(100).default(50), // Increased max for better browsing
     search: zod_1.z.string().optional(),
     type: zod_1.z.string().optional(),
     status: zod_1.z.string().optional(),
     genreId: zod_1.z.string().optional(),
     tagId: zod_1.z.string().optional(),
     actorId: zod_1.z.string().optional(),
-    year: zod_1.z.coerce.number().optional(),
-    sort: zod_1.z.enum(['recent', 'popular', 'rating', 'az', 'za']).default('recent'),
+    platformId: zod_1.z.string().optional(),
+    isFree: zod_1.z.preprocess((v) => v === 'true', zod_1.z.boolean()).optional(),
+    minYear: zod_1.z.coerce.number().optional(),
+    maxYear: zod_1.z.coerce.number().optional(),
+    minDuration: zod_1.z.coerce.number().optional(),
+    maxDuration: zod_1.z.coerce.number().optional(),
+    sort: zod_1.z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
     lang: zod_1.z.string().default('es'),
 });
 // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────────
@@ -49,8 +54,9 @@ exports.contentRouter.get('/recent', (0, cache_middleware_1.cacheMiddleware)('ca
         next(err);
     }
 }));
-exports.contentRouter.get('/', (0, cache_middleware_1.cacheMiddleware)('catalog'), (async (req, res, next) => {
+exports.contentRouter.get('/', (async (req, res, next) => {
     try {
+        console.log('[ContentRouter] Query received:', req.query);
         const filters = ContentFiltersSchema.parse(req.query);
         const { data, total, page, limit } = await content_service_1.ContentService.getAllContent(filters);
         (0, api_response_1.ok)(res, data, (0, api_response_1.paginate)(page, limit, total));

@@ -66,4 +66,52 @@ export class HistoryService {
       take: limit,
     });
   }
+
+  static async getGlobalHistory(page = 1, limit = 20, search?: string) {
+    const skip = (page - 1) * limit;
+    
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { profile: { name: { contains: search, mode: 'insensitive' } } },
+        { content: { translations: { some: { title: { contains: search, mode: 'insensitive' } } } } }
+      ];
+    }
+
+    const [total, history] = await Promise.all([
+      prisma.watchHistory.count({ where }),
+      prisma.watchHistory.findMany({
+        where,
+        include: {
+          profile: {
+            select: {
+              id: true,
+              name: true,
+              user: { select: { email: true, name: true, role: true } }
+            }
+          },
+          content: {
+            select: {
+              id: true,
+              type: true,
+              slug: true,
+              translations: { select: { language: true, title: true } },
+            },
+          },
+          episode: {
+            select: {
+              id: true,
+              number: true,
+              translations: { select: { language: true, title: true } },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    return { total, pages: Math.ceil(total / limit), data: history };
+  }
 }

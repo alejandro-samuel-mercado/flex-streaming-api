@@ -1,0 +1,370 @@
+"use strict";
+/**
+ * End Users Service — PeliPlus Reseller System
+ *
+ * Manages end-user accounts created by vendors/super-vendors.
+ * Handles: CRUD, plan activation (cumulative), pause/resume,
+ * device management, password changes, and plan history.
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.EndUsersService = void 0;
+const bcrypt_1 = __importDefault(require("bcrypt"));
+const prisma_1 = require("../../shared/config/prisma");
+const error_handler_1 = require("../../shared/middleware/error-handler");
+const BCRYPT_ROUNDS = 12;
+async function canManageAccount(managedById, userId, userRole) {
+    if (userRole === 'ADMIN')
+        return true;
+    if (managedById === userId)
+        return true;
+    if (userRole === 'SUPER_VENDOR') {
+        // Check if the account is managed by one of this super vendor's child vendors
+        const childVendor = await prisma_1.prisma.user.findFirst({
+            where: { id: managedById, parentId: userId, role: 'VENDOR' },
+        });
+        return !!childVendor;
+    }
+    return false;
+}
+class EndUsersService {
+    static async list(userId, userRole, query) {
+        const page = query.page ?? 1;
+        const limit = query.limit ?? 20;
+        const skip = (page - 1) * limit;
+        const where = {
+            deletedAt: null,
+        };
+        if (userRole === 'SUPER_VENDOR') {
+            // SUPER_VENDOR sees accounts managed by themselves and their child vendors
+            const childVendorIds = await prisma_1.prisma.user.findMany({
+                where: { parentId: userId, role: 'VENDOR', deletedAt: null },
+                select: { id: true },
+            });
+            const managerIds = [userId, ...childVendorIds.map(v => v.id)];
+            where.managedById = { in: managerIds };
+        }
+        else if (userRole === 'VENDOR') {
+            where.managedById = userId;
+        }
+        if (query.search) {
+            where.username = { contains: query.search, mode: 'insensitive' };
+        }
+        if (query.status) {
+            where.status = query.status;
+        }
+        if (query.type) {
+            where.type = query.type;
+        }
+        const [accounts, total] = await Promise.all([
+            prisma_1.prisma.endUserAccount.findMany({
+                where,
+                select: {
+                    id: true,
+                    username: true,
+                    password: true,
+                    status: true,
+                    type: true,
+                    startDate: true,
+                    endDate: true,
+                    maxDevices: true,
+                    createdAt: true,
+                    managedBy: { select: { id: true, name: true, email: true } },
+                    plan: { select: { id: true, name: true, durationDays: true } },
+                    _count: { select: { connectedDevices: { where: { isActive: true } } } },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+            }),
+            prisma_1.prisma.endUserAccount.count({ where }),
+        ]);
+        const mapped = accounts.map(a => ({
+            ...a,
+            connectedDevicesCount: a._count.connectedDevices,
+            _count: undefined,
+        }));
+        return {
+            users: mapped,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
+    static async create(managedById, data) {
+        const existing = await prisma_1.prisma.endUserAccount.findUnique({
+            where: { username: data.username },
+        });
+        if (existing) {
+            throw new error_handler_1.AppError(409, 'Username already exists', 'USERNAME_EXISTS');
+        }
+        const passwordHash = await bcrypt_1.default.hash(data.password, BCRYPT_ROUNDS);
+        return prisma_1.prisma.endUserAccount.create({
+            data: {
+                username: data.username,
+                password: data.password,
+                passwordHash,
+                managedById,
+                country: data.country,
+                notes: data.notes,
+            },
+            select: {
+                id: true,
+                username: true,
+                password: true,
+                status: true,
+                type: true,
+                createdAt: true,
+            },
+        });
+    }
+    static async getById(accountId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({
+            where: { id: accountId },
+            include: {
+                managedBy: { select: { id: true, name: true, email: true } },
+                plan: true,
+                connectedDevices: { where: { isActive: true } },
+            },
+        });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only view your own clients', 'FORBIDDEN');
+        }
+        return {
+            ...account,
+            connectedDevicesCount: account.connectedDevices.length,
+        };
+    }
+    static async changePassword(accountId, userId, userRole, newPassword) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
+        }
+        const passwordHash = await bcrypt_1.default.hash(newPassword, BCRYPT_ROUNDS);
+        return prisma_1.prisma.endUserAccount.update({
+            where: { id: accountId },
+            data: { password: newPassword, passwordHash },
+            select: { id: true, username: true, password: true },
+        });
+    }
+    static async deleteAccount(accountId, userId, userRole, forceDelete = false) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only delete your own clients', 'FORBIDDEN');
+        }
+        if (account.status === 'ACTIVE' && userRole !== 'ADMIN') {
+            throw new error_handler_1.AppError(400, 'Cannot delete an active account. Deactivate it first.', 'ACCOUNT_ACTIVE');
+        }
+        if (account.status === 'ACTIVE' && userRole === 'ADMIN' && !forceDelete) {
+            throw new error_handler_1.AppError(400, 'Account is active. Set forceDelete=true to confirm.', 'CONFIRM_FORCE_DELETE');
+        }
+        await prisma_1.prisma.deviceSession.updateMany({
+            where: { endUserAccountId: accountId },
+            data: { isActive: false },
+        });
+        if (account.userId) {
+            await prisma_1.prisma.refreshToken.deleteMany({
+                where: { userId: account.userId },
+            });
+        }
+        return prisma_1.prisma.endUserAccount.update({
+            where: { id: accountId },
+            data: { deletedAt: new Date(), status: 'INACTIVE' },
+        });
+    }
+    static async addPlan(accountId, userId, userRole, planId) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
+        }
+        const plan = await prisma_1.prisma.subscriptionPlan.findUnique({ where: { id: planId } });
+        if (!plan || !plan.isActive) {
+            throw new error_handler_1.AppError(404, 'Plan not found or inactive', 'PLAN_NOT_FOUND');
+        }
+        const now = new Date();
+        let newEndDate;
+        let newType = account.type;
+        let newStatus = account.status;
+        let newStartDate = account.startDate;
+        let creditsCost = 0;
+        if (plan.isDemo) {
+            const hoursMs = (plan.demoHours ?? 24) * 60 * 60 * 1000;
+            newEndDate = new Date(now.getTime() + hoursMs);
+            newType = 'DEMO';
+            newStatus = 'DEMO';
+            newStartDate = now;
+            creditsCost = 0;
+        }
+        else {
+            creditsCost = plan.creditCost;
+            if (userRole !== 'ADMIN') {
+                const caller = await prisma_1.prisma.user.findUnique({ where: { id: userId } });
+                if (!caller || caller.credits < creditsCost) {
+                    throw new error_handler_1.AppError(400, `Insufficient credits. You have ${caller?.credits ?? 0}, need ${creditsCost}`, 'INSUFFICIENT_CREDITS');
+                }
+            }
+            const currentEndDate = account.endDate;
+            const base = currentEndDate && currentEndDate > now ? currentEndDate : now;
+            newEndDate = new Date(base.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+            newType = 'FORMAL';
+            if (account.status === 'INACTIVE' || account.status === 'EXPIRED') {
+                newStartDate = now;
+            }
+            newStatus = 'ACTIVE';
+        }
+        return prisma_1.prisma.$transaction(async (tx) => {
+            if (creditsCost > 0 && userRole !== 'ADMIN') {
+                const caller = await tx.user.findUnique({ where: { id: userId } });
+                const callerBefore = caller.credits;
+                const callerAfter = callerBefore - creditsCost;
+                await tx.user.update({
+                    where: { id: userId },
+                    data: { credits: callerAfter },
+                });
+                await tx.creditTransaction.create({
+                    data: {
+                        userId: userId,
+                        type: 'PLAN_ACTIVATION',
+                        amount: -creditsCost,
+                        balanceBefore: callerBefore,
+                        balanceAfter: callerAfter,
+                        description: `Plan "${plan.name}" applied to "${account.username}"`,
+                        relatedUserId: account.id,
+                        planId: plan.id,
+                        createdById: userId,
+                    },
+                });
+            }
+            await tx.endUserPlanHistory.create({
+                data: {
+                    endUserAccountId: accountId,
+                    planId: plan.id,
+                    daysAdded: plan.isDemo ? 0 : plan.durationDays,
+                    creditsCost,
+                    appliedById: userId,
+                },
+            });
+            const updated = await tx.endUserAccount.update({
+                where: { id: accountId },
+                data: {
+                    planId: plan.id,
+                    status: newStatus,
+                    type: newType,
+                    startDate: newStartDate,
+                    endDate: newEndDate,
+                    maxDevices: plan.maxDevices,
+                },
+                include: {
+                    plan: { select: { id: true, name: true, durationDays: true } },
+                },
+            });
+            return updated;
+        });
+    }
+    static async togglePause(accountId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
+        }
+        let newStatus;
+        if (account.status === 'ACTIVE') {
+            newStatus = 'PAUSED';
+        }
+        else if (account.status === 'PAUSED') {
+            newStatus = 'ACTIVE';
+        }
+        else {
+            throw new error_handler_1.AppError(400, `Cannot toggle pause for account with status "${account.status}"`, 'INVALID_STATUS');
+        }
+        return prisma_1.prisma.endUserAccount.update({
+            where: { id: accountId },
+            data: { status: newStatus },
+            select: { id: true, username: true, status: true },
+        });
+    }
+    static async listDevices(accountId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only view your own clients\' devices', 'FORBIDDEN');
+        }
+        return prisma_1.prisma.deviceSession.findMany({
+            where: { endUserAccountId: accountId, isActive: true },
+            orderBy: { lastSeen: 'desc' },
+        });
+    }
+    static async disconnectAllDevices(accountId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
+        }
+        await prisma_1.prisma.deviceSession.updateMany({
+            where: { endUserAccountId: accountId },
+            data: { isActive: false },
+        });
+        if (account.userId) {
+            await prisma_1.prisma.refreshToken.deleteMany({
+                where: { userId: account.userId },
+            });
+        }
+        return { message: 'All devices disconnected' };
+    }
+    static async disconnectDevice(accountId, deviceId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
+        }
+        const device = await prisma_1.prisma.deviceSession.findUnique({ where: { id: deviceId } });
+        if (!device || device.endUserAccountId !== accountId) {
+            throw new error_handler_1.AppError(404, 'Device not found for this account', 'NOT_FOUND');
+        }
+        await prisma_1.prisma.deviceSession.update({
+            where: { id: deviceId },
+            data: { isActive: false },
+        });
+        return { message: 'Device disconnected' };
+    }
+    static async getPlanHistory(accountId, userId, userRole) {
+        const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
+        if (!account || account.deletedAt) {
+            throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+            throw new error_handler_1.AppError(403, 'You can only view your own clients\' history', 'FORBIDDEN');
+        }
+        return prisma_1.prisma.endUserPlanHistory.findMany({
+            where: { endUserAccountId: accountId },
+            include: {
+                plan: { select: { id: true, name: true, durationDays: true, creditCost: true, isDemo: true } },
+            },
+            orderBy: { appliedAt: 'desc' },
+        });
+    }
+}
+exports.EndUsersService = EndUsersService;
+//# sourceMappingURL=end-users.service.js.map

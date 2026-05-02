@@ -4,6 +4,7 @@ import path from 'path';
 import { env } from '../../shared/config/env';
 import { addVideoJob } from '../../services/queue.service';
 import { prisma } from '../../shared/config/prisma';
+import { ChunkUploadService } from '../../services/chunk-upload.service';
 import sharp from 'sharp';
 import fs from 'fs';
 
@@ -46,16 +47,69 @@ const imageUpload = multer({
   }
 });
 
+const chunkUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB per chunk max
+});
+
+const subtitleUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      const dir = path.join(env.MEDIA_PATH, 'subtitles');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (_req, file, cb) => {
+      cb(null, `sub-${Date.now()}${path.extname(file.originalname)}`);
+    }
+  }),
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.vtt', '.srt'];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid subtitle type. Only .VTT and .SRT are allowed.'));
+    }
+  }
+});
+
+uploadRouter.post('/subtitle', subtitleUpload.single('subtitle'), (async (req: any, res: any, next: any) => {
+  try {
+    const file = req.file;
+    const { videoFileId, language, label } = req.body;
+
+    if (!file || !videoFileId || !language) {
+      res.status(400).json({ success: false, error: 'Subtitle file, videoFileId and language are required' });
+      return;
+    }
+
+    const subtitleUrl = `/media/subtitles/${file.filename}`;
+
+    const subtitle = await prisma.subtitleTrack.create({
+      data: {
+        videoFileId,
+        language,
+        label: label || language,
+        url: subtitleUrl,
+        format: path.extname(file.originalname).replace('.', '').toUpperCase() as any
+      }
+    });
+
+    res.json({ success: true, data: subtitle });
+  } catch (err) { next(err); }
+}) as any);
+
 uploadRouter.post('/image', (_req, _res, next) => {
   console.log('📸 [UploadRouter] POST /image request received');
   next();
-}, imageUpload.single('image'), async (req, res, next) => {
+}, imageUpload.single('image'), (async (req: any, res: any, next: any) => {
   try {
     const file = req.file;
     const { contentId, type } = req.body; // type: 'POSTER' | 'BACKDROP'
 
     if (!file || !contentId || !type) {
-      return res.status(400).json({ success: false, error: 'File, contentId and type are required' });
+      res.status(400).json({ success: false, error: 'File, contentId and type are required' });
+      return;
     }
 
     const folder = path.join(env.MEDIA_PATH, 'thumbnails', contentId);
@@ -104,28 +158,49 @@ uploadRouter.post('/image', (_req, _res, next) => {
       });
     }
 
-    return res.json({ success: true, url: imageUrl });
+    res.json({ success: true, url: imageUrl });
   } catch (error) {
-    return next(error);
+    next(error);
   }
-});
+}) as any);
 
-uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
+uploadRouter.post('/', upload.single('video'), (async (req: any, res: any, next: any) => {
   try {
     const file = req.file;
-    const { contentId, seasonId, episodeId } = req.body;
+    const { contentId, seasonId, episodeId, type } = req.body;
 
     if (!file) {
-      return res.status(400).json({ success: false, error: 'No video file provided' });
+      res.status(400).json({ success: false, error: 'No video file provided' });
+      return;
     }
     if (!contentId) {
-      return res.status(400).json({ success: false, error: 'contentId is required' });
+      res.status(400).json({ success: false, error: 'contentId is required' });
+      return;
     }
 
-    // Ensure content exists
     const content = await prisma.content.findUnique({ where: { id: contentId } });
     if (!content) {
-      return res.status(404).json({ success: false, error: 'Content not found' });
+      res.status(404).json({ success: false, error: 'Content not found' });
+      return;
+    }
+
+    // NEW: Check if video of this type already exists
+    const videoType = (type as any) || 'MOVIE';
+    const existingVideo = await prisma.videoFile.findFirst({
+      where: {
+        contentId,
+        type: videoType,
+        episodeId: episodeId || null,
+        status: { not: 'FAILED' }
+      }
+    });
+
+    if (existingVideo) {
+      res.status(400).json({ 
+        success: false, 
+        error: `Este contenido ya tiene un video de tipo ${videoType}. Elimínalo primero si deseas subir uno nuevo.` 
+      });
+      return;
     }
 
     // 1. Create VideoFile record first (prevent duplicates in UI)
@@ -133,8 +208,9 @@ uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
       data: {
         contentId,
         episodeId: episodeId || null,
+        type: (type as any) || 'MOVIE',
         originalPath: file.path,
-        status: 'QUEUED' // Change to QUEUED as it's going to BullMQ
+        status: 'QUEUED'
       }
     });
 
@@ -142,6 +218,7 @@ uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
     const job = await addVideoJob({
       videoFileId: videoFile.id,
       contentId,
+      type: videoFile.type,
       seasonId: seasonId || undefined,
       episodeId: episodeId || undefined,
       videoPath: file.path, 
@@ -153,23 +230,153 @@ uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
       data: { processingJobId: job.id }
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: 'Video upload completed and enqueued for processing',
       jobId: job.id,
       videoFileId: videoFile.id
     });
   } catch (error) {
-    return next(error);
+    next(error);
   }
-});
+}) as any);
 
 uploadRouter.delete('/video/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
+    
+    // 1. Find the video file record
+    const videoFile = await prisma.videoFile.findUnique({
+      where: { id }
+    });
+
+    if (!videoFile) {
+      return res.status(404).json({ success: false, error: 'Video file not found' });
+    }
+
+    // 2. If it has a processing job, remove it
+    if (videoFile.processingJobId) {
+      const { removeVideoJob } = await import('../../services/queue.service');
+      await removeVideoJob(videoFile.processingJobId);
+    }
+
+    // 3. Delete the record
     await prisma.videoFile.delete({ where: { id } });
-    return res.json({ success: true, message: 'Video deleted' });
+
+    // 4. (Optional) Delete the physical file if it exists
+    if (videoFile.originalPath && fs.existsSync(videoFile.originalPath)) {
+      fs.unlinkSync(videoFile.originalPath);
+    }
+
+    return res.json({ success: true, message: 'Video upload cancelled and deleted' });
   } catch (error) {
     return next(error);
   }
 });
+
+uploadRouter.delete('/subtitle/:id', (async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const sub = await prisma.subtitleTrack.findUnique({ where: { id } });
+    
+    if (!sub) {
+      return res.status(404).json({ success: false, error: 'Subtitle not found' });
+    }
+
+    // Delete physical file
+    const filePath = path.join(env.MEDIA_PATH, sub.url.replace('/media/', ''));
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    await prisma.subtitleTrack.delete({ where: { id } });
+    res.json({ success: true, message: 'Subtitle deleted' });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+/**
+ * POST /api/upload/chunk
+ */
+uploadRouter.post('/chunk', chunkUpload.single('chunk'), (async (req: any, res: any, next: any) => {
+  try {
+    const { fileId, chunkIndex } = req.body;
+    const file = req.file;
+
+    if (!file || !fileId || chunkIndex === undefined) {
+      res.status(400).json({ success: false, error: 'Missing chunk data' });
+      return;
+    }
+
+    await ChunkUploadService.saveChunk(fileId, parseInt(chunkIndex), file.buffer);
+    res.json({ success: true, message: `Chunk ${chunkIndex} saved` });
+  } catch (err) { next(err); }
+}) as any);
+
+/**
+ * POST /api/upload/complete
+ */
+uploadRouter.post('/complete', (async (req: any, res: any, next: any) => {
+  try {
+    const { fileId, fileName, totalChunks, contentId, seasonId, episodeId, type } = req.body;
+
+    if (!fileId || !fileName || !totalChunks || !contentId) {
+      res.status(400).json({ success: false, error: 'Missing data for completion' });
+      return;
+    }
+
+    // NEW: Check if video of this type already exists (Chunked)
+    const videoType = (type as any) || 'MOVIE';
+    const existingVideo = await prisma.videoFile.findFirst({
+      where: {
+        contentId,
+        type: videoType,
+        episodeId: episodeId || null,
+        status: { not: 'FAILED' }
+      }
+    });
+
+    if (existingVideo) {
+      res.status(400).json({ 
+        success: false, 
+        error: `Este contenido ya tiene un video de tipo ${videoType}. Elimínalo primero si deseas subir uno nuevo.` 
+      });
+      return;
+    }
+
+    // 1. Merge chunks
+    const finalPath = await ChunkUploadService.mergeChunks(fileId, fileName, parseInt(totalChunks));
+
+    // 2. Create VideoFile record
+    const videoFile = await prisma.videoFile.create({
+      data: {
+        contentId,
+        episodeId: episodeId || null,
+        type: (type as any) || 'MOVIE',
+        originalPath: finalPath,
+        status: 'QUEUED'
+      }
+    });
+
+    // 3. Add job to BullMQ
+    const job = await addVideoJob({
+      videoFileId: videoFile.id,
+      contentId,
+      type: videoFile.type,
+      seasonId: seasonId || undefined,
+      episodeId: episodeId || undefined,
+      videoPath: finalPath,
+    });
+
+    await prisma.videoFile.update({
+      where: { id: videoFile.id },
+      data: { processingJobId: job.id }
+    });
+
+    res.json({ 
+      success: true, 
+      message: 'File merged and enqueued',
+      videoFileId: videoFile.id,
+      jobId: job.id
+    });
+  } catch (err) { next(err); }
+}) as any);

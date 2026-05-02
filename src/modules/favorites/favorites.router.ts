@@ -36,3 +36,20 @@ favoritesRouter.post('/toggle', (async (req: AuthenticatedRequest, res, next) =>
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+favoritesRouter.post('/sync', (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const profileId = req.headers['x-profile-id'] as string;
+    if (!profileId) {
+      res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+      return;
+    }
+    const { contentIds } = req.body;
+    if (!Array.isArray(contentIds)) {
+      res.status(400).json({ success: false, error: 'contentIds must be an array' });
+      return;
+    }
+    const result = await FavoritesService.syncFavorites(profileId, contentIds);
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);

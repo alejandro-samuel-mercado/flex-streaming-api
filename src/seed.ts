@@ -103,7 +103,82 @@ async function main() {
     });
   }
 
-  console.log('Database seeded successfully!');
+  // Create Subscription Plans (Reseller)
+  await prisma.subscriptionPlan.create({
+    data: { name: '1 Mes', durationDays: 30, creditCost: 10, isActive: true }
+  });
+  await prisma.subscriptionPlan.create({
+    data: { name: '3 Meses', durationDays: 90, creditCost: 25, isActive: true }
+  });
+
+  // Create Credit Packages
+  await prisma.creditPackage.create({
+    data: { name: 'Pack 100', baseCredits: 100, isActive: true }
+  });
+
+  // Create Users (Admin, Super Vendor, Vendor)
+  const bcrypt = require('bcrypt');
+  const passwordHash = await bcrypt.hash('123456', 12);
+
+  const admin = await prisma.user.upsert({
+    where: { email: 'admin@peliplus.com' },
+    update: {
+      passwordHash,
+      role: 'ADMIN',
+      isActive: true,
+      credits: 0
+    },
+    create: {
+      email: 'admin@peliplus.com',
+      name: 'Admin',
+      passwordHash,
+      role: 'ADMIN',
+      isActive: true,
+      credits: 0
+    }
+  });
+
+  const superVendor = await prisma.user.upsert({
+    where: { email: 'super@peliplus.com' },
+    update: {
+      passwordHash,
+      role: 'SUPER_VENDOR',
+      isActive: true,
+      credits: 1000,
+      parentId: admin.id
+    },
+    create: {
+      email: 'super@peliplus.com',
+      name: 'Super Vendedor',
+      passwordHash,
+      role: 'SUPER_VENDOR',
+      isActive: true,
+      credits: 1000,
+      parentId: admin.id
+    }
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'vendor@peliplus.com' },
+    update: {
+      passwordHash,
+      role: 'VENDOR',
+      isActive: true,
+      credits: 500,
+      parentId: superVendor.id
+    },
+    create: {
+      email: 'vendor@peliplus.com',
+      name: 'Vendedor',
+      passwordHash,
+      role: 'VENDOR',
+      isActive: true,
+      credits: 500,
+      parentId: superVendor.id
+    }
+  });
+
+  console.log('Database seeded successfully! Use admin@peliplus.com / 123456 to login.');
 }
 
 main()

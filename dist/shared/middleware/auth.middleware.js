@@ -3,9 +3,11 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.requireVendorOrAbove = exports.requireSuperVendorOrAbove = exports.requireAdmin = void 0;
 exports.authenticate = authenticate;
 exports.requireRole = requireRole;
 exports.optionalAuth = optionalAuth;
+exports.requireAnyRole = requireAnyRole;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const env_1 = require("../config/env");
 const error_handler_1 = require("./error-handler");
@@ -54,4 +56,20 @@ function optionalAuth(req, _res, next) {
     }
     next();
 }
+function requireAnyRole(...roles) {
+    return (req, _res, next) => {
+        if (!req.user) {
+            next(new error_handler_1.AppError(401, 'Authentication required', 'UNAUTHORIZED'));
+            return;
+        }
+        if (!roles.includes(req.user.role)) {
+            next(new error_handler_1.AppError(403, 'Insufficient permissions', 'FORBIDDEN'));
+            return;
+        }
+        next();
+    };
+}
+exports.requireAdmin = requireRole('ADMIN');
+exports.requireSuperVendorOrAbove = requireAnyRole('ADMIN', 'SUPER_VENDOR');
+exports.requireVendorOrAbove = requireAnyRole('ADMIN', 'SUPER_VENDOR', 'VENDOR');
 //# sourceMappingURL=auth.middleware.js.map

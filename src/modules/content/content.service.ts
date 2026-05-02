@@ -1,5 +1,9 @@
 import { prisma } from '../../shared/config/prisma';
 import { ContentStatus, ContentType, Prisma } from '@prisma/client';
+import { TMDBService } from '../../services/tmdb.service';
+import path from 'path';
+import fs from 'fs';
+import { env } from '../../shared/config/env';
 
 const CONTENT_LIST_SELECT = {
     id: true,
@@ -110,9 +114,15 @@ export class ContentService {
         return { data, total, page, limit };
     }
 
-    static async getContentById(id: string, lang: string = 'es') {
+    static async getContentById(idOrSlug: string, lang: string = 'es') {
         return prisma.content.findFirst({
-            where: { id, deletedAt: null },
+            where: {
+                OR: [
+                    { id: idOrSlug },
+                    { slug: idOrSlug }
+                ],
+                deletedAt: null
+            },
             include: {
                 translations: { where: { language: { in: [lang, 'es'] } } },
                 genres: { include: { genre: true } },
@@ -219,9 +229,11 @@ export class ContentService {
             tagline: t.tagline
         }));
 
-        return prisma.content.create({
+        const { posterPath, backdropPath, ...finalContentData } = contentData;
+
+        const content = await prisma.content.create({
             data: {
-                ...(contentData as Prisma.ContentCreateInput),
+                ...(finalContentData as Prisma.ContentCreateInput),
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id: string) => ({ genreId: id })) } : undefined,
                 tags: tagIds ? { create: tagIds.map((id: string) => ({ tagId: id })) } : undefined,
@@ -229,6 +241,38 @@ export class ContentService {
                 directors: directorIds ? { create: directorIds.map((id: string) => ({ directorId: id })) } : undefined,
             },
         });
+
+        // ─── Post-Creation: TMDB Image Import ────────────────────────────────
+        if (posterPath || backdropPath) {
+            const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', content.id);
+            if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
+
+            if (posterPath) {
+                const localPosterPath = path.join(mediaFolder, 'poster.jpg');
+                await TMDBService.downloadImage(posterPath, localPosterPath);
+                await prisma.thumbnail.create({
+                    data: {
+                        contentId: content.id,
+                        type: 'POSTER',
+                        url: `/media/thumbnails/${content.id}/poster.jpg`
+                    }
+                });
+            }
+
+            if (backdropPath) {
+                const localBackdropPath = path.join(mediaFolder, 'backdrop.jpg');
+                await TMDBService.downloadImage(backdropPath, localBackdropPath);
+                await prisma.thumbnail.create({
+                    data: {
+                        contentId: content.id,
+                        type: 'BACKDROP',
+                        url: `/media/thumbnails/${content.id}/backdrop.jpg`
+                    }
+                });
+            }
+        }
+
+        return content;
     }
 
     static async updateContent(id: string, data: Record<string, unknown>) {

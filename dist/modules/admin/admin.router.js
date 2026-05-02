@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.adminRouter = void 0;
 const express_1 = require("express");
@@ -100,6 +133,9 @@ exports.adminRouter.put('/settings', (async (req, res, next) => {
             update: { value },
             create: { key, value },
         })));
+        // Invalidate homepage cache when settings change
+        const { invalidateCache } = await Promise.resolve().then(() => __importStar(require('../../shared/middleware/cache.middleware')));
+        await invalidateCache('*homepage*');
         (0, api_response_1.ok)(res, { updated: entries.length });
     }
     catch (err) {
@@ -118,6 +154,98 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
             },
         });
         (0, api_response_1.ok)(res, videos);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// ─── Watch History ─────────────────────────────────────────────────────────────
+exports.adminRouter.get('/history', (async (req, res, next) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        // Dynamically import HistoryService to avoid circular dependencies
+        const { HistoryService } = await Promise.resolve().then(() => __importStar(require('../history/history.service')));
+        const results = await HistoryService.getGlobalHistory(page, limit);
+        (0, api_response_1.ok)(res, results);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// ─── Comments & Reviews Moderation ───────────────────────────────────────────
+exports.adminRouter.get('/reviews', (async (req, res, next) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const status = req.query.status;
+        const where = {};
+        if (status)
+            where.status = status;
+        const [reviews, total] = await Promise.all([
+            prisma_1.prisma.review.findMany({
+                where,
+                skip: (page - 1) * limit,
+                take: limit,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    profile: { select: { id: true, name: true } },
+                    content: { select: { id: true, slug: true, type: true } },
+                },
+            }),
+            prisma_1.prisma.review.count({ where }),
+        ]);
+        (0, api_response_1.ok)(res, { reviews, total, page, limit });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.adminRouter.put('/reviews/:id/status', (async (req, res, next) => {
+    try {
+        const { status } = req.body;
+        const review = await prisma_1.prisma.review.update({
+            where: { id: req.params.id },
+            data: { status },
+        });
+        // Re-calculate average if status changes to/from APPROVED
+        if (!review.parentId) {
+            const avg = await prisma_1.prisma.review.aggregate({
+                where: { contentId: review.contentId, isHidden: false, status: 'APPROVED', rating: { not: null } },
+                _avg: { rating: true },
+                _count: true,
+            });
+            await prisma_1.prisma.content.update({
+                where: { id: review.contentId },
+                data: { rating: avg._avg.rating || 0, reviewCount: avg._count },
+            });
+        }
+        (0, api_response_1.ok)(res, review);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.adminRouter.delete('/reviews/:id', (async (req, res, next) => {
+    try {
+        const review = await prisma_1.prisma.review.findUnique({ where: { id: req.params.id } });
+        if (!review) {
+            res.status(404).json({ success: false, error: 'Review not found' });
+            return;
+        }
+        await prisma_1.prisma.review.delete({ where: { id: req.params.id } });
+        if (!review.parentId) {
+            const avg = await prisma_1.prisma.review.aggregate({
+                where: { contentId: review.contentId, isHidden: false, status: 'APPROVED', rating: { not: null } },
+                _avg: { rating: true },
+                _count: true,
+            });
+            await prisma_1.prisma.content.update({
+                where: { id: review.contentId },
+                data: { rating: avg._avg.rating || 0, reviewCount: avg._count },
+            });
+        }
+        (0, api_response_1.ok)(res, { deleted: true });
     }
     catch (err) {
         next(err);

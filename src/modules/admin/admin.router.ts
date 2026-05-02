@@ -133,3 +133,95 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
     ok(res, videos);
   } catch (err) { next(err); }
 }) as RequestHandler);
+// ─── Watch History ─────────────────────────────────────────────────────────────
+
+adminRouter.get('/history', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const search = req.query.search as string | undefined;
+    
+    // Dynamically import HistoryService to avoid circular dependencies
+    const { HistoryService } = await import('../history/history.service');
+    const results = await HistoryService.getGlobalHistory(page, limit, search);
+    
+    ok(res, results);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+// ─── Comments & Reviews Moderation ───────────────────────────────────────────
+
+adminRouter.get('/reviews', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const status = req.query.status as string | undefined;
+
+    const where: any = {};
+    if (status) where.status = status;
+
+    const [reviews, total] = await Promise.all([
+      prisma.review.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          profile: { select: { id: true, name: true } },
+          content: { select: { id: true, slug: true, type: true } },
+        },
+      }),
+      prisma.review.count({ where }),
+    ]);
+
+    ok(res, { reviews, total, page, limit });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+adminRouter.put('/reviews/:id/status', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { status } = req.body;
+    const review = await prisma.review.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+
+    // Re-calculate average if status changes to/from APPROVED
+    if (!review.parentId) {
+      const avg = await prisma.review.aggregate({
+        where: { contentId: review.contentId, isHidden: false, status: 'APPROVED', rating: { not: null } },
+        _avg: { rating: true },
+        _count: true,
+      });
+      await prisma.content.update({
+        where: { id: review.contentId },
+        data: { rating: avg._avg.rating || 0, reviewCount: avg._count },
+      });
+    }
+
+    ok(res, review);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+adminRouter.delete('/reviews/:id', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const review = await prisma.review.findUnique({ where: { id: req.params.id } });
+    if (!review) { res.status(404).json({ success: false, error: 'Review not found' }); return; }
+
+    await prisma.review.delete({ where: { id: req.params.id } });
+
+    if (!review.parentId) {
+      const avg = await prisma.review.aggregate({
+        where: { contentId: review.contentId, isHidden: false, status: 'APPROVED', rating: { not: null } },
+        _avg: { rating: true },
+        _count: true,
+      });
+      await prisma.content.update({
+        where: { id: review.contentId },
+        data: { rating: avg._avg.rating || 0, reviewCount: avg._count },
+      });
+    }
+
+    ok(res, { deleted: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);

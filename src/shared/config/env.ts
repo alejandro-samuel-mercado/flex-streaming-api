@@ -20,6 +20,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   TMDB_API_KEY: z.string().optional(),
+  TMDB_ACCESS_TOKEN: z.string().optional(),
   TMDB_BASE_URL: z.string().default('https://api.themoviedb.org/3'),
   UPLOAD_DIR: z.string().default('./uploads'),
   MAX_FILE_SIZE_MB: z.coerce.number().default(2048),

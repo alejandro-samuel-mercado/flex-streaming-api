@@ -119,6 +119,7 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                 email: true,
                 name: true,
                 role: true,
+                credits: true,
                 preferredLang: true,
                 createdAt: true,
                 profiles: {

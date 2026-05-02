@@ -53,6 +53,8 @@ export declare function findOrCreateGoogleUser(googleProfile: {
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        credits: number;
+        parentId: string | null;
     };
     accessToken: string;
     refreshToken: string;

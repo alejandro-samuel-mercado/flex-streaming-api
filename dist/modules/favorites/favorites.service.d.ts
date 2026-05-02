@@ -27,5 +27,8 @@ export declare class FavoritesService {
             }[];
         }[];
     }>;
+    static syncFavorites(profileId: string, contentIds: string[]): Promise<{
+        synced: number;
+    }>;
 }
 //# sourceMappingURL=favorites.service.d.ts.map

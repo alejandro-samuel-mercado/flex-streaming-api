@@ -1,11 +1,13 @@
 import { Router, RequestHandler } from 'express';
 import { ContentService } from './content.service';
-import { authenticate, requireRole, AuthenticatedRequest } from '../../shared/middleware/auth.middleware';
+import { authenticate, requireRole, AuthenticatedRequest, optionalAuth } from '../../shared/middleware/auth.middleware';
 import { ok, created, paginate } from '../../shared/utils/api-response';
 import { cacheMiddleware } from '../../shared/middleware/cache.middleware';
+import { redis } from '../../shared/config/redis';
 import { z } from 'zod';
 
 export const contentRouter = Router();
+console.log('🚀 [ContentRouter] Router loaded and routes defined');
 
 const ContentFiltersSchema = z.object({
   page: z.coerce.number().min(1).default(1),
@@ -58,16 +60,45 @@ contentRouter.get('/', (async (req, res, next) => {
   } catch (err) { next(err); }
 }) as RequestHandler);
 
-contentRouter.get('/:id', cacheMiddleware('contentDetail'), (async (req, res, next) => {
+contentRouter.get('/:id', optionalAuth as RequestHandler, (async (req, res, next) => {
+
   try {
+    const isAdmin = (req as any).user?.role === 'ADMIN';
     const lang = (req.query.lang as string) || 'es';
+
+    // 1. Manual cache check for guests
+    if (!isAdmin) {
+      const key = `cache:${req.originalUrl}`;
+      try {
+        const cached = await redis.get(key);
+        if (cached) {
+          res.setHeader('X-Cache', 'HIT');
+          res.json(JSON.parse(cached));
+          return;
+        }
+      } catch (err) {
+        console.error('[Cache Error] Redis fail:', err);
+      }
+    }
+
+    // 2. Fetch from DB
     const data = await ContentService.getContentById(req.params.id, lang);
     if (!data) {
       res.status(404).json({ success: false, error: 'Content not found' });
       return;
     }
+
+    // 3. Cache the result for guests
+    if (!isAdmin) {
+      const key = `cache:${req.originalUrl}`;
+      redis.setex(key, 600, JSON.stringify(data)).catch(() => {});
+      res.setHeader('X-Cache', 'MISS');
+    }
+
     ok(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 }) as RequestHandler);
 
 contentRouter.get('/:id/related', cacheMiddleware('catalog'), (async (req, res, next) => {
@@ -95,6 +126,9 @@ contentRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') a
 
 contentRouter.delete('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
+    const { invalidateCache } = await import('../../shared/middleware/cache.middleware');
+    await invalidateCache(`*/content/${req.params.id}*`);
+    await invalidateCache(`*catalog*`);
     await ContentService.deleteContent(req.params.id);
     ok(res, { deleted: true });
   } catch (err) { next(err); }

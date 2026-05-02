@@ -41,6 +41,11 @@ import { uploadRouter } from './modules/upload/upload.router';
 import { platformsRouter } from './modules/platforms/platforms.router';
 import { plansRouter } from './modules/plans/plans.router';
 import { homepageRouter } from './modules/homepage/homepage.router';
+import { resellerRouter } from './modules/reseller/reseller.router';
+import { subscriptionPlansRouter } from './modules/subscription-plans/subscription-plans.router';
+import { creditPackagesRouter } from './modules/credit-packages/credit-packages.router';
+import { endUsersRouter } from './modules/end-users/end-users.router';
+import { tmdbRouter } from './modules/admin/tmdb.router';
 
 const app = express();
 app.use((_req, _res, next) => {
@@ -124,6 +129,7 @@ const apiLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/content', apiLimiter, contentRouter);
+app.get('/api/content-debug', (req, res) => res.json({ debug: true }));
 app.use('/api/categories', categoriesRouter);
 app.use('/api/actors', actorsRouter);
 app.use('/api/search', apiLimiter, searchRouter);
@@ -132,10 +138,15 @@ app.use('/api/favorites', favoritesRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/tmdb', tmdbRouter);
 app.use('/api/upload', uploadLimiter, authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, uploadRouter);
 app.use('/api/platforms', platformsRouter);
 app.use('/api/plans', plansRouter);
 app.use('/api/homepage', homepageRouter);
+app.use('/api/reseller', apiLimiter, resellerRouter);
+app.use('/api/subscription-plans', apiLimiter, subscriptionPlansRouter);
+app.use('/api/credit-packages', apiLimiter, creditPackagesRouter);
+app.use('/api/end-users', apiLimiter, endUsersRouter);
 
 // Health check
 app.get('/health', (_req, res) => {

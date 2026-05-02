@@ -46,4 +46,26 @@ export class FavoritesService {
       data: favorites.map((f) => f.content),
     };
   }
+
+  static async syncFavorites(profileId: string, contentIds: string[]) {
+    if (!contentIds || contentIds.length === 0) return { synced: 0 };
+
+    // Get existing favorites to avoid duplicates
+    const existing = await prisma.favorite.findMany({
+      where: { profileId, contentId: { in: contentIds } },
+      select: { contentId: true }
+    });
+    
+    const existingIds = new Set(existing.map(f => f.contentId));
+    const newIds = contentIds.filter(id => !existingIds.has(id));
+
+    if (newIds.length === 0) return { synced: 0 };
+
+    await prisma.favorite.createMany({
+      data: newIds.map(contentId => ({ profileId, contentId })),
+      skipDuplicates: true,
+    });
+
+    return { synced: newIds.length };
+  }
 }

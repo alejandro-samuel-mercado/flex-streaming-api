@@ -71,3 +71,21 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
 
   next();
 }
+
+export function requireAnyRole(...roles: UserRole[]) {
+  return (req: AuthenticatedRequest, _res: Response, next: NextFunction): void => {
+    if (!req.user) {
+      next(new AppError(401, 'Authentication required', 'UNAUTHORIZED'));
+      return;
+    }
+    if (!roles.includes(req.user.role)) {
+      next(new AppError(403, 'Insufficient permissions', 'FORBIDDEN'));
+      return;
+    }
+    next();
+  };
+}
+
+export const requireAdmin = requireRole('ADMIN');
+export const requireSuperVendorOrAbove = requireAnyRole('ADMIN', 'SUPER_VENDOR');
+export const requireVendorOrAbove = requireAnyRole('ADMIN', 'SUPER_VENDOR', 'VENDOR');

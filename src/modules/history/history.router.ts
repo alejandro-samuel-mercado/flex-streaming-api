@@ -32,6 +32,30 @@ historyRouter.get('/continue', (async (req: AuthenticatedRequest, res, next) => 
   } catch (err) { next(err); }
 }) as RequestHandler);
 
+historyRouter.get('/:contentId', (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const profileId = req.headers['x-profile-id'] as string;
+    if (!profileId) {
+      res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+      return;
+    }
+    const episodeId = req.query.episodeId as string | undefined;
+    
+    const { prisma } = await import('../../shared/config/prisma');
+    const result = await prisma.watchHistory.findUnique({
+      where: {
+        profileId_contentId_episodeId: {
+          profileId,
+          contentId: req.params.contentId,
+          episodeId: episodeId || '',
+        }
+      }
+    });
+    
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
 historyRouter.post('/progress', (async (req: AuthenticatedRequest, res, next) => {
   try {
     const profileId = req.headers['x-profile-id'] as string;

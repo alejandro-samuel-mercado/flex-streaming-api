@@ -10,7 +10,11 @@ const path_1 = __importDefault(require("path"));
 const env_1 = require("../../shared/config/env");
 const queue_service_1 = require("../../services/queue.service");
 const prisma_1 = require("../../shared/config/prisma");
+const chunk_upload_service_1 = require("../../services/chunk-upload.service");
+const sharp_1 = __importDefault(require("sharp"));
+const fs_1 = __importDefault(require("fs"));
 exports.uploadRouter = (0, express_1.Router)();
+console.log('📂 [UploadRouter] Initializing...');
 const storage = multer_1.default.diskStorage({
     destination: (_req, _file, cb) => {
         cb(null, env_1.env.UPLOAD_DIR);
@@ -22,7 +26,7 @@ const storage = multer_1.default.diskStorage({
 });
 const upload = (0, multer_1.default)({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 * 1024 }, // 5GB limit
+    limits: { fileSize: 20 * 1024 * 1024 * 1024 }, // 20GB limit
     fileFilter: (_req, file, cb) => {
         const allowed = ['video/mp4', 'video/x-matroska', 'video/webm'];
         if (allowed.includes(file.mimetype)) {
@@ -33,36 +37,284 @@ const upload = (0, multer_1.default)({
         }
     }
 });
-exports.uploadRouter.post('/', upload.single('video'), async (req, res, next) => {
+const imageUpload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit for images
+    fileFilter: (_req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        if (allowed.includes(file.mimetype)) {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Invalid image type. Only JPG, PNG and WEBP are allowed.'));
+        }
+    }
+});
+const chunkUpload = (0, multer_1.default)({
+    storage: multer_1.default.memoryStorage(),
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB per chunk max
+});
+const subtitleUpload = (0, multer_1.default)({
+    storage: multer_1.default.diskStorage({
+        destination: (_req, _file, cb) => {
+            const dir = path_1.default.join(env_1.env.MEDIA_PATH, 'subtitles');
+            if (!fs_1.default.existsSync(dir))
+                fs_1.default.mkdirSync(dir, { recursive: true });
+            cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+            cb(null, `sub-${Date.now()}${path_1.default.extname(file.originalname)}`);
+        }
+    }),
+    fileFilter: (_req, file, cb) => {
+        const allowed = ['.vtt', '.srt'];
+        if (allowed.includes(path_1.default.extname(file.originalname).toLowerCase())) {
+            cb(null, true);
+        }
+        else {
+            cb(new Error('Invalid subtitle type. Only .VTT and .SRT are allowed.'));
+        }
+    }
+});
+exports.uploadRouter.post('/subtitle', subtitleUpload.single('subtitle'), (async (req, res, next) => {
     try {
         const file = req.file;
-        const { contentId, seasonId, episodeId } = req.body;
+        const { videoFileId, language, label } = req.body;
+        if (!file || !videoFileId || !language) {
+            res.status(400).json({ success: false, error: 'Subtitle file, videoFileId and language are required' });
+            return;
+        }
+        const subtitleUrl = `/media/subtitles/${file.filename}`;
+        const subtitle = await prisma_1.prisma.subtitleTrack.create({
+            data: {
+                videoFileId,
+                language,
+                label: label || language,
+                url: subtitleUrl,
+                format: path_1.default.extname(file.originalname).replace('.', '').toUpperCase()
+            }
+        });
+        res.json({ success: true, data: subtitle });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.uploadRouter.post('/image', (_req, _res, next) => {
+    console.log('📸 [UploadRouter] POST /image request received');
+    next();
+}, imageUpload.single('image'), (async (req, res, next) => {
+    try {
+        const file = req.file;
+        const { contentId, type } = req.body; // type: 'POSTER' | 'BACKDROP'
+        if (!file || !contentId || !type) {
+            res.status(400).json({ success: false, error: 'File, contentId and type are required' });
+            return;
+        }
+        const folder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', contentId);
+        if (!fs_1.default.existsSync(folder)) {
+            fs_1.default.mkdirSync(folder, { recursive: true });
+        }
+        const filename = `${type.toLowerCase()}-${Date.now()}.webp`;
+        const fullPath = path_1.default.join(folder, filename);
+        // Process with sharp (convert to webp and resize)
+        const sharpInstance = (0, sharp_1.default)(file.buffer);
+        if (type === 'POSTER') {
+            sharpInstance.resize(600, 900, { fit: 'cover', position: 'center' });
+        }
+        else if (type === 'BACKDROP') {
+            sharpInstance.resize(1920, 1080, { fit: 'cover', position: 'center' });
+        }
+        await sharpInstance.webp({ quality: 85 }).toFile(fullPath);
+        const imageUrl = `/media/thumbnails/${contentId}/${filename}`;
+        // Update DB
+        const existing = await prisma_1.prisma.thumbnail.findFirst({
+            where: {
+                contentId: contentId,
+                type: type
+            }
+        });
+        if (existing) {
+            await prisma_1.prisma.thumbnail.update({
+                where: { id: existing.id },
+                data: { url: imageUrl }
+            });
+        }
+        else {
+            await prisma_1.prisma.thumbnail.create({
+                data: {
+                    contentId,
+                    type: type,
+                    url: imageUrl,
+                    width: type === 'POSTER' ? 600 : 1920,
+                    height: type === 'POSTER' ? 900 : 1080
+                }
+            });
+        }
+        res.json({ success: true, url: imageUrl });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+exports.uploadRouter.post('/', upload.single('video'), (async (req, res, next) => {
+    try {
+        const file = req.file;
+        const { contentId, seasonId, episodeId, type } = req.body;
         if (!file) {
-            return res.status(400).json({ success: false, error: 'No video file provided' });
+            res.status(400).json({ success: false, error: 'No video file provided' });
+            return;
         }
         if (!contentId) {
-            return res.status(400).json({ success: false, error: 'contentId is required' });
+            res.status(400).json({ success: false, error: 'contentId is required' });
+            return;
         }
-        // Ensure content exists
         const content = await prisma_1.prisma.content.findUnique({ where: { id: contentId } });
         if (!content) {
-            return res.status(404).json({ success: false, error: 'Content not found' });
+            res.status(404).json({ success: false, error: 'Content not found' });
+            return;
         }
-        // Add job to BullMQ
+        // NEW: Check if video of this type already exists
+        const videoType = type || 'MOVIE';
+        const existingVideo = await prisma_1.prisma.videoFile.findFirst({
+            where: {
+                contentId,
+                type: videoType,
+                episodeId: episodeId || null,
+                status: { not: 'FAILED' }
+            }
+        });
+        if (existingVideo) {
+            res.status(400).json({
+                success: false,
+                error: `Este contenido ya tiene un video de tipo ${videoType}. Elimínalo primero si deseas subir uno nuevo.`
+            });
+            return;
+        }
+        // 1. Create VideoFile record first (prevent duplicates in UI)
+        const videoFile = await prisma_1.prisma.videoFile.create({
+            data: {
+                contentId,
+                episodeId: episodeId || null,
+                type: type || 'MOVIE',
+                originalPath: file.path,
+                status: 'QUEUED'
+            }
+        });
+        // 2. Add job to BullMQ
         const job = await (0, queue_service_1.addVideoJob)({
+            videoFileId: videoFile.id,
             contentId,
+            type: videoFile.type,
             seasonId: seasonId || undefined,
             episodeId: episodeId || undefined,
             videoPath: file.path,
         });
-        return res.status(200).json({
+        // 3. Update record with job ID
+        await prisma_1.prisma.videoFile.update({
+            where: { id: videoFile.id },
+            data: { processingJobId: job.id }
+        });
+        res.status(200).json({
             success: true,
             message: 'Video upload completed and enqueued for processing',
-            jobId: job.id
+            jobId: job.id,
+            videoFileId: videoFile.id
         });
+    }
+    catch (error) {
+        next(error);
+    }
+}));
+exports.uploadRouter.delete('/video/:id', async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        await prisma_1.prisma.videoFile.delete({ where: { id } });
+        return res.json({ success: true, message: 'Video deleted' });
     }
     catch (error) {
         return next(error);
     }
 });
+/**
+ * POST /api/upload/chunk
+ */
+exports.uploadRouter.post('/chunk', chunkUpload.single('chunk'), (async (req, res, next) => {
+    try {
+        const { fileId, chunkIndex } = req.body;
+        const file = req.file;
+        if (!file || !fileId || chunkIndex === undefined) {
+            res.status(400).json({ success: false, error: 'Missing chunk data' });
+            return;
+        }
+        await chunk_upload_service_1.ChunkUploadService.saveChunk(fileId, parseInt(chunkIndex), file.buffer);
+        res.json({ success: true, message: `Chunk ${chunkIndex} saved` });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+/**
+ * POST /api/upload/complete
+ */
+exports.uploadRouter.post('/complete', (async (req, res, next) => {
+    try {
+        const { fileId, fileName, totalChunks, contentId, seasonId, episodeId, type } = req.body;
+        if (!fileId || !fileName || !totalChunks || !contentId) {
+            res.status(400).json({ success: false, error: 'Missing data for completion' });
+            return;
+        }
+        // NEW: Check if video of this type already exists (Chunked)
+        const videoType = type || 'MOVIE';
+        const existingVideo = await prisma_1.prisma.videoFile.findFirst({
+            where: {
+                contentId,
+                type: videoType,
+                episodeId: episodeId || null,
+                status: { not: 'FAILED' }
+            }
+        });
+        if (existingVideo) {
+            res.status(400).json({
+                success: false,
+                error: `Este contenido ya tiene un video de tipo ${videoType}. Elimínalo primero si deseas subir uno nuevo.`
+            });
+            return;
+        }
+        // 1. Merge chunks
+        const finalPath = await chunk_upload_service_1.ChunkUploadService.mergeChunks(fileId, fileName, parseInt(totalChunks));
+        // 2. Create VideoFile record
+        const videoFile = await prisma_1.prisma.videoFile.create({
+            data: {
+                contentId,
+                episodeId: episodeId || null,
+                type: type || 'MOVIE',
+                originalPath: finalPath,
+                status: 'QUEUED'
+            }
+        });
+        // 3. Add job to BullMQ
+        const job = await (0, queue_service_1.addVideoJob)({
+            videoFileId: videoFile.id,
+            contentId,
+            type: videoFile.type,
+            seasonId: seasonId || undefined,
+            episodeId: episodeId || undefined,
+            videoPath: finalPath,
+        });
+        await prisma_1.prisma.videoFile.update({
+            where: { id: videoFile.id },
+            data: { processingJobId: job.id }
+        });
+        res.json({
+            success: true,
+            message: 'File merged and enqueued',
+            videoFileId: videoFile.id,
+            jobId: job.id
+        });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 //# sourceMappingURL=upload.router.js.map

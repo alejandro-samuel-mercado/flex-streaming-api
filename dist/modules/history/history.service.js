@@ -64,6 +64,42 @@ class HistoryService {
             take: limit,
         });
     }
+    static async getGlobalHistory(page = 1, limit = 20) {
+        const skip = (page - 1) * limit;
+        const [total, history] = await Promise.all([
+            prisma_1.prisma.watchHistory.count(),
+            prisma_1.prisma.watchHistory.findMany({
+                include: {
+                    profile: {
+                        select: {
+                            id: true,
+                            name: true,
+                            user: { select: { email: true, name: true, role: true } }
+                        }
+                    },
+                    content: {
+                        select: {
+                            id: true,
+                            type: true,
+                            slug: true,
+                            translations: { select: { language: true, title: true } },
+                        },
+                    },
+                    episode: {
+                        select: {
+                            id: true,
+                            number: true,
+                            translations: { select: { language: true, title: true } },
+                        },
+                    },
+                },
+                orderBy: { updatedAt: 'desc' },
+                skip,
+                take: limit,
+            }),
+        ]);
+        return { total, pages: Math.ceil(total / limit), data: history };
+    }
 }
 exports.HistoryService = HistoryService;
 //# sourceMappingURL=history.service.js.map

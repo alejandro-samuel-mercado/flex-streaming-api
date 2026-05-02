@@ -13,6 +13,7 @@ export const videoQueueEvents = new QueueEvents('video-processing', { connection
 export async function addVideoJob(jobData: {
   videoFileId: string;
   contentId: string;
+  type?: string;
   seasonId?: string;
   episodeId?: string;
   videoPath: string;
@@ -25,4 +26,19 @@ export async function addVideoJob(jobData: {
     },
     removeOnComplete: true,
   });
+}
+
+export async function removeVideoJob(jobId: string) {
+  try {
+    const job = await videoQueue.getJob(jobId);
+    if (job) {
+      await job.remove();
+      return true;
+    }
+  } catch (err: any) {
+    console.warn(`⚠️ [Queue] Could not remove locked job ${jobId}: ${err.message}`);
+    // If it's locked, it's already processing. 
+    // The worker will fail when it tries to update the (now deleted) DB record.
+  }
+  return false;
 }

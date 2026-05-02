@@ -29,5 +29,6 @@ export declare const env: {
     SMTP_PASS?: string | undefined;
     SMTP_FROM?: string | undefined;
     TMDB_API_KEY?: string | undefined;
+    TMDB_ACCESS_TOKEN?: string | undefined;
 };
 //# sourceMappingURL=env.d.ts.map

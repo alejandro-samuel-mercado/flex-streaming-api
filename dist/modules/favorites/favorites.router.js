@@ -42,4 +42,23 @@ exports.favoritesRouter.post('/toggle', (async (req, res, next) => {
         next(err);
     }
 }));
+exports.favoritesRouter.post('/sync', (async (req, res, next) => {
+    try {
+        const profileId = req.headers['x-profile-id'];
+        if (!profileId) {
+            res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+            return;
+        }
+        const { contentIds } = req.body;
+        if (!Array.isArray(contentIds)) {
+            res.status(400).json({ success: false, error: 'contentIds must be an array' });
+            return;
+        }
+        const result = await favorites_service_1.FavoritesService.syncFavorites(profileId, contentIds);
+        (0, api_response_1.ok)(res, result);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 //# sourceMappingURL=favorites.router.js.map

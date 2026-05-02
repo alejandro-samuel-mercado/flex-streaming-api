@@ -9,13 +9,23 @@ export declare class ContentService {
         genreId?: string;
         tagId?: string;
         actorId?: string;
-        year?: number;
+        platformId?: string;
+        isFree?: boolean;
+        minYear?: number;
+        maxYear?: number;
+        minDuration?: number;
+        maxDuration?: number;
         sort: string;
         lang: string;
     }): Promise<{
         data: {
             type: import(".prisma/client").$Enums.ContentType;
             status: import(".prisma/client").$Enums.ContentStatus;
+            platform: {
+                id: string;
+                name: string;
+                logoUrl: string | null;
+            } | null;
             ageRating: {
                 code: string;
                 id: string;
@@ -36,6 +46,9 @@ export declare class ContentService {
                 title: string;
                 description: string;
                 tagline: string | null;
+            }[];
+            videoFiles: {
+                status: import(".prisma/client").$Enums.ProcessingStatus;
             }[];
             genres: ({
                 genre: {
@@ -62,6 +75,15 @@ export declare class ContentService {
         limit: number;
     }>;
     static getContentById(id: string, lang?: string): Promise<({
+        platform: {
+            id: string;
+            name: string;
+            createdAt: Date;
+            updatedAt: Date;
+            slug: string;
+            logoUrl: string | null;
+            isFeatured: boolean;
+        } | null;
         ageRating: {
             code: string;
             id: string;
@@ -110,6 +132,7 @@ export declare class ContentService {
                 isForced: boolean;
             }[];
         } & {
+            type: import(".prisma/client").$Enums.VideoFileType;
             status: import(".prisma/client").$Enums.ProcessingStatus;
             id: string;
             createdAt: Date;
@@ -152,6 +175,7 @@ export declare class ContentService {
                         codec: string;
                     }[];
                 } & {
+                    type: import(".prisma/client").$Enums.VideoFileType;
                     status: import(".prisma/client").$Enums.ProcessingStatus;
                     id: string;
                     createdAt: Date;
@@ -234,9 +258,9 @@ export declare class ContentService {
             };
         } & {
             contentId: string;
-            actorId: string;
             order: number;
             character: string | null;
+            actorId: string;
         })[];
         directors: ({
             director: {
@@ -305,6 +329,9 @@ export declare class ContentService {
             description: string;
             tagline: string | null;
         }[];
+        videoFiles: {
+            status: import(".prisma/client").$Enums.ProcessingStatus;
+        }[];
         genres: ({
             genre: {
                 id: string;
@@ -348,6 +375,9 @@ export declare class ContentService {
             title: string;
             description: string;
             tagline: string | null;
+        }[];
+        videoFiles: {
+            status: import(".prisma/client").$Enums.ProcessingStatus;
         }[];
         genres: ({
             genre: {
@@ -393,6 +423,9 @@ export declare class ContentService {
             description: string;
             tagline: string | null;
         }[];
+        videoFiles: {
+            status: import(".prisma/client").$Enums.ProcessingStatus;
+        }[];
         genres: ({
             genre: {
                 id: string;
@@ -436,6 +469,9 @@ export declare class ContentService {
             title: string;
             description: string;
             tagline: string | null;
+        }[];
+        videoFiles: {
+            status: import(".prisma/client").$Enums.ProcessingStatus;
         }[];
         genres: ({
             genre: {
@@ -485,6 +521,106 @@ export declare class ContentService {
         ageRatingId: string | null;
     }>;
     static updateContent(id: string, data: Record<string, unknown>): Promise<{
+        translations: {
+            id: string;
+            language: string;
+            contentId: string;
+            title: string;
+            description: string;
+            tagline: string | null;
+        }[];
+        videoFiles: ({
+            qualities: {
+                id: string;
+                width: number;
+                height: number;
+                videoFileId: string;
+                resolution: string;
+                bitrate: number;
+                playlistUrl: string;
+                codec: string;
+            }[];
+        } & {
+            type: import(".prisma/client").$Enums.VideoFileType;
+            status: import(".prisma/client").$Enums.ProcessingStatus;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            duration: number | null;
+            contentId: string | null;
+            episodeId: string | null;
+            originalPath: string;
+            hlsPath: string | null;
+            masterPlaylist: string | null;
+            fileSize: bigint | null;
+            errorMessage: string | null;
+            processingJobId: string | null;
+        })[];
+        genres: ({
+            genre: {
+                id: string;
+                name: string;
+                slug: string;
+                icon: string | null;
+            };
+        } & {
+            contentId: string;
+            genreId: string;
+        })[];
+        tags: ({
+            tag: {
+                id: string;
+                name: string;
+                slug: string;
+            };
+        } & {
+            contentId: string;
+            tagId: string;
+        })[];
+        thumbnails: {
+            type: import(".prisma/client").$Enums.ThumbnailType;
+            id: string;
+            contentId: string | null;
+            episodeId: string | null;
+            url: string;
+            width: number | null;
+            height: number | null;
+        }[];
+        actors: ({
+            actor: {
+                id: string;
+                name: string;
+                createdAt: Date;
+                updatedAt: Date;
+                photoUrl: string | null;
+                birthDate: Date | null;
+                nationality: string | null;
+                biography: string | null;
+                tmdbId: string | null;
+            };
+        } & {
+            contentId: string;
+            order: number;
+            character: string | null;
+            actorId: string;
+        })[];
+        directors: ({
+            director: {
+                id: string;
+                name: string;
+                createdAt: Date;
+                updatedAt: Date;
+                photoUrl: string | null;
+                birthDate: Date | null;
+                nationality: string | null;
+                biography: string | null;
+                tmdbId: string | null;
+            };
+        } & {
+            contentId: string;
+            directorId: string;
+        })[];
+    } & {
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
         id: string;

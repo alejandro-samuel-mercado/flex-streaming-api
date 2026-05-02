@@ -9,10 +9,11 @@ const zod_1 = require("zod");
 exports.reviewsRouter = (0, express_1.Router)();
 const CreateReviewSchema = zod_1.z.object({
     contentId: zod_1.z.string(),
-    rating: zod_1.z.number().min(1).max(10),
+    rating: zod_1.z.number().min(1).max(10).nullable().optional(),
     title: zod_1.z.string().optional(),
     body: zod_1.z.string().optional(),
     language: zod_1.z.string().default('es'),
+    parentId: zod_1.z.string().optional()
 });
 // Get reviews for a content item (public)
 exports.reviewsRouter.get('/content/:contentId', (async (req, res, next) => {
@@ -20,8 +21,15 @@ exports.reviewsRouter.get('/content/:contentId', (async (req, res, next) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const reviews = await prisma_1.prisma.review.findMany({
-            where: { contentId: req.params.contentId, isHidden: false },
-            include: { profile: { select: { id: true, name: true, avatar: true } } },
+            where: { contentId: req.params.contentId, isHidden: false, status: 'APPROVED', parentId: null },
+            include: {
+                profile: { select: { id: true, name: true, avatar: true } },
+                replies: {
+                    where: { isHidden: false, status: 'APPROVED' },
+                    include: { profile: { select: { id: true, name: true, avatar: true } } },
+                    orderBy: { createdAt: 'asc' }
+                }
+            },
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
             take: limit,
@@ -41,21 +49,44 @@ exports.reviewsRouter.post('/', auth_middleware_1.authenticate, (async (req, res
             return;
         }
         const input = CreateReviewSchema.parse(req.body);
-        const review = await prisma_1.prisma.review.upsert({
-            where: { profileId_contentId: { profileId, contentId: input.contentId } },
-            update: { rating: input.rating, title: input.title, body: input.body },
-            create: { profileId, ...input },
-        });
-        // Update content average rating
-        const avg = await prisma_1.prisma.review.aggregate({
-            where: { contentId: input.contentId, isHidden: false },
-            _avg: { rating: true },
-            _count: true,
-        });
-        await prisma_1.prisma.content.update({
-            where: { id: input.contentId },
-            data: { rating: avg._avg.rating, reviewCount: avg._count },
-        });
+        const parentId = input.parentId || null;
+        const config = await prisma_1.prisma.siteConfig.findUnique({ where: { key: 'COMMENTS_REQUIRE_MODERATION' } });
+        const requireModeration = config?.value === 'true';
+        const status = requireModeration ? 'PENDING' : 'APPROVED';
+        let review;
+        if (parentId === null) {
+            const existing = await prisma_1.prisma.review.findFirst({
+                where: { profileId, contentId: input.contentId, parentId: null }
+            });
+            if (existing) {
+                review = await prisma_1.prisma.review.update({
+                    where: { id: existing.id },
+                    data: { rating: input.rating, title: input.title, body: input.body, status }
+                });
+            }
+            else {
+                review = await prisma_1.prisma.review.create({
+                    data: { profileId, status, ...input, parentId: null }
+                });
+            }
+        }
+        else {
+            review = await prisma_1.prisma.review.create({
+                data: { profileId, status, ...input, parentId }
+            });
+        }
+        // Update content average rating only for top-level reviews with rating
+        if (!parentId && input.rating) {
+            const avg = await prisma_1.prisma.review.aggregate({
+                where: { contentId: input.contentId, isHidden: false, status: 'APPROVED', rating: { not: null } },
+                _avg: { rating: true },
+                _count: true,
+            });
+            await prisma_1.prisma.content.update({
+                where: { id: input.contentId },
+                data: { rating: avg._avg.rating || 0, reviewCount: avg._count },
+            });
+        }
         (0, api_response_1.created)(res, review);
     }
     catch (err) {

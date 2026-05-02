@@ -84,5 +84,47 @@ export declare class HistoryService {
         completed: boolean;
         watchedAt: Date;
     })[]>;
+    static getGlobalHistory(page?: number, limit?: number): Promise<{
+        total: number;
+        pages: number;
+        data: ({
+            profile: {
+                user: {
+                    email: string;
+                    role: import(".prisma/client").$Enums.UserRole;
+                    name: string | null;
+                };
+                id: string;
+                name: string;
+            };
+            content: {
+                type: import(".prisma/client").$Enums.ContentType;
+                id: string;
+                slug: string;
+                translations: {
+                    language: string;
+                    title: string;
+                }[];
+            } | null;
+            episode: {
+                number: number;
+                id: string;
+                translations: {
+                    language: string;
+                    title: string;
+                }[];
+            } | null;
+        } & {
+            id: string;
+            updatedAt: Date;
+            duration: number | null;
+            contentId: string | null;
+            episodeId: string | null;
+            profileId: string;
+            progress: number;
+            completed: boolean;
+            watchedAt: Date;
+        })[];
+    }>;
 }
 //# sourceMappingURL=history.service.d.ts.map

@@ -24,6 +24,7 @@ const envSchema = zod_1.z.object({
     SMTP_PASS: zod_1.z.string().optional(),
     SMTP_FROM: zod_1.z.string().optional(),
     TMDB_API_KEY: zod_1.z.string().optional(),
+    TMDB_ACCESS_TOKEN: zod_1.z.string().optional(),
     TMDB_BASE_URL: zod_1.z.string().default('https://api.themoviedb.org/3'),
     UPLOAD_DIR: zod_1.z.string().default('./uploads'),
     MAX_FILE_SIZE_MB: zod_1.z.coerce.number().default(2048),

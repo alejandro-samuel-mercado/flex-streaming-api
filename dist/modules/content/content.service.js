@@ -1,7 +1,14 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContentService = void 0;
 const prisma_1 = require("../../shared/config/prisma");
+const tmdb_service_1 = require("../../services/tmdb.service");
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const env_1 = require("../../shared/config/env");
 const CONTENT_LIST_SELECT = {
     id: true,
     type: true,
@@ -19,35 +26,62 @@ const CONTENT_LIST_SELECT = {
     thumbnails: { where: { type: 'POSTER' }, take: 1 },
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
     ageRating: { select: { id: true, code: true, label: true } },
+    videoFiles: { select: { status: true } },
 };
 class ContentService {
     static async getAllContent(filters) {
-        const { page, limit, search, type, status, genreId, tagId, actorId, year, sort } = filters;
+        const { page, limit, search, type, status, genreId, platformId, sort } = filters;
         const skip = (page - 1) * limit;
-        const where = {
-            deletedAt: null,
-            status: status || { in: ['READY', 'ACTIVE'] },
-        };
-        if (type)
-            where.type = type;
-        if (year)
-            where.releaseYear = year;
-        if (genreId)
-            where.genres = { some: { genreId } };
-        if (tagId)
-            where.tags = { some: { tagId } };
-        if (actorId)
-            where.actors = { some: { actorId } };
-        if (search) {
-            where.translations = { some: { title: { contains: search, mode: 'insensitive' } } };
+        // 1. Initialize an empty AND array
+        const conditions = [
+            { deletedAt: null }
+        ];
+        // 2. Status condition
+        if (status) {
+            conditions.push({ status: status });
         }
+        else {
+            conditions.push({ status: { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING', 'DRAFT'] } });
+        }
+        // 3. Type condition
+        if (type)
+            conditions.push({ type: type });
+        // 4. Platform filter - THE IMPORTANT ONE
+        if (platformId && platformId !== 'null' && platformId !== 'undefined' && platformId !== '') {
+            console.log(`[DEBUG] PLATFORM FILTER DETECTED: "${platformId}"`);
+            conditions.push({ platformId: platformId });
+        }
+        // 5. Genre filter
+        if (genreId)
+            conditions.push({ genres: { some: { genreId } } });
+        // 6. Search filter
+        if (search) {
+            conditions.push({
+                translations: { some: { title: { contains: search, mode: 'insensitive' } } }
+            });
+        }
+        // 7. Assemble the final where
+        const where = {
+            AND: conditions
+        };
+        console.log('[DEBUG] Final Prisma Where:', JSON.stringify(where, null, 2));
         const orderBy = sort === 'popular' ? { viewCount: 'desc' } :
             sort === 'rating' ? { rating: 'desc' } :
                 sort === 'az' ? { slug: 'asc' } :
                     sort === 'za' ? { slug: 'desc' } :
-                        { createdAt: 'desc' };
+                        sort === 'oldest' ? { createdAt: 'asc' } :
+                            { createdAt: 'desc' };
         const [data, total] = await Promise.all([
-            prisma_1.prisma.content.findMany({ where, skip, take: limit, orderBy, select: CONTENT_LIST_SELECT }),
+            prisma_1.prisma.content.findMany({
+                where,
+                skip,
+                take: limit,
+                orderBy,
+                select: {
+                    ...CONTENT_LIST_SELECT,
+                    platform: { select: { id: true, name: true, logoUrl: true } }
+                }
+            }),
             prisma_1.prisma.content.count({ where }),
         ]);
         return { data, total, page, limit };
@@ -57,8 +91,14 @@ class ContentService {
             where: { id, deletedAt: null },
             include: {
                 translations: { where: { language: { in: [lang, 'es'] } } },
+                genres: { include: { genre: true } },
+                tags: { include: { tag: true } },
+                actors: { include: { actor: true }, orderBy: { order: 'asc' } },
+                directors: { include: { director: true } },
+                platform: true,
+                ageRating: true,
+                thumbnails: true,
                 videoFiles: {
-                    where: { status: 'COMPLETED' },
                     include: { qualities: true, audioTracks: true, subtitleTracks: true },
                 },
                 seasons: {
@@ -75,12 +115,6 @@ class ContentService {
                     },
                     orderBy: { number: 'asc' },
                 },
-                thumbnails: true,
-                genres: { include: { genre: true } },
-                tags: { include: { tag: true } },
-                actors: { include: { actor: true }, orderBy: { order: 'asc' } },
-                directors: { include: { director: true } },
-                ageRating: true,
                 _count: { select: { reviews: true, watchHistory: true } },
             },
         });
@@ -130,38 +164,113 @@ class ContentService {
         });
     }
     static async createContent(data) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data;
-        return prisma_1.prisma.content.create({
+        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data;
+        // Generate slug if missing
+        if (!contentData.slug) {
+            const title = originalTitle || translations?.[0]?.title;
+            if (title) {
+                contentData.slug = title.toLowerCase()
+                    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+                    .replace(/[^a-z0-9]+/g, '-')
+                    .replace(/(^-|-$)/g, '');
+                // Add a small random suffix for uniqueness
+                contentData.slug += '-' + Math.random().toString(36).substring(2, 6);
+            }
+            else {
+                contentData.slug = 'content-' + Date.now();
+            }
+        }
+        // Map synopsis to description (schema uses description)
+        const processedTranslations = translations?.map((t) => ({
+            language: t.language,
+            title: t.title,
+            description: t.description || t.synopsis || '',
+            tagline: t.tagline
+        }));
+        const { posterPath, backdropPath, ...finalContentData } = contentData;
+        const content = await prisma_1.prisma.content.create({
             data: {
-                ...contentData,
-                translations: translations ? { create: translations } : undefined,
+                ...finalContentData,
+                translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id) => ({ genreId: id })) } : undefined,
                 tags: tagIds ? { create: tagIds.map((id) => ({ tagId: id })) } : undefined,
                 actors: actorIds ? { create: actorIds.map((id, idx) => ({ actorId: id, order: idx })) } : undefined,
                 directors: directorIds ? { create: directorIds.map((id) => ({ directorId: id })) } : undefined,
             },
         });
+        // ─── Post-Creation: TMDB Image Import ────────────────────────────────
+        if (posterPath || backdropPath) {
+            const mediaFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', content.id);
+            if (!fs_1.default.existsSync(mediaFolder))
+                fs_1.default.mkdirSync(mediaFolder, { recursive: true });
+            if (posterPath) {
+                const localPosterPath = path_1.default.join(mediaFolder, 'poster.jpg');
+                await tmdb_service_1.TMDBService.downloadImage(posterPath, localPosterPath);
+                await prisma_1.prisma.thumbnail.create({
+                    data: {
+                        contentId: content.id,
+                        type: 'POSTER',
+                        url: `/media/thumbnails/${content.id}/poster.jpg`
+                    }
+                });
+            }
+            if (backdropPath) {
+                const localBackdropPath = path_1.default.join(mediaFolder, 'backdrop.jpg');
+                await tmdb_service_1.TMDBService.downloadImage(backdropPath, localBackdropPath);
+                await prisma_1.prisma.thumbnail.create({
+                    data: {
+                        contentId: content.id,
+                        type: 'BACKDROP',
+                        url: `/media/thumbnails/${content.id}/backdrop.jpg`
+                    }
+                });
+            }
+        }
+        return content;
     }
     static async updateContent(id, data) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data;
-        const updateData = { ...contentData };
-        if (genreIds) {
-            await prisma_1.prisma.contentGenre.deleteMany({ where: { contentId: id } });
-            updateData.genres = { create: genreIds.map((gid) => ({ genreId: gid })) };
-        }
-        if (tagIds) {
-            await prisma_1.prisma.contentTag.deleteMany({ where: { contentId: id } });
-            updateData.tags = { create: tagIds.map((tid) => ({ tagId: tid })) };
-        }
-        if (actorIds) {
-            await prisma_1.prisma.contentActor.deleteMany({ where: { contentId: id } });
-            updateData.actors = { create: actorIds.map((aid, idx) => ({ actorId: aid, order: idx })) };
-        }
-        if (directorIds) {
-            await prisma_1.prisma.contentDirector.deleteMany({ where: { contentId: id } });
-            updateData.directors = { create: directorIds.map((did) => ({ directorId: did })) };
-        }
-        return prisma_1.prisma.content.update({ where: { id }, data: updateData });
+        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data;
+        const processedTranslations = translations?.map((t) => ({
+            language: t.language,
+            title: t.title,
+            description: t.description || t.synopsis || '',
+            tagline: t.tagline
+        }));
+        return prisma_1.prisma.content.update({
+            where: { id },
+            data: {
+                ...contentData,
+                translations: processedTranslations ? {
+                    deleteMany: {},
+                    create: processedTranslations
+                } : undefined,
+                genres: genreIds ? {
+                    deleteMany: {},
+                    create: genreIds.map((id) => ({ genreId: id }))
+                } : undefined,
+                tags: tagIds ? {
+                    deleteMany: {},
+                    create: tagIds.map((id) => ({ tagId: id }))
+                } : undefined,
+                actors: actorIds ? {
+                    deleteMany: {},
+                    create: actorIds.map((id, idx) => ({ actorId: id, order: idx }))
+                } : undefined,
+                directors: directorIds ? {
+                    deleteMany: {},
+                    create: directorIds.map((id) => ({ directorId: id }))
+                } : undefined,
+            },
+            include: {
+                translations: true,
+                genres: { include: { genre: true } },
+                tags: { include: { tag: true } },
+                actors: { include: { actor: true }, orderBy: { order: 'asc' } },
+                directors: { include: { director: true } },
+                thumbnails: true,
+                videoFiles: { include: { qualities: true } }
+            }
+        });
     }
     static async deleteContent(id) {
         return prisma_1.prisma.content.update({ where: { id }, data: { deletedAt: new Date() } });

@@ -21,6 +21,17 @@ class PlatformsService {
     static async create(data) {
         return prisma_1.prisma.platform.create({ data });
     }
+    static async update(id, data) {
+        return prisma_1.prisma.platform.update({
+            where: { id },
+            data,
+        });
+    }
+    static async delete(id) {
+        return prisma_1.prisma.platform.delete({
+            where: { id },
+        });
+    }
 }
 exports.PlatformsService = PlatformsService;
 //# sourceMappingURL=platforms.service.js.map

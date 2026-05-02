@@ -92,6 +92,7 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
         email: true,
         name: true,
         role: true,
+        credits: true,
         preferredLang: true,
         createdAt: true,
         profiles: {
