@@ -36,9 +36,15 @@ class ChunkUploadService {
             if (!fs_1.default.existsSync(chunkPath)) {
                 throw new Error(`Chunk ${i} missing for file ${fileId}`);
             }
-            const chunkBuffer = fs_1.default.readFileSync(chunkPath);
-            writeStream.write(chunkBuffer);
-            fs_1.default.unlinkSync(chunkPath); // Delete chunk after merge
+            await new Promise((resolve, reject) => {
+                const readStream = fs_1.default.createReadStream(chunkPath);
+                readStream.pipe(writeStream, { end: false });
+                readStream.on('end', () => {
+                    fs_1.default.unlinkSync(chunkPath);
+                    resolve(true);
+                });
+                readStream.on('error', reject);
+            });
         }
         writeStream.end();
         return new Promise((resolve, reject) => {

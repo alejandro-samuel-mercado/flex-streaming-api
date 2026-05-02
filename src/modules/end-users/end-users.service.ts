@@ -233,10 +233,10 @@ export class EndUsersService {
     }
 
     const now = new Date();
-    let newEndDate: Date;
+    let newEndDate: Date | null = null;
     let newType = account.type;
     let newStatus = account.status;
-    let newStartDate = account.startDate;
+    let newStartDate: Date | null = account.startDate;
     let creditsCost = 0;
 
     if (plan.isDemo) {
@@ -261,10 +261,17 @@ export class EndUsersService {
       newEndDate = new Date(base.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
 
       newType = 'FORMAL';
-      if (account.status === 'INACTIVE' || account.status === 'EXPIRED') {
+      if (account.status === 'INACTIVE') {
+        // Newly created account: do not activate yet. Lifetime begins on first login.
+        newStartDate = null;
+        newEndDate = null;
+        newStatus = 'INACTIVE';
+      } else if (account.status === 'EXPIRED') {
         newStartDate = now;
+        newStatus = 'ACTIVE';
+      } else {
+        newStatus = 'ACTIVE';
       }
-      newStatus = 'ACTIVE';
     }
 
     return prisma.$transaction(async (tx) => {

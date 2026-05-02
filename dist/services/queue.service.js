@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.videoQueueEvents = exports.videoQueue = void 0;
 exports.addVideoJob = addVideoJob;
+exports.removeVideoJob = removeVideoJob;
 const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
 const env_1 = require("../shared/config/env");
@@ -23,5 +24,20 @@ async function addVideoJob(jobData) {
         },
         removeOnComplete: true,
     });
+}
+async function removeVideoJob(jobId) {
+    try {
+        const job = await exports.videoQueue.getJob(jobId);
+        if (job) {
+            await job.remove();
+            return true;
+        }
+    }
+    catch (err) {
+        console.warn(`⚠️ [Queue] Could not remove locked job ${jobId}: ${err.message}`);
+        // If it's locked, it's already processing. 
+        // The worker will fail when it tries to update the (now deleted) DB record.
+    }
+    return false;
 }
 //# sourceMappingURL=queue.service.js.map

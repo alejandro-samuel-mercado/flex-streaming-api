@@ -64,11 +64,19 @@ class HistoryService {
             take: limit,
         });
     }
-    static async getGlobalHistory(page = 1, limit = 20) {
+    static async getGlobalHistory(page = 1, limit = 20, search) {
         const skip = (page - 1) * limit;
+        const where = {};
+        if (search) {
+            where.OR = [
+                { profile: { name: { contains: search, mode: 'insensitive' } } },
+                { content: { translations: { some: { title: { contains: search, mode: 'insensitive' } } } } }
+            ];
+        }
         const [total, history] = await Promise.all([
-            prisma_1.prisma.watchHistory.count(),
+            prisma_1.prisma.watchHistory.count({ where }),
             prisma_1.prisma.watchHistory.findMany({
+                where,
                 include: {
                     profile: {
                         select: {

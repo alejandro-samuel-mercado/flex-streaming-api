@@ -133,6 +133,15 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
     ok(res, videos);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+adminRouter.get('/videos/job/:id/logs', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { getJobLogs } = await import('../../services/queue.service');
+    const logs = await getJobLogs(id);
+    ok(res, logs);
+  } catch (err) { next(err); }
+}) as RequestHandler);
 // ─── Watch History ─────────────────────────────────────────────────────────────
 
 adminRouter.get('/history', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {

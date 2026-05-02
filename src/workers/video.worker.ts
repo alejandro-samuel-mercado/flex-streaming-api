@@ -21,6 +21,12 @@ export const videoWorker = new Worker(
     job.log(`Starting HLS processing for contentId: ${contentId}`);
 
     try {
+      const existsInitial = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
+      if (!existsInitial) {
+        job.log('Job cancelled: VideoFile record no longer exists. Aborting early.');
+        return { cancelled: true };
+      }
+
       // Update existing record to PROCESSING
       await prisma.videoFile.update({
         where: { id: videoFileId },
@@ -33,6 +39,18 @@ export const videoWorker = new Worker(
       const thumbnailResult = await FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
       job.log(`Thumbnail generated at ${thumbnailResult.path}`);
       
+      await onProgress(10);
+
+      // ─── Extract embedded subtitles (MKV, MP4, etc.) ──────────────────
+      const subtitlesFolder = path.join(env.MEDIA_PATH, 'subtitles', contentId);
+      let extractedSubs: { language: string; label: string; filePath: string; isDefault: boolean; isForced: boolean }[] = [];
+      try {
+        extractedSubs = await FFmpegService.extractSubtitles(videoPath, subtitlesFolder);
+        job.log(`Extracted ${extractedSubs.length} embedded subtitle(s)`);
+      } catch (subErr: any) {
+        job.log(`Subtitle extraction warning (non-fatal): ${subErr.message}`);
+      }
+
       await onProgress(15);
       
       // Check if job was cancelled (record deleted) before starting heavy FFmpeg
@@ -104,16 +122,65 @@ export const videoWorker = new Worker(
         }
       });
 
+      // ─── Save extracted subtitles to DB ────────────────────────────────
+      if (extractedSubs.length > 0) {
+        for (const sub of extractedSubs) {
+          // Copy subtitle file to the subtitles media folder and get relative URL
+          const subFileName = path.basename(sub.filePath);
+          const subUrl = `/media/subtitles/${contentId}/${subFileName}`;
+
+          await prisma.subtitleTrack.create({
+            data: {
+              videoFileId,
+              language: sub.language,
+              label: sub.label,
+              format: 'vtt',
+              url: subUrl,
+              isDefault: sub.isDefault,
+              isForced: sub.isForced
+            }
+          });
+        }
+        job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
+      }
+
       const jobType = job.data.type || 'MOVIE';
 
-      // Update the content status to READY if it's a MOVIE
+      // ─── Determine content status: READY only if data is complete ─────
       if (jobType === 'MOVIE') {
-        const content = await prisma.content.findUnique({ where: { id: contentId } });
+        const content = await prisma.content.findUnique({
+          where: { id: contentId },
+          include: {
+            translations: true,
+            thumbnails: true,
+            genres: true
+          }
+        });
+
         if (content) {
+          const hasDescription = content.translations.some(
+            (t: any) => t.description && t.description.trim().length > 0
+          );
+          const hasPoster = content.thumbnails.some(
+            (t: any) => t.type === 'POSTER'
+          );
+          const hasGenres = content.genres.length > 0;
+
+          if (hasDescription && hasPoster && hasGenres) {
+            // All data complete → READY
             await prisma.content.update({
               where: { id: contentId },
               data: { status: 'READY' }
             });
+            job.log(`Content ${contentId} marked as READY (data complete)`);
+          } else {
+            // Missing data → stays PENDING
+            const missing: string[] = [];
+            if (!hasDescription) missing.push('sinopsis');
+            if (!hasPoster) missing.push('poster');
+            if (!hasGenres) missing.push('géneros');
+            job.log(`Content ${contentId} stays PENDING — missing: ${missing.join(', ')}`);
+          }
         }
       } else if (jobType === 'TRAILER') {
           // If it's a trailer, update the trailerUrl field
@@ -160,7 +227,7 @@ export const videoWorker = new Worker(
   },
   {
     connection,
-    concurrency: 1,
+    concurrency: env.MAX_CONCURRENT_ENCODING,
   }
 );
 

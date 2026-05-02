@@ -123,6 +123,7 @@ const apiLimiter = (0, express_rate_limit_1.default)({
 app.use('/api/auth', authLimiter, auth_router_1.authRouter);
 app.use('/api/profiles', profiles_router_1.profilesRouter);
 app.use('/api/content', apiLimiter, content_router_1.contentRouter);
+app.get('/api/content-debug', (_req, res) => res.json({ debug: true }));
 app.use('/api/categories', categories_router_1.categoriesRouter);
 app.use('/api/actors', actors_router_1.actorsRouter);
 app.use('/api/search', apiLimiter, search_router_1.searchRouter);

@@ -48,17 +48,30 @@ export class FFmpegService {
     let totalProgress = 0;
     let lastReportedProgress = 0;
     const totalSteps = profiles.length + audioStreams.length;
-    const progressPerStep = 100 / totalSteps;
+    const taskProgress: number[] = new Array(totalSteps).fill(0);
+    const tasks: Promise<boolean>[] = [];
 
-    // 1. Process Video Profiles (Video Only or Video + Default Audio)
+    const reportProgress = () => {
+      if (!onProgress) return;
+      const overallPercent = taskProgress.reduce((sum, p) => sum + p, 0) / totalSteps;
+      const currentProgress = Math.round(overallPercent);
+      if (currentProgress > lastReportedProgress) {
+        lastReportedProgress = currentProgress;
+        onProgress(currentProgress);
+      }
+    };
+
+    // 1. Process Video Profiles (Parallel)
     for (let i = 0; i < profiles.length; i++) {
       const profile = profiles[i];
+      const taskIndex = i;
       console.log(`🎬 [FFmpeg] Processing Video ${profile.name}...`);
       
-      await new Promise((resolve, reject) => {
+      tasks.push(new Promise((resolve, reject) => {
         ffmpeg(resolvedInputPath)
           .outputOptions([
-            '-preset superfast',
+            '-preset ultrafast',
+            '-threads 0',
             '-profile:v main',
             `-vf scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease`,
             '-an', // No audio in video variants (HLS best practice for multi-audio)
@@ -76,22 +89,14 @@ export class FFmpegService {
           ])
           .output(path.join(resolvedOutputFolder, `${profile.name}.m3u8`))
           .on('progress', (progress) => {
-            if (onProgress && progress.percent) {
-              const currentProgress = Math.round(totalProgress + (progress.percent * progressPerStep / 100));
-              if (currentProgress > lastReportedProgress) {
-                lastReportedProgress = currentProgress;
-                onProgress(currentProgress);
-              }
+            if (progress.percent) {
+              taskProgress[taskIndex] = progress.percent;
+              reportProgress();
             }
           })
           .on('end', () => {
-            totalProgress += progressPerStep;
-            // Force progress to the end of the step
-            const stepEnd = Math.round(totalProgress);
-            if (stepEnd > lastReportedProgress) {
-              lastReportedProgress = stepEnd;
-              if (onProgress) onProgress(stepEnd);
-            }
+            taskProgress[taskIndex] = 100;
+            reportProgress();
             resolve(true);
           })
           .on('error', (err) => {
@@ -99,18 +104,19 @@ export class FFmpegService {
             reject(err);
           })
           .run();
-      });
+      }));
     }
 
-    // 2. Process Audio Streams
+    // 2. Process Audio Streams (Parallel)
     for (let i = 0; i < audioStreams.length; i++) {
       const stream = audioStreams[i];
+      const taskIndex = profiles.length + i;
       const lang = stream.tags?.language || `audio${i}`;
       const title = stream.tags?.title || `Audio ${i + 1} (${lang})`;
       
       console.log(`🔊 [FFmpeg] Extracting Audio ${title}...`);
       
-      await new Promise((resolve, reject) => {
+      tasks.push(new Promise((resolve, reject) => {
         ffmpeg(resolvedInputPath)
           .outputOptions([
             `-map 0:a:${i}`,
@@ -124,12 +130,9 @@ export class FFmpegService {
           ])
           .output(path.join(resolvedOutputFolder, `audio_${i}.m3u8`))
           .on('progress', (progress) => {
-            if (onProgress && progress.percent) {
-              const currentProgress = Math.round(totalProgress + (progress.percent * progressPerStep / 100));
-              if (currentProgress > lastReportedProgress) {
-                lastReportedProgress = currentProgress;
-                onProgress(currentProgress);
-              }
+            if (progress.percent) {
+              taskProgress[taskIndex] = progress.percent;
+              reportProgress();
             }
           })
           .on('end', () => {
@@ -140,12 +143,8 @@ export class FFmpegService {
               codec: 'aac',
               playlistUrl: `audio_${i}.m3u8`
             });
-            totalProgress += progressPerStep;
-            const stepEnd = Math.round(totalProgress);
-            if (stepEnd > lastReportedProgress) {
-              lastReportedProgress = stepEnd;
-              if (onProgress) onProgress(stepEnd);
-            }
+            taskProgress[taskIndex] = 100;
+            reportProgress();
             resolve(true);
           })
           .on('error', (err) => {
@@ -153,8 +152,10 @@ export class FFmpegService {
             reject(err);
           })
           .run();
-      });
+      }));
     }
+
+    await Promise.all(tasks);
 
     // 3. Generate Master Playlist with Audio Groups
     let masterContent = '#EXTM3U\n#EXT-X-VERSION:3\n\n';
@@ -199,5 +200,91 @@ export class FFmpegService {
         .on('end', () => resolve({ path: path.join(outputFolder, filename) }))
         .on('error', reject);
     });
+  }
+
+  /**
+   * Extract embedded subtitles from video containers (MKV, MP4, etc.)
+   * Converts any subtitle format (SRT, ASS, SSA, SUB) to WebVTT (.vtt)
+   * Returns metadata for each extracted subtitle track.
+   */
+  static async extractSubtitles(
+    inputPath: string,
+    outputFolder: string
+  ): Promise<{ language: string; label: string; filePath: string; isDefault: boolean; isForced: boolean }[]> {
+    const resolvedInput = path.resolve(inputPath);
+    const resolvedOutput = path.resolve(outputFolder);
+
+    if (!fs.existsSync(resolvedOutput)) {
+      fs.mkdirSync(resolvedOutput, { recursive: true });
+    }
+
+    // Get metadata to find subtitle streams
+    const metadata = await this.getMetadata(resolvedInput);
+    const subtitleStreams = metadata.streams.filter(s => s.codec_type === 'subtitle');
+
+    if (subtitleStreams.length === 0) {
+      console.log('📝 [FFmpeg] No embedded subtitles found');
+      return [];
+    }
+
+    console.log(`📝 [FFmpeg] Found ${subtitleStreams.length} embedded subtitle track(s)`);
+
+    const results: { language: string; label: string; filePath: string; isDefault: boolean; isForced: boolean }[] = [];
+
+    for (let i = 0; i < subtitleStreams.length; i++) {
+      const stream = subtitleStreams[i];
+      const lang = stream.tags?.language || `und`;
+      const title = stream.tags?.title || `Subtítulo ${i + 1} (${lang})`;
+      const isDefault = stream.disposition?.default === 1;
+      const isForced = stream.disposition?.forced === 1;
+      const codec = stream.codec_name || '';
+
+      // Skip image-based subtitles (PGS, DVB, VOBSUB) — cannot convert to text
+      const imageBased = ['hdmv_pgs_subtitle', 'dvb_subtitle', 'dvd_subtitle', 'pgssub'];
+      if (imageBased.includes(codec)) {
+        console.log(`📝 [FFmpeg] Skipping image-based subtitle track ${i} (${codec})`);
+        continue;
+      }
+
+      const outFileName = `sub_${i}_${lang}.vtt`;
+      const outFilePath = path.join(resolvedOutput, outFileName);
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(resolvedInput)
+            .outputOptions([
+              `-map 0:s:${i}`,
+              '-c:s webvtt'
+            ])
+            .output(outFilePath)
+            .on('end', () => resolve())
+            .on('error', (err) => reject(err))
+            .run();
+        });
+
+        // Verify the file was created and has content
+        if (fs.existsSync(outFilePath) && fs.statSync(outFilePath).size > 10) {
+          results.push({
+            language: lang,
+            label: title,
+            filePath: outFilePath,
+            isDefault,
+            isForced
+          });
+          console.log(`📝 [FFmpeg] Extracted subtitle: ${title} (${lang}) → ${outFileName}`);
+        } else {
+          console.warn(`📝 [FFmpeg] Subtitle track ${i} extraction produced empty file, skipping`);
+          // Clean up empty file
+          if (fs.existsSync(outFilePath)) fs.unlinkSync(outFilePath);
+        }
+      } catch (err: any) {
+        console.warn(`📝 [FFmpeg] Failed to extract subtitle track ${i} (${codec}): ${err.message}`);
+        // Non-fatal — continue with other tracks
+        if (fs.existsSync(outFilePath)) fs.unlinkSync(outFilePath);
+      }
+    }
+
+    console.log(`📝 [FFmpeg] Successfully extracted ${results.length}/${subtitleStreams.length} subtitle track(s)`);
+    return results;
   }
 }

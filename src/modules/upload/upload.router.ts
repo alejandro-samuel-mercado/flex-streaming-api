@@ -263,9 +263,14 @@ uploadRouter.delete('/video/:id', async (req, res, next) => {
     // 3. Delete the record
     await prisma.videoFile.delete({ where: { id } });
 
-    // 4. (Optional) Delete the physical file if it exists
+    // 4. Delete the physical file ONLY if it was uploaded to our temp directory (not if auto-scanned from elsewhere)
     if (videoFile.originalPath && fs.existsSync(videoFile.originalPath)) {
-      fs.unlinkSync(videoFile.originalPath);
+      const absolutePath = path.resolve(videoFile.originalPath);
+      const absoluteUploadDir = path.resolve(env.UPLOAD_DIR || path.join(env.MEDIA_PATH, 'uploads'));
+      
+      if (absolutePath.startsWith(absoluteUploadDir)) {
+        fs.unlinkSync(videoFile.originalPath);
+      }
     }
 
     return res.json({ success: true, message: 'Video upload cancelled and deleted' });
@@ -274,7 +279,7 @@ uploadRouter.delete('/video/:id', async (req, res, next) => {
   }
 });
 
-uploadRouter.delete('/subtitle/:id', (async (req, res, next) => {
+uploadRouter.delete('/subtitle/:id', (async (req: any, res: any, next: any) => {
   try {
     const { id } = req.params;
     const sub = await prisma.subtitleTrack.findUnique({ where: { id } });
@@ -292,7 +297,7 @@ uploadRouter.delete('/subtitle/:id', (async (req, res, next) => {
     await prisma.subtitleTrack.delete({ where: { id } });
     res.json({ success: true, message: 'Subtitle deleted' });
   } catch (err) { next(err); }
-}) as RequestHandler);
+}) as any);
 
 /**
  * POST /api/upload/chunk

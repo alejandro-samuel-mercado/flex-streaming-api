@@ -74,7 +74,7 @@ export declare class ContentService {
         page: number;
         limit: number;
     }>;
-    static getContentById(id: string, lang?: string): Promise<({
+    static getContentById(idOrSlug: string, lang?: string): Promise<({
         platform: {
             id: string;
             name: string;

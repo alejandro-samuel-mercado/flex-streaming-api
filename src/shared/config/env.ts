@@ -37,6 +37,9 @@ const envSchema = z.object({
   FFMPEG_PATH: z.string().default('ffmpeg'),
   FFPROBE_PATH: z.string().default('ffprobe'),
   MAX_CONCURRENT_ENCODING: z.coerce.number().default(2),
+
+  // Media Scanner
+  MEDIA_SCAN_DIRS: z.string().optional().default(''),
 });
 
 const parsed = envSchema.safeParse(process.env);

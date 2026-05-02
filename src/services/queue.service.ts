@@ -42,3 +42,14 @@ export async function removeVideoJob(jobId: string) {
   }
   return false;
 }
+
+export async function getJobLogs(jobId: string) {
+  try {
+    const job = await videoQueue.getJob(jobId);
+    if (!job) return { logs: [], count: 0 };
+    return await videoQueue.getJobLogs(jobId);
+  } catch (err: any) {
+    console.warn(`⚠️ [Queue] Could not get logs for job ${jobId}: ${err.message}`);
+    return { logs: [], count: 0 };
+  }
+}

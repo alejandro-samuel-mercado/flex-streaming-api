@@ -84,7 +84,7 @@ export declare class HistoryService {
         completed: boolean;
         watchedAt: Date;
     })[]>;
-    static getGlobalHistory(page?: number, limit?: number): Promise<{
+    static getGlobalHistory(page?: number, limit?: number, search?: string): Promise<{
         total: number;
         pages: number;
         data: ({

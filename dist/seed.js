@@ -94,14 +94,14 @@ async function main() {
         });
     }
     // Create Subscription Plans (Reseller)
-    const plan1 = await prisma.subscriptionPlan.create({
+    await prisma.subscriptionPlan.create({
         data: { name: '1 Mes', durationDays: 30, creditCost: 10, isActive: true }
     });
-    const plan2 = await prisma.subscriptionPlan.create({
+    await prisma.subscriptionPlan.create({
         data: { name: '3 Meses', durationDays: 90, creditCost: 25, isActive: true }
     });
     // Create Credit Packages
-    const pkg1 = await prisma.creditPackage.create({
+    await prisma.creditPackage.create({
         data: { name: 'Pack 100', baseCredits: 100, isActive: true }
     });
     // Create Users (Admin, Super Vendor, Vendor)
@@ -143,7 +143,7 @@ async function main() {
             parentId: admin.id
         }
     });
-    const vendor = await prisma.user.upsert({
+    await prisma.user.upsert({
         where: { email: 'vendor@peliplus.com' },
         update: {
             passwordHash,

@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -229,13 +262,49 @@ exports.uploadRouter.post('/', upload.single('video'), (async (req, res, next) =
 exports.uploadRouter.delete('/video/:id', async (req, res, next) => {
     try {
         const { id } = req.params;
+        // 1. Find the video file record
+        const videoFile = await prisma_1.prisma.videoFile.findUnique({
+            where: { id }
+        });
+        if (!videoFile) {
+            return res.status(404).json({ success: false, error: 'Video file not found' });
+        }
+        // 2. If it has a processing job, remove it
+        if (videoFile.processingJobId) {
+            const { removeVideoJob } = await Promise.resolve().then(() => __importStar(require('../../services/queue.service')));
+            await removeVideoJob(videoFile.processingJobId);
+        }
+        // 3. Delete the record
         await prisma_1.prisma.videoFile.delete({ where: { id } });
-        return res.json({ success: true, message: 'Video deleted' });
+        // 4. (Optional) Delete the physical file if it exists
+        if (videoFile.originalPath && fs_1.default.existsSync(videoFile.originalPath)) {
+            fs_1.default.unlinkSync(videoFile.originalPath);
+        }
+        return res.json({ success: true, message: 'Video upload cancelled and deleted' });
     }
     catch (error) {
         return next(error);
     }
 });
+exports.uploadRouter.delete('/subtitle/:id', (async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const sub = await prisma_1.prisma.subtitleTrack.findUnique({ where: { id } });
+        if (!sub) {
+            return res.status(404).json({ success: false, error: 'Subtitle not found' });
+        }
+        // Delete physical file
+        const filePath = path_1.default.join(env_1.env.MEDIA_PATH, sub.url.replace('/media/', ''));
+        if (fs_1.default.existsSync(filePath)) {
+            fs_1.default.unlinkSync(filePath);
+        }
+        await prisma_1.prisma.subtitleTrack.delete({ where: { id } });
+        res.json({ success: true, message: 'Subtitle deleted' });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 /**
  * POST /api/upload/chunk
  */

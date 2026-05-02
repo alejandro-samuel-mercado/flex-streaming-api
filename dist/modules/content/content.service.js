@@ -86,9 +86,15 @@ class ContentService {
         ]);
         return { data, total, page, limit };
     }
-    static async getContentById(id, lang = 'es') {
+    static async getContentById(idOrSlug, lang = 'es') {
         return prisma_1.prisma.content.findFirst({
-            where: { id, deletedAt: null },
+            where: {
+                OR: [
+                    { id: idOrSlug },
+                    { slug: idOrSlug }
+                ],
+                deletedAt: null
+            },
             include: {
                 translations: { where: { language: { in: [lang, 'es'] } } },
                 genres: { include: { genre: true } },

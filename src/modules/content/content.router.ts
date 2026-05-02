@@ -61,40 +61,22 @@ contentRouter.get('/', (async (req, res, next) => {
 }) as RequestHandler);
 
 contentRouter.get('/:id', optionalAuth as RequestHandler, (async (req, res, next) => {
-
   try {
     const isAdmin = (req as any).user?.role === 'ADMIN';
     const lang = (req.query.lang as string) || 'es';
 
-    // 1. Manual cache check for guests
-    if (!isAdmin) {
-      const key = `cache:${req.originalUrl}`;
-      try {
-        const cached = await redis.get(key);
-        if (cached) {
-          res.setHeader('X-Cache', 'HIT');
-          res.json(JSON.parse(cached));
-          return;
-        }
-      } catch (err) {
-        console.error('[Cache Error] Redis fail:', err);
-      }
-    }
+    console.log(`[DEBUG] GET /:id called with id: "${req.params.id}"`);
+    console.log(`[DEBUG] User Role: "${(req as any).user?.role || 'GUEST'}"`);
 
     // 2. Fetch from DB
     const data = await ContentService.getContentById(req.params.id, lang);
     if (!data) {
+      console.log(`[DEBUG] Content NOT FOUND in DB for id: "${req.params.id}"`);
       res.status(404).json({ success: false, error: 'Content not found' });
       return;
     }
 
-    // 3. Cache the result for guests
-    if (!isAdmin) {
-      const key = `cache:${req.originalUrl}`;
-      redis.setex(key, 600, JSON.stringify(data)).catch(() => {});
-      res.setHeader('X-Cache', 'MISS');
-    }
-
+    console.log(`[DEBUG] Content FOUND in DB. Returning with ok() envelope.`);
     ok(res, data);
   } catch (err) {
     next(err);

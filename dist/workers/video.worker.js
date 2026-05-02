@@ -29,11 +29,23 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
         const thumbnailResult = await ffmpeg_service_1.FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
         job.log(`Thumbnail generated at ${thumbnailResult.path}`);
         await onProgress(15);
+        // Check if job was cancelled (record deleted) before starting heavy FFmpeg
+        const exists = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
+        if (!exists) {
+            job.log('Job cancelled: VideoFile record no longer exists. Aborting.');
+            return { cancelled: true };
+        }
         const hlsResult = await ffmpeg_service_1.FFmpegService.generateHLS(videoPath, outputFolder, (pct) => {
             const jobProgress = 15 + Math.round(pct * 0.80);
             onProgress(jobProgress);
         });
         job.log(`HLS generated at ${hlsResult.path}`);
+        // Final check before updating DB (in case of cancellation)
+        const finalExists = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
+        if (!finalExists) {
+            job.log('Job cancelled after processing: VideoFile record no longer exists. Aborting.');
+            return { cancelled: true };
+        }
         const masterPlaylistUrl = `/media/hls/${contentId}/master.m3u8`;
         // Wait until Prisma is available correctly
         await prisma_1.prisma.videoFile.update({
@@ -73,12 +85,10 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                 audioTracks: {
                     create: hlsResult.audioTracks.map((t) => ({
                         language: t.language,
-                        name: t.name,
                         label: t.name,
                         trackIndex: t.index,
                         codec: t.codec,
-                        isDefault: t.index === 0,
-                        url: `/media/hls/${contentId}/${t.playlistUrl}`
+                        isDefault: t.index === 0
                     }))
                 }
             }

@@ -196,7 +196,7 @@ class EndUsersService {
             throw new error_handler_1.AppError(404, 'Plan not found or inactive', 'PLAN_NOT_FOUND');
         }
         const now = new Date();
-        let newEndDate;
+        let newEndDate = null;
         let newType = account.type;
         let newStatus = account.status;
         let newStartDate = account.startDate;
@@ -221,10 +221,19 @@ class EndUsersService {
             const base = currentEndDate && currentEndDate > now ? currentEndDate : now;
             newEndDate = new Date(base.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
             newType = 'FORMAL';
-            if (account.status === 'INACTIVE' || account.status === 'EXPIRED') {
-                newStartDate = now;
+            if (account.status === 'INACTIVE') {
+                // Newly created account: do not activate yet. Lifetime begins on first login.
+                newStartDate = null;
+                newEndDate = null;
+                newStatus = 'INACTIVE';
             }
-            newStatus = 'ACTIVE';
+            else if (account.status === 'EXPIRED') {
+                newStartDate = now;
+                newStatus = 'ACTIVE';
+            }
+            else {
+                newStatus = 'ACTIVE';
+            }
         }
         return prisma_1.prisma.$transaction(async (tx) => {
             if (creditsCost > 0 && userRole !== 'ADMIN') {

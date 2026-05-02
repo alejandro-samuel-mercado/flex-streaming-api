@@ -164,9 +164,10 @@ exports.adminRouter.get('/history', (async (req, res, next) => {
     try {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
+        const search = req.query.search;
         // Dynamically import HistoryService to avoid circular dependencies
         const { HistoryService } = await Promise.resolve().then(() => __importStar(require('../history/history.service')));
-        const results = await HistoryService.getGlobalHistory(page, limit);
+        const results = await HistoryService.getGlobalHistory(page, limit, search);
         (0, api_response_1.ok)(res, results);
     }
     catch (err) {

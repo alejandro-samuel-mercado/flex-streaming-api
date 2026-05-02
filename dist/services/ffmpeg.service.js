@@ -26,21 +26,25 @@ class FFmpegService {
      * This generates multiple resolutions based on the PROMPT MAESTRO specifications.
      */
     static async generateHLS(inputPath, outputFolder, onProgress) {
+        // Ensure absolute paths
+        const resolvedInputPath = path_1.default.resolve(inputPath);
+        const resolvedOutputFolder = path_1.default.resolve(outputFolder);
         // Ensure output directory exists
-        if (!fs_1.default.existsSync(outputFolder)) {
-            fs_1.default.mkdirSync(outputFolder, { recursive: true });
+        if (!fs_1.default.existsSync(resolvedOutputFolder)) {
+            fs_1.default.mkdirSync(resolvedOutputFolder, { recursive: true });
         }
         // Get metadata to find audio tracks
-        const metadata = await this.getMetadata(inputPath);
+        const metadata = await this.getMetadata(resolvedInputPath);
         const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio');
         const audioTracks = [];
-        const playlistPath = path_1.default.join(outputFolder, 'master.m3u8');
+        const playlistPath = path_1.default.join(resolvedOutputFolder, 'master.m3u8');
         const profiles = [
             { name: '360p', resolution: '640:360', bitrate: '800k', bandwidth: 1400000 },
             { name: '720p', resolution: '1280:720', bitrate: '2500k', bandwidth: 2800000 },
             { name: '1080p', resolution: '1920:1080', bitrate: '5000k', bandwidth: 5600000 }
         ];
         let totalProgress = 0;
+        let lastReportedProgress = 0;
         const totalSteps = profiles.length + audioStreams.length;
         const progressPerStep = 100 / totalSteps;
         // 1. Process Video Profiles (Video Only or Video + Default Audio)
@@ -48,7 +52,7 @@ class FFmpegService {
             const profile = profiles[i];
             console.log(`🎬 [FFmpeg] Processing Video ${profile.name}...`);
             await new Promise((resolve, reject) => {
-                (0, fluent_ffmpeg_1.default)(inputPath)
+                (0, fluent_ffmpeg_1.default)(resolvedInputPath)
                     .outputOptions([
                     '-preset superfast',
                     '-profile:v main',
@@ -64,17 +68,27 @@ class FFmpegService {
                     '-bufsize 5000k',
                     '-hls_time 10',
                     '-hls_playlist_type vod',
-                    '-hls_segment_filename', path_1.default.join(outputFolder, `${profile.name}_%03d.ts`)
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
                 ])
-                    .output(path_1.default.join(outputFolder, `${profile.name}.m3u8`))
+                    .output(path_1.default.join(resolvedOutputFolder, `${profile.name}.m3u8`))
                     .on('progress', (progress) => {
                     if (onProgress && progress.percent) {
-                        const currentProgress = totalProgress + (progress.percent * progressPerStep / 100);
-                        onProgress(Math.round(currentProgress));
+                        const currentProgress = Math.round(totalProgress + (progress.percent * progressPerStep / 100));
+                        if (currentProgress > lastReportedProgress) {
+                            lastReportedProgress = currentProgress;
+                            onProgress(currentProgress);
+                        }
                     }
                 })
                     .on('end', () => {
                     totalProgress += progressPerStep;
+                    // Force progress to the end of the step
+                    const stepEnd = Math.round(totalProgress);
+                    if (stepEnd > lastReportedProgress) {
+                        lastReportedProgress = stepEnd;
+                        if (onProgress)
+                            onProgress(stepEnd);
+                    }
                     resolve(true);
                 })
                     .on('error', (err) => {
@@ -91,16 +105,27 @@ class FFmpegService {
             const title = stream.tags?.title || `Audio ${i + 1} (${lang})`;
             console.log(`🔊 [FFmpeg] Extracting Audio ${title}...`);
             await new Promise((resolve, reject) => {
-                (0, fluent_ffmpeg_1.default)(inputPath)
+                (0, fluent_ffmpeg_1.default)(resolvedInputPath)
                     .outputOptions([
                     `-map 0:a:${i}`,
+                    '-vn', // Disable video
+                    '-sn', // Disable subtitles
                     '-c:a aac',
                     '-b:a 128k',
                     '-hls_time 10',
                     '-hls_playlist_type vod',
-                    '-hls_segment_filename', path_1.default.join(outputFolder, `audio_${i}_%03d.ts`)
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `audio_${i}_%03d.ts`)
                 ])
-                    .output(path_1.default.join(outputFolder, `audio_${i}.m3u8`))
+                    .output(path_1.default.join(resolvedOutputFolder, `audio_${i}.m3u8`))
+                    .on('progress', (progress) => {
+                    if (onProgress && progress.percent) {
+                        const currentProgress = Math.round(totalProgress + (progress.percent * progressPerStep / 100));
+                        if (currentProgress > lastReportedProgress) {
+                            lastReportedProgress = currentProgress;
+                            onProgress(currentProgress);
+                        }
+                    }
+                })
                     .on('end', () => {
                     audioTracks.push({
                         index: i,
@@ -110,9 +135,18 @@ class FFmpegService {
                         playlistUrl: `audio_${i}.m3u8`
                     });
                     totalProgress += progressPerStep;
+                    const stepEnd = Math.round(totalProgress);
+                    if (stepEnd > lastReportedProgress) {
+                        lastReportedProgress = stepEnd;
+                        if (onProgress)
+                            onProgress(stepEnd);
+                    }
                     resolve(true);
                 })
-                    .on('error', reject)
+                    .on('error', (err) => {
+                    console.error(`❌ [FFmpeg] Audio extraction error (track ${i}):`, err.message);
+                    reject(err);
+                })
                     .run();
             });
         }

@@ -9,4 +9,5 @@ export declare function addVideoJob(jobData: {
     episodeId?: string;
     videoPath: string;
 }): Promise<import("bullmq").Job<any, any, string>>;
+export declare function removeVideoJob(jobId: string): Promise<boolean>;
 //# sourceMappingURL=queue.service.d.ts.map

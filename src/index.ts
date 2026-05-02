@@ -46,6 +46,8 @@ import { subscriptionPlansRouter } from './modules/subscription-plans/subscripti
 import { creditPackagesRouter } from './modules/credit-packages/credit-packages.router';
 import { endUsersRouter } from './modules/end-users/end-users.router';
 import { tmdbRouter } from './modules/admin/tmdb.router';
+import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router';
+import { AutoScannerWorker } from './workers/auto-scanner.worker';
 
 const app = express();
 app.use((_req, _res, next) => {
@@ -129,7 +131,7 @@ const apiLimiter = rateLimit({
 app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/profiles', profilesRouter);
 app.use('/api/content', apiLimiter, contentRouter);
-app.get('/api/content-debug', (req, res) => res.json({ debug: true }));
+app.get('/api/content-debug', (_req: any, res: any) => res.json({ debug: true }));
 app.use('/api/categories', categoriesRouter);
 app.use('/api/actors', actorsRouter);
 app.use('/api/search', apiLimiter, searchRouter);
@@ -139,6 +141,7 @@ app.use('/api/history', historyRouter);
 app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/admin/tmdb', tmdbRouter);
+app.use('/api/admin/media-scanner', mediaScannerRouter);
 app.use('/api/upload', uploadLimiter, authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, uploadRouter);
 app.use('/api/platforms', platformsRouter);
 app.use('/api/plans', plansRouter);
@@ -181,6 +184,10 @@ async function bootstrap() {
     await prisma.$connect();
     console.log('✅ Database connected');
 
+    // Start auto-scanner worker
+    AutoScannerWorker.start(io);
+    console.log('🔍 Auto-scanner worker initialized');
+
     httpServer.listen(env.BACKEND_PORT, () => {
       console.log(`🚀 PeliPlus API running at http://localhost:${env.BACKEND_PORT}`);
     });
@@ -193,3 +200,21 @@ async function bootstrap() {
 bootstrap();
 
 export { app, httpServer, io };
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+const gracefulShutdown = async () => {
+  console.log('🛑 [Server] Shutting down gracefully...');
+  try {
+    const { videoQueue, videoQueueEvents } = await import('./services/queue.service');
+    await videoQueue.close();
+    await videoQueueEvents.close();
+    await prisma.$disconnect();
+    console.log('✅ [Server] Connections closed. Exiting.');
+    process.exit(0);
+  } catch (err) {
+    console.error('❌ [Server] Error during shutdown:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
