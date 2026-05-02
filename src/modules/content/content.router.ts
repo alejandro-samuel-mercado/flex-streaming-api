@@ -3,7 +3,6 @@ import { ContentService } from './content.service';
 import { authenticate, requireRole, AuthenticatedRequest, optionalAuth } from '../../shared/middleware/auth.middleware';
 import { ok, created, paginate } from '../../shared/utils/api-response';
 import { cacheMiddleware } from '../../shared/middleware/cache.middleware';
-import { redis } from '../../shared/config/redis';
 import { z } from 'zod';
 
 export const contentRouter = Router();
@@ -62,7 +61,6 @@ contentRouter.get('/', (async (req, res, next) => {
 
 contentRouter.get('/:id', optionalAuth as RequestHandler, (async (req, res, next) => {
   try {
-    const isAdmin = (req as any).user?.role === 'ADMIN';
     const lang = (req.query.lang as string) || 'es';
 
     console.log(`[DEBUG] GET /:id called with id: "${req.params.id}"`);

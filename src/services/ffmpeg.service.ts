@@ -45,7 +45,6 @@ export class FFmpegService {
       { name: '1080p', resolution: '1920:1080', bitrate: '5000k', bandwidth: 5600000 }
     ];
 
-    let totalProgress = 0;
     let lastReportedProgress = 0;
     const totalSteps = profiles.length + audioStreams.length;
     const taskProgress: number[] = new Array(totalSteps).fill(0);
