@@ -106,11 +106,16 @@ app.use(express.urlencoded({ extended: true }));
 // ─── Static Files ─────────────────────────────────────────────────────────────
 // Serve uploads (profile images, posters, etc.) — non-sensitive
 app.use('/uploads', express.static(path.resolve(env.UPLOAD_DIR)));
+app.use('/api/uploads', express.static(path.resolve(env.UPLOAD_DIR))); // Alias for frontend consistency
+
 // NOTE: /media is intentionally NOT exposed via express.static.
 // All HLS access is authenticated through /api/stream/hls/:videoFileId/* with signed tokens.
 // Thumbnails and subtitles are still served statically as they are not protected content.
 app.use('/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH)));
+app.use('/api/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH))); // Alias
+
 app.use('/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH)));
+app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))); // Alias
 
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
