@@ -180,7 +180,7 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
       data: {
         type: details.type,
         status: 'PENDING',
-        originalTitle: details.originalTitle || undefined,
+        originalTitle: details.originalTitle || null,
         title: details.title,
         releaseYear: details.releaseYear,
         duration: details.duration,

@@ -266,7 +266,7 @@ export class ContentService {
         const content = await prisma.content.create({
             data: {
                 ...(finalContentData as Prisma.ContentCreateInput),
-                originalTitle: originalTitle || undefined,
+                originalTitle: (originalTitle !== undefined && originalTitle !== "") ? originalTitle : (originalTitle === "" ? null : undefined),
                 title: mainTitle,
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id: string) => ({ genreId: id })) } : undefined,
@@ -407,7 +407,7 @@ export class ContentService {
             where: { id },
             data: {
                 ...(cleanContentData as Prisma.ContentUpdateInput),
-                originalTitle: originalTitle !== undefined ? originalTitle : undefined,
+                originalTitle: (originalTitle !== undefined) ? (originalTitle === "" ? null : originalTitle) : undefined,
                 title: mainTitle !== undefined ? mainTitle : undefined,
                 platform: platformId !== undefined ? (platformId ? { connect: { id: platformId } } : { disconnect: true }) : undefined,
                 translations: processedTranslations ? {
