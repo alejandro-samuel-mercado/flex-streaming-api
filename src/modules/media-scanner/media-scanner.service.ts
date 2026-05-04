@@ -273,6 +273,7 @@ export class MediaScannerService {
           status: 'PENDING', // Will become READY after video processing
           slug,
           releaseYear: details.releaseYear,
+          originalTitle: details.originalTitle || null,
           duration: details.duration,
           rating: details.rating,
           tmdbId: details.tmdbId,

@@ -234,7 +234,8 @@ export class ContentService {
     }
 
     static async createContent(data: Record<string, unknown>) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data as any;
+        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data as any;
+        const originalTitle = (data as any).originalTitle;
 
         // Generate slug if missing
         if (!contentData.slug) {
@@ -262,11 +263,14 @@ export class ContentService {
 
         const { posterPath, backdropPath, ...finalContentData } = contentData;
 
-        const mainTitle = translations?.find((t: any) => t.language === 'es')?.title || translations?.[0]?.title || originalTitle || contentData.slug;
+        const mainTitle = processedTranslations?.find((t: any) => t.language === 'es' && t.title)?.title 
+            || processedTranslations?.find((t: any) => t.title)?.title 
+            || originalTitle;
+
         const content = await prisma.content.create({
             data: {
                 ...(finalContentData as Prisma.ContentCreateInput),
-                originalTitle: (originalTitle !== undefined && originalTitle !== "") ? originalTitle : (originalTitle === "" ? null : undefined),
+                originalTitle: originalTitle || undefined,
                 title: mainTitle,
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id: string) => ({ genreId: id })) } : undefined,
@@ -338,7 +342,8 @@ export class ContentService {
     }
 
     static async updateContent(id: string, data: Record<string, unknown>) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data as any;
+        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data as any;
+        const originalTitle = (data as any).originalTitle;
 
         const processedTranslations = translations?.map((t: any) => ({
             language: t.language,
@@ -398,7 +403,9 @@ export class ContentService {
             };
         }
 
-        const mainTitle = processedTranslations?.find((t: any) => t.language === 'es')?.title || processedTranslations?.[0]?.title || originalTitle;
+        const mainTitle = processedTranslations?.find((t: any) => t.language === 'es' && t.title)?.title 
+            || processedTranslations?.find((t: any) => t.title)?.title 
+            || originalTitle;
 
         // Clean up contentData to avoid issues with platformId vs platform etc.
         const { platformId, ...cleanContentData } = contentData;
@@ -407,10 +414,9 @@ export class ContentService {
             where: { id },
             data: {
                 ...(cleanContentData as Prisma.ContentUpdateInput),
-                originalTitle: (originalTitle !== undefined) ? (originalTitle === "" ? null : originalTitle) : undefined,
                 title: mainTitle !== undefined ? mainTitle : undefined,
                 platform: platformId !== undefined ? (platformId ? { connect: { id: platformId } } : { disconnect: true }) : undefined,
-                translations: processedTranslations ? {
+                translations: (processedTranslations && processedTranslations.length > 0) ? {
                     deleteMany: {},
                     create: processedTranslations
                 } : undefined,
