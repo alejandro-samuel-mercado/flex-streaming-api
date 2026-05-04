@@ -279,6 +279,10 @@ export class MediaScannerService {
           imdbId: details.imdbId,
           country: details.country,
           languages: details.languages || [],
+          originalLanguage: details.originalLanguage || null,
+          budget: details.budget ? BigInt(details.budget) : null,
+          revenue: details.revenue ? BigInt(details.revenue) : null,
+          isAdult: details.isAdult || false,
           translations: {
             create: [{
               language: 'es',

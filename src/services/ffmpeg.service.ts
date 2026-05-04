@@ -40,10 +40,31 @@ export class FFmpegService {
 
     const playlistPath = path.join(resolvedOutputFolder, 'master.m3u8');
     const profiles = [
-      { name: '360p', resolution: '640:360', bitrate: '800k', bandwidth: 1400000 },
-      { name: '720p', resolution: '1280:720', bitrate: '2500k', bandwidth: 2800000 },
-      { name: '1080p', resolution: '1920:1080', bitrate: '5000k', bandwidth: 5600000 }
+      { name: '360p', resolution: '640:360', bitrate: '800k', maxrate: '1200k', bufsize: '1600k', bandwidth: 1400000 },
+      { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3750k', bufsize: '5000k', bandwidth: 4200000 },
+      { name: '1080p', resolution: '1920:1080', bitrate: '5000k', maxrate: '7500k', bufsize: '10000k', bandwidth: 8400000 }
     ];
+
+    // Detect source framerate for proper GOP alignment — preserve exact fraction for max FPS fidelity
+    const videoStream = metadata.streams.find(s => s.codec_type === 'video');
+    let fpsNum = 24;                // numeric fps for GOP calculation
+    let fpsValue = '24';            // exact value passed to FFmpeg -r flag
+    
+    // Some videos have '0/0' in r_frame_rate, so we fallback to avg_frame_rate
+    const frameRateStr = (videoStream?.r_frame_rate && videoStream.r_frame_rate !== '0/0')
+      ? videoStream.r_frame_rate
+      : ((videoStream?.avg_frame_rate && videoStream.avg_frame_rate !== '0/0') ? videoStream.avg_frame_rate : null);
+
+    if (frameRateStr) {
+      const [num, den] = frameRateStr.split('/').map(Number);
+      if (num && den) {
+        fpsNum = num / den;         // e.g. 23.976, 29.97, 25, 30, 60
+        fpsValue = frameRateStr;    // pass exact fraction e.g. "24000/1001"
+      }
+    }
+    // GOP = 2 seconds worth of frames (clean keyframe interval for HLS)
+    const gopSize = Math.round(fpsNum * 2);
+    console.log(`🎬 [FFmpeg] Source FPS: ${fpsNum.toFixed(3)} (${fpsValue}), GOP size: ${gopSize} (2s intervals)`);
 
     let lastReportedProgress = 0;
     const totalSteps = profiles.length + audioStreams.length;
@@ -61,31 +82,47 @@ export class FFmpegService {
     };
 
     // 1. Process Video Profiles (Parallel)
+    // If there are no separate audio streams, we must include audio in the video variant
+    const hasMultipleAudio = audioStreams.length > 0;
+
     for (let i = 0; i < profiles.length; i++) {
       const profile = profiles[i];
       const taskIndex = i;
       console.log(`🎬 [FFmpeg] Processing Video ${profile.name}...`);
       
       tasks.push(new Promise((resolve, reject) => {
+        const opts: string[] = [
+          '-preset fast',               // 'fast' is a great balance between quality and encoding speed
+          '-threads 0',
+          '-profile:v main',
+          '-level 4.0',                 // Broad device compatibility
+          `-vf scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease`,
+          '-c:v h264',
+          '-pix_fmt yuv420p',           // Maximum compatibility
+          '-vsync cfr',                 // Constant framerate — no dropped/duplicated frames
+          `-r ${fpsValue}`,             // Exact source framerate (e.g. 24000/1001 for 23.976fps)
+          `-g ${gopSize}`,              // GOP aligned to 2 seconds
+          `-keyint_min ${gopSize}`,     // Force consistent keyframe spacing
+          '-sc_threshold 0',            // Disable scene-change keyframes (keeps GOP regular)
+          `-b:v ${profile.bitrate}`,    // Target bitrate
+          `-maxrate ${profile.maxrate}`,// Headroom for complex scenes (1.5x target)
+          `-bufsize ${profile.bufsize}`,// VBV buffer = 2x target bitrate
+          '-max_muxing_queue_size 1024',// Prevent frame drops on complex buffering
+          '-hls_time 6',                // 6s segments (3 GOPs) for better seek + buffer balance
+          '-hls_playlist_type vod',
+          '-hls_segment_filename', path.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
+        ];
+
+        if (hasMultipleAudio) {
+          // Separate audio tracks: strip audio from video variant (audio handled separately)
+          opts.splice(5, 0, '-an');
+        } else {
+          // Single/muxed audio: include audio directly in the video variant
+          opts.splice(5, 0, '-c:a aac', '-b:a 192k', '-map 0:v:0', '-map 0:a:0');
+        }
+
         ffmpeg(resolvedInputPath)
-          .outputOptions([
-            '-preset ultrafast',
-            '-threads 0',
-            '-profile:v main',
-            `-vf scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease`,
-            '-an', // No audio in video variants (HLS best practice for multi-audio)
-            '-c:v h264',
-            '-crf 20',
-            '-g 48',
-            '-keyint_min 48',
-            '-sc_threshold 0',
-            `-b:v ${profile.bitrate}`,
-            `-maxrate ${profile.bitrate}`,
-            '-bufsize 5000k',
-            '-hls_time 10',
-            '-hls_playlist_type vod',
-            '-hls_segment_filename', path.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
-          ])
+          .outputOptions(opts)
           .output(path.join(resolvedOutputFolder, `${profile.name}.m3u8`))
           .on('progress', (progress) => {
             if (progress.percent) {
@@ -122,8 +159,8 @@ export class FFmpegService {
             '-vn', // Disable video
             '-sn', // Disable subtitles
             '-c:a aac',
-            '-b:a 128k',
-            '-hls_time 10',
+            '-b:a 192k',              // Higher quality audio (was 128k)
+            '-hls_time 6',            // Match video segment length to avoid A/V drift
             '-hls_playlist_type vod',
             '-hls_segment_filename', path.join(resolvedOutputFolder, `audio_${i}_%03d.ts`)
           ])
@@ -157,20 +194,31 @@ export class FFmpegService {
     await Promise.all(tasks);
 
     // 3. Generate Master Playlist with Audio Groups
-    let masterContent = '#EXTM3U\n#EXT-X-VERSION:3\n\n';
-    
-    // Add Audio Media Tags
-    audioTracks.forEach((track, idx) => {
-      masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="${track.name}",LANGUAGE="${track.language}",DEFAULT=${idx === 0 ? 'YES' : 'NO'},AUTOSELECT=YES,URI="${track.playlistUrl}"\n`;
-    });
-    
-    masterContent += '\n';
+    // HLS version 6 is required for alternate audio renditions (EXT-X-MEDIA)
+    let masterContent = '#EXTM3U\n#EXT-X-VERSION:6\n\n';
 
-    // Add Video Variants linked to the audio group
-    profiles.forEach(p => {
-      const res = p.resolution.replace(':', 'x');
-      masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${p.bandwidth},RESOLUTION=${res},AUDIO="audio"\n${p.name}.m3u8\n`;
-    });
+    if (hasMultipleAudio) {
+      // Add Audio Media Tags (only when audio is in separate tracks)
+      audioTracks.forEach((track, idx) => {
+        masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="${track.name}",LANGUAGE="${track.language}",DEFAULT=${idx === 0 ? 'YES' : 'NO'},AUTOSELECT=YES,URI="${track.playlistUrl}"\n`;
+      });
+      masterContent += '\n';
+
+      // Video variants with audio group reference
+      // BANDWIDTH must include audio bitrate (192k = 192000 bps) per HLS spec
+      const audioBandwidth = 192000;
+      profiles.forEach(p => {
+        const res = p.resolution.replace(':', 'x');
+        const totalBandwidth = p.bandwidth + audioBandwidth;
+        masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${totalBandwidth},RESOLUTION=${res},CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio"\n${p.name}.m3u8\n`;
+      });
+    } else {
+      // No separate audio tracks — audio is muxed into the video variant
+      profiles.forEach(p => {
+        const res = p.resolution.replace(':', 'x');
+        masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${p.bandwidth},RESOLUTION=${res},CODECS="avc1.4d401f,mp4a.40.2"\n${p.name}.m3u8\n`;
+      });
+    }
 
     fs.writeFileSync(playlistPath, masterContent);
     return { path: playlistPath, audioTracks };

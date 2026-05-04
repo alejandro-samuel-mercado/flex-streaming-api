@@ -4,6 +4,7 @@ import { env } from '../shared/config/env';
 import { FFmpegService } from '../services/ffmpeg.service';
 import { prisma } from '../shared/config/prisma';
 import path from 'path';
+import fs from 'fs';
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
@@ -27,7 +28,14 @@ export const videoWorker = new Worker(
         return { cancelled: true };
       }
 
-      // Update existing record to PROCESSING
+      // ── Lock: prevent double-processing ───────────────────────────────
+      // If the record is already PROCESSING, another worker is handling it
+      if (existsInitial.status === 'PROCESSING') {
+        job.log('Job skipped: VideoFile is already being processed by another worker.');
+        return { skipped: true };
+      }
+
+      // Atomically set to PROCESSING (acts as a lock)
       await prisma.videoFile.update({
         where: { id: videoFileId },
         data: { status: 'PROCESSING' }
@@ -222,6 +230,28 @@ export const videoWorker = new Worker(
 
     } catch (error: any) {
       job.log(`Failed inside worker: ${error.message}`);
+
+      // ── Cleanup on failure ────────────────────────────────────────────
+      // 1. Mark the video file as FAILED so the UI shows the correct state
+      try {
+        await prisma.videoFile.update({
+          where: { id: videoFileId },
+          data: { status: 'FAILED' }
+        });
+      } catch (dbErr: any) {
+        job.log(`Warning: could not set FAILED status: ${dbErr.message}`);
+      }
+
+      // 2. Delete partially-written HLS output to avoid corrupt segments on disk
+      try {
+        if (fs.existsSync(outputFolder)) {
+          fs.rmSync(outputFolder, { recursive: true, force: true });
+          job.log(`Cleaned up partial HLS output at ${outputFolder}`);
+        }
+      } catch (cleanErr: any) {
+        job.log(`Warning: cleanup failed: ${cleanErr.message}`);
+      }
+
       throw error;
     }
   },

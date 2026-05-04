@@ -79,17 +79,30 @@ export class StreamingService {
       return { status: 403, headers: {}, stream: null };
     }
 
-    const resolvedPath = path.resolve(env.HLS_PATH, filePath);
+    // ── Path traversal protection ────────────────────────────────────────────
+    // Resolve the full path and verify it stays inside HLS_PATH.
+    // Prevents attacks like filePath = "../../etc/passwd"
+    const hlsRoot = path.resolve(env.HLS_PATH);
+    const resolvedPath = path.resolve(hlsRoot, filePath);
+
+    if (!resolvedPath.startsWith(hlsRoot + path.sep) && resolvedPath !== hlsRoot) {
+      return { status: 403, headers: {}, stream: null };
+    }
+
+    // Whitelist only valid HLS file extensions
+    const ext = path.extname(resolvedPath).toLowerCase();
+    if (!['.m3u8', '.ts', '.vtt'].includes(ext)) {
+      return { status: 403, headers: {}, stream: null };
+    }
 
     if (!fs.existsSync(resolvedPath)) {
       return { status: 404, headers: {}, stream: null };
     }
 
-    const ext = path.extname(filePath).toLowerCase();
     const contentType =
       ext === '.m3u8' ? 'application/vnd.apple.mpegurl' :
-      ext === '.ts' ? 'video/mp2t' :
-      ext === '.vtt' ? 'text/vtt' :
+      ext === '.ts'   ? 'video/mp2t' :
+      ext === '.vtt'  ? 'text/vtt' :
       'application/octet-stream';
 
     const stat = fs.statSync(resolvedPath);
@@ -100,7 +113,9 @@ export class StreamingService {
         'Content-Type': contentType,
         'Content-Length': stat.size.toString(),
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'public, max-age=5',
+        // .ts segments are immutable (content-addressed by segment number)
+        // .m3u8 playlists should be re-fetched on ABR switches
+        'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache',
       },
       stream: fs.createReadStream(resolvedPath),
     };

@@ -48,12 +48,10 @@ import { endUsersRouter } from './modules/end-users/end-users.router';
 import { tmdbRouter } from './modules/admin/tmdb.router';
 import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router';
 import { AutoScannerWorker } from './workers/auto-scanner.worker';
+import { ChunkUploadService } from './services/chunk-upload.service';
 
 const app = express();
-app.use((_req, _res, next) => {
-  console.log(`[${new Date().toISOString()}] ${_req.method} ${_req.url}`);
-  next();
-});
+
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
   cors: {
@@ -76,7 +74,22 @@ videoQueueEvents.on('completed', ({ jobId }) => {
 
 // ─── Security & Utilities ────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(compression());
+
+// Trust proxy — required for correct IP detection behind Nginx/Cloudflare/VPS reverse proxies
+// Without this, req.ip is always the proxy IP, breaking the HMAC token validation
+app.set('trust proxy', 1);
+
+// Compression — explicitly skip already-compressed media files
+// .ts (HLS segments) and .mp4 are H.264/AAC encoded; gzipping them wastes CPU and can make them larger
+app.use(compression({
+  filter: (req, res) => {
+    const url = req.url || '';
+    // Skip compression for media segments
+    if (/\.(ts|mp4|webm|mkv|avi|mov)$/i.test(url)) return false;
+    return compression.filter(req, res);
+  }
+}));
+
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
@@ -91,8 +104,13 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Static Files ─────────────────────────────────────────────────────────────
+// Serve uploads (profile images, posters, etc.) — non-sensitive
 app.use('/uploads', express.static(path.resolve(env.UPLOAD_DIR)));
-app.use('/media', express.static(path.resolve(env.MEDIA_PATH)));
+// NOTE: /media is intentionally NOT exposed via express.static.
+// All HLS access is authenticated through /api/stream/hls/:videoFileId/* with signed tokens.
+// Thumbnails and subtitles are still served statically as they are not protected content.
+app.use('/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH)));
+app.use('/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH)));
 
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
@@ -105,7 +123,8 @@ const authLimiter = rateLimit({
 
 const streamLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  max: 500,            // HLS: each .ts segment = 1 request. 6s segments → ~10 req/min at normal playback,
+                       // but ABR + prefetch + multiple quality checks can spike. 500/min is safe.
   message: { success: false, error: 'Too many stream requests' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -191,6 +210,14 @@ async function bootstrap() {
     httpServer.listen(env.BACKEND_PORT, () => {
       console.log(`🚀 PeliPlus API running at http://localhost:${env.BACKEND_PORT}`);
     });
+
+    // Periodic cleanup of abandoned chunk uploads (every 6 hours)
+    setInterval(() => {
+      const cleaned = ChunkUploadService.cleanupStaleChunks();
+      if (cleaned > 0) console.log(`🧹 Cleaned ${cleaned} stale chunk upload(s)`);
+    }, 6 * 60 * 60 * 1000);
+    // Run once at startup too
+    ChunkUploadService.cleanupStaleChunks();
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

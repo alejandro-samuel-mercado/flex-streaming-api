@@ -83,7 +83,37 @@ uploadRouter.post('/subtitle', subtitleUpload.single('subtitle'), (async (req: a
       return;
     }
 
-    const subtitleUrl = `/media/subtitles/${file.filename}`;
+    const ext = path.extname(file.originalname).toLowerCase();
+    let finalPath = file.path;
+
+    // ── Encoding & format normalization ──────────────────────────────
+    // 1. Read the raw file and strip UTF-8 BOM (common in Spanish subtitles)
+    let content = fs.readFileSync(file.path, 'utf-8');
+    content = content.replace(/^\uFEFF/, ''); // Strip BOM
+
+    // 2. If it's SRT, convert to VTT (HLS.js only supports VTT natively)
+    if (ext === '.srt') {
+      const vttContent = 'WEBVTT\n\n' + content
+        // Remove SRT sequence numbers (lines that are just a number before timestamps)
+        .replace(/^\d+\s*$/gm, '')
+        // Convert SRT timestamps (00:00:00,000) to VTT format (00:00:00.000)
+        .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+        // Clean up extra blank lines
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // Write as .vtt with a new filename
+      finalPath = file.path.replace(/\.srt$/i, '.vtt');
+      fs.writeFileSync(finalPath, vttContent, 'utf-8');
+      // Remove the original .srt
+      fs.unlinkSync(file.path);
+    } else {
+      // It's already VTT — just write back the BOM-stripped version
+      fs.writeFileSync(file.path, content, 'utf-8');
+    }
+
+    const finalFilename = path.basename(finalPath);
+    const subtitleUrl = `/media/subtitles/${finalFilename}`;
 
     const subtitle = await prisma.subtitleTrack.create({
       data: {
@@ -91,7 +121,7 @@ uploadRouter.post('/subtitle', subtitleUpload.single('subtitle'), (async (req: a
         language,
         label: label || language,
         url: subtitleUrl,
-        format: path.extname(file.originalname).replace('.', '').toUpperCase() as any
+        format: 'VTT' // Always VTT after conversion
       }
     });
 

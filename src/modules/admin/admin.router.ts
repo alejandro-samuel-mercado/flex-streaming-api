@@ -20,6 +20,8 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
       totalViews,
       recentContent,
       processingVideos,
+      topContent,
+      recentActivity
     ] = await Promise.all([
       prisma.user.count({ where: { deletedAt: null } }),
       prisma.content.count({ where: { deletedAt: null } }),
@@ -32,7 +34,26 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
         select: { id: true, slug: true, type: true, status: true, createdAt: true },
       }),
       prisma.videoFile.count({ where: { status: { in: ['PENDING', 'QUEUED', 'PROCESSING'] } } }),
+      prisma.content.findMany({
+        where: { deletedAt: null },
+        orderBy: { viewCount: 'desc' },
+        take: 5,
+        select: { id: true, type: true, viewCount: true, rating: true, translations: { select: { title: true }, take: 1 } },
+      }),
+      prisma.videoFile.findMany({
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+        select: { id: true, type: true, status: true, updatedAt: true, content: { select: { translations: { select: { title: true }, take: 1 } } } }
+      })
     ]);
+
+    // Map recentActivity into a generic notification / activity shape
+    const activityLogs = recentActivity.map(v => ({
+      name: v.content?.translations?.[0]?.title ? `${v.content.translations[0].title} (${v.type})` : `Archivo de video`,
+      status: v.status,
+      time: v.updatedAt.toISOString(),
+      type: 'VIDEO_PROCESSING'
+    }));
 
     ok(res, {
       kpis: {
@@ -43,6 +64,13 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
         processingVideos,
       },
       recentContent,
+      topContent: topContent.map(c => ({
+        title: c.translations?.[0]?.title || 'Sin Título',
+        type: c.type,
+        views: c.viewCount,
+        rating: c.rating
+      })),
+      activity: activityLogs
     });
   } catch (err) { next(err); }
 }) as RequestHandler);
@@ -55,8 +83,30 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
     const limit = parseInt(req.query.limit as string) || 20;
     const role = req.query.role as string | undefined;
 
-    const where: Record<string, unknown> = { deletedAt: null };
-    if (role) where.role = role;
+    if (role === 'END_USER') {
+      const [users, total] = await Promise.all([
+        prisma.endUserAccount.findMany({
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            plan: true,
+            managedBy: { select: { id: true, name: true, email: true } },
+            _count: { select: { connectedDevices: true } },
+            connectedDevices: true,
+          },
+        }),
+        prisma.endUserAccount.count(),
+      ]);
+      return ok(res, { users, total, page, limit });
+    }
+
+    const where: any = {};
+    if (role === 'VENDOR') {
+      where.role = { in: ['VENDOR', 'SUPER_VENDOR'] };
+    } else if (role) {
+      where.role = role;
+    }
 
     const [users, total] = await Promise.all([
       prisma.user.findMany({

@@ -18,11 +18,13 @@ const CONTENT_LIST_SELECT = {
     country: true,
     trailerUrl: true,
     createdAt: true,
+    isFreeWithMembership: true,
     translations: { select: { language: true, title: true, description: true, tagline: true } },
     thumbnails: { where: { type: 'POSTER' }, take: 1 },
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
+    platform: { select: { name: true, logoUrl: true } },
     ageRating: { select: { id: true, code: true, label: true } },
-    videoFiles: { select: { status: true } },
+    videoFiles: { select: { status: true, qualities: { select: { resolution: true } } } },
 } satisfies Prisma.ContentSelect;
 
 export class ContentService {
@@ -37,16 +39,18 @@ export class ContentService {
         actorId?: string;
         platformId?: string;
         isFree?: boolean;
+        featured?: boolean;
         minYear?: number;
         maxYear?: number;
         minDuration?: number;
         maxDuration?: number;
         sort: string;
         lang: string;
+        incomplete?: boolean;
     }) {
         const {
-            page, limit, search, type, status, genreId,
-            platformId, sort
+            page, limit, search, type, status, genreId, tagId,
+            platformId, isFree, featured, sort, incomplete, minYear
         } = filters;
 
         const skip = (page - 1) * limit;
@@ -75,6 +79,33 @@ export class ContentService {
         // 5. Genre filter
         if (genreId) conditions.push({ genres: { some: { genreId } } });
 
+        // 5b. Tag filter
+        if (tagId) conditions.push({ tags: { some: { tagId } } });
+
+        // 5c. Free / Featured
+        if (isFree !== undefined) {
+            conditions.push({ isFreeWithMembership: !isFree });
+        }
+        if (featured !== undefined) {
+            conditions.push({ featured });
+        }
+
+        if (minYear !== undefined) {
+            conditions.push({ releaseYear: { gte: minYear } });
+        }
+
+        // 5d. Incomplete filter
+        if (incomplete) {
+            conditions.push({
+                status: 'PENDING',
+                OR: [
+                    { translations: { none: {} } },
+                    { translations: { every: { description: { equals: '' } } } },
+                    { thumbnails: { none: { type: 'POSTER' } } }
+                ]
+            });
+        }
+
         // 6. Search filter
         if (search) {
             conditions.push({
@@ -92,8 +123,8 @@ export class ContentService {
         const orderBy: Prisma.ContentOrderByWithRelationInput =
             sort === 'popular' ? { viewCount: 'desc' } :
                 sort === 'rating' ? { rating: 'desc' } :
-                    sort === 'az' ? { slug: 'asc' } :
-                        sort === 'za' ? { slug: 'desc' } :
+                    sort === 'az' ? { title: 'asc' } :
+                        sort === 'za' ? { title: 'desc' } :
                             sort === 'oldest' ? { createdAt: 'asc' } :
                                 { createdAt: 'desc' };
 
@@ -231,14 +262,45 @@ export class ContentService {
 
         const { posterPath, backdropPath, ...finalContentData } = contentData;
 
+        const mainTitle = translations?.find((t: any) => t.language === 'es')?.title || translations?.[0]?.title || originalTitle || contentData.slug;
         const content = await prisma.content.create({
             data: {
                 ...(finalContentData as Prisma.ContentCreateInput),
+                originalTitle: originalTitle || undefined,
+                title: mainTitle,
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id: string) => ({ genreId: id })) } : undefined,
                 tags: tagIds ? { create: tagIds.map((id: string) => ({ tagId: id })) } : undefined,
-                actors: actorIds ? { create: actorIds.map((id: string, idx: number) => ({ actorId: id, order: idx })) } : undefined,
-                directors: directorIds ? { create: directorIds.map((id: string) => ({ directorId: id })) } : undefined,
+                actors: (data as any).actors ? {
+                    create: ((data as any).actors as any[]).map((actor: any, idx: number) => ({
+                        order: idx,
+                        character: actor.character || null,
+                        actor: {
+                            connectOrCreate: {
+                                where: { tmdbId: actor.tmdbId?.toString() || `temp-${Date.now()}-${idx}` },
+                                create: {
+                                    name: actor.name,
+                                    tmdbId: actor.tmdbId?.toString() || null,
+                                    photoUrl: actor.photoUrl || null
+                                }
+                            }
+                        }
+                    }))
+                } : actorIds ? { create: actorIds.map((id: string, idx: number) => ({ actorId: id, order: idx })) } : undefined,
+                directors: (data as any).directors ? {
+                    create: ((data as any).directors as any[]).map((director: any) => ({
+                        director: {
+                            connectOrCreate: {
+                                where: { tmdbId: director.tmdbId?.toString() || `temp-${Date.now()}` },
+                                create: {
+                                    name: director.name,
+                                    tmdbId: director.tmdbId?.toString() || null,
+                                    photoUrl: director.photoUrl || null
+                                }
+                            }
+                        }
+                    }))
+                } : directorIds ? { create: directorIds.map((id: string) => ({ directorId: id })) } : undefined,
             },
         });
 
@@ -285,10 +347,65 @@ export class ContentService {
             tagline: t.tagline
         }));
 
+        // Handle raw actors/directors for updates if passed (for TMDB import on edit)
+        let actorsOperation = undefined;
+        if ((data as any).actors) {
+            actorsOperation = {
+                deleteMany: {},
+                create: ((data as any).actors as any[]).map((actor: any, idx: number) => ({
+                    order: idx,
+                    character: actor.character || null,
+                    actor: {
+                        connectOrCreate: {
+                            where: { tmdbId: actor.tmdbId?.toString() || `temp-${Date.now()}-${idx}` },
+                            create: {
+                                name: actor.name,
+                                tmdbId: actor.tmdbId?.toString() || null,
+                                photoUrl: actor.photoUrl || null
+                            }
+                        }
+                    }
+                }))
+            };
+        } else if (actorIds) {
+            actorsOperation = {
+                deleteMany: {},
+                create: actorIds.map((id: string, idx: number) => ({ actorId: id, order: idx }))
+            };
+        }
+
+        let directorsOperation = undefined;
+        if ((data as any).directors) {
+            directorsOperation = {
+                deleteMany: {},
+                create: ((data as any).directors as any[]).map((director: any) => ({
+                    director: {
+                        connectOrCreate: {
+                            where: { tmdbId: director.tmdbId?.toString() || `temp-${Date.now()}` },
+                            create: {
+                                name: director.name,
+                                tmdbId: director.tmdbId?.toString() || null,
+                                photoUrl: director.photoUrl || null
+                            }
+                        }
+                    }
+                }))
+            };
+        } else if (directorIds) {
+            directorsOperation = {
+                deleteMany: {},
+                create: directorIds.map((id: string) => ({ directorId: id }))
+            };
+        }
+
+        const mainTitle = processedTranslations?.find((t: any) => t.language === 'es')?.title || processedTranslations?.[0]?.title || originalTitle;
+
         return prisma.content.update({
             where: { id },
             data: {
                 ...(contentData as Prisma.ContentUpdateInput),
+                originalTitle: originalTitle || undefined,
+                title: mainTitle || undefined,
                 translations: processedTranslations ? {
                     deleteMany: {},
                     create: processedTranslations
@@ -301,14 +418,8 @@ export class ContentService {
                     deleteMany: {},
                     create: tagIds.map((id: string) => ({ tagId: id }))
                 } : undefined,
-                actors: actorIds ? {
-                    deleteMany: {},
-                    create: actorIds.map((id: string, idx: number) => ({ actorId: id, order: idx }))
-                } : undefined,
-                directors: directorIds ? {
-                    deleteMany: {},
-                    create: directorIds.map((id: string) => ({ directorId: id }))
-                } : undefined,
+                actors: actorsOperation,
+                directors: directorsOperation,
             },
             include: {
                 translations: true,

@@ -1,7 +1,15 @@
-import { prisma } from './src/shared/config/prisma';
-
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
 async function main() {
-  console.log('Models on prisma client:', Object.keys(prisma).filter(k => !k.startsWith('$') && !k.startsWith('_')));
+  const data = await prisma.content.findMany({
+    where: {
+      AND: [
+        { deletedAt: null },
+        { featured: true }
+      ]
+    },
+    select: { id: true, featured: true }
+  });
+  console.log(data);
 }
-
-main().catch(console.error);
+main().finally(() => prisma.$disconnect());

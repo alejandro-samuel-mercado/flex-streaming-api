@@ -180,6 +180,8 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
       data: {
         type: details.type,
         status: 'PENDING',
+        originalTitle: details.originalTitle || undefined,
+        title: details.title,
         releaseYear: details.releaseYear,
         duration: details.duration,
         rating: details.rating,
@@ -187,6 +189,10 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
         imdbId: details.imdbId || undefined,
         country: details.country || undefined,
         languages: details.languages || [],
+        originalLanguage: details.originalLanguage || undefined,
+        budget: details.budget ? BigInt(details.budget) : undefined,
+        revenue: details.revenue ? BigInt(details.revenue) : undefined,
+        isAdult: details.isAdult || false,
         translations: {
           deleteMany: {},
           create: [{

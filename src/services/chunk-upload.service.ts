@@ -51,10 +51,45 @@ export class ChunkUploadService {
 
     return new Promise<string>((resolve, reject) => {
       writeStream.on('finish', () => {
-        fs.rmdirSync(chunkDir); // Delete empty chunk dir
+        // Clean up chunk directory
+        fs.rmSync(chunkDir, { recursive: true, force: true });
         resolve(finalPath);
       });
       writeStream.on('error', reject);
     });
+  }
+
+  /**
+   * Deletes chunk directories older than maxAgeMs (default: 24 hours).
+   * Call this periodically to prevent disk from filling up with abandoned uploads.
+   */
+  static cleanupStaleChunks(maxAgeMs: number = 24 * 60 * 60 * 1000): number {
+    if (!fs.existsSync(this.TEMP_DIR)) return 0;
+
+    let cleaned = 0;
+    const now = Date.now();
+
+    try {
+      const entries = fs.readdirSync(this.TEMP_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        const dirPath = path.join(this.TEMP_DIR, entry.name);
+        try {
+          const stat = fs.statSync(dirPath);
+          if (now - stat.mtimeMs > maxAgeMs) {
+            fs.rmSync(dirPath, { recursive: true, force: true });
+            cleaned++;
+            console.log(`🧹 [ChunkUpload] Cleaned stale chunk dir: ${entry.name}`);
+          }
+        } catch {
+          // Skip if we can't stat
+        }
+      }
+    } catch {
+      // TEMP_DIR might not exist yet
+    }
+
+    return cleaned;
   }
 }

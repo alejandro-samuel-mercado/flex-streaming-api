@@ -18,13 +18,15 @@ const ContentFiltersSchema = z.object({
   tagId: z.string().optional(),
   actorId: z.string().optional(),
   platformId: z.string().optional(),
-  isFree: z.preprocess((v) => v === 'true', z.boolean()).optional(),
+  isFree: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
+  featured: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
   minYear: z.coerce.number().optional(),
   maxYear: z.coerce.number().optional(),
   minDuration: z.coerce.number().optional(),
   maxDuration: z.coerce.number().optional(),
   sort: z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
   lang: z.string().default('es'),
+  incomplete: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
 });
 
 // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────────
@@ -54,6 +56,7 @@ contentRouter.get('/', (async (req, res, next) => {
   try {
     console.log('[ContentRouter] Query received:', req.query);
     const filters = ContentFiltersSchema.parse(req.query);
+    console.log('[ContentRouter] Parsed filters:', filters);
     const { data, total, page, limit } = await ContentService.getAllContent(filters);
     ok(res, data, paginate(page, limit, total));
   } catch (err) { next(err); }
