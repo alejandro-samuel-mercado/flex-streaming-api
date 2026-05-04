@@ -400,12 +400,16 @@ export class ContentService {
 
         const mainTitle = processedTranslations?.find((t: any) => t.language === 'es')?.title || processedTranslations?.[0]?.title || originalTitle;
 
+        // Clean up contentData to avoid issues with platformId vs platform etc.
+        const { platformId, ...cleanContentData } = contentData;
+
         return prisma.content.update({
             where: { id },
             data: {
-                ...(contentData as Prisma.ContentUpdateInput),
-                originalTitle: originalTitle || undefined,
-                title: mainTitle || undefined,
+                ...(cleanContentData as Prisma.ContentUpdateInput),
+                originalTitle: originalTitle !== undefined ? originalTitle : undefined,
+                title: mainTitle !== undefined ? mainTitle : undefined,
+                platform: platformId !== undefined ? (platformId ? { connect: { id: platformId } } : { disconnect: true }) : undefined,
                 translations: processedTranslations ? {
                     deleteMany: {},
                     create: processedTranslations

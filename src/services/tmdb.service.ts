@@ -45,14 +45,6 @@ export interface TMDBFullDetails {
 
 export class TMDBService {
   private static readonly baseURL = env.TMDB_BASE_URL;
-  private static readonly accessToken = env.TMDB_ACCESS_TOKEN;
-
-  private static getHeaders() {
-    return {
-      accept: 'application/json',
-      Authorization: `Bearer ${this.accessToken}`
-    };
-  }
 
   /**
    * Search for movies or series by title
@@ -60,8 +52,8 @@ export class TMDBService {
   static async search(query: string, type: 'movie' | 'tv' | 'multi' = 'multi', lang: string = 'es-ES') {
     try {
       const response = await axios.get(`${this.baseURL}/search/${type}`, {
-        headers: this.getHeaders(),
         params: {
+          api_key: env.TMDB_API_KEY,
           query,
           language: lang,
           include_adult: false
@@ -80,8 +72,8 @@ export class TMDBService {
   static async getDetails(id: string | number, type: 'movie' | 'tv', lang: string = 'es-ES') {
     try {
       const response = await axios.get(`${this.baseURL}/${type}/${id}`, {
-        headers: this.getHeaders(),
         params: {
+          api_key: env.TMDB_API_KEY,
           language: lang,
           append_to_response: 'credits,videos,images'
         }
