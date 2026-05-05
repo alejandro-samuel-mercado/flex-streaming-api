@@ -13,15 +13,16 @@ export class SubscriptionPlansService {
   static async getActivePlans() {
     return prisma.subscriptionPlan.findMany({
       where: { isActive: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { durationDays: 'asc' },
     });
   }
 
   static async getAllPlans() {
     return prisma.subscriptionPlan.findMany({
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { durationDays: 'asc' },
     });
   }
+
 
   static async getById(id: string) {
     const plan = await prisma.subscriptionPlan.findUnique({ where: { id } });
@@ -40,7 +41,9 @@ export class SubscriptionPlansService {
     bonusDays?: number;
     maxDevices?: number;
     sortOrder?: number;
+    baseCredits?: number;
   }) {
+
     if (data.isDemo) {
       data.creditCost = 0;
       if (!data.demoHours || data.demoHours < 1) {
@@ -60,8 +63,10 @@ export class SubscriptionPlansService {
         bonusDays: data.bonusDays ?? 0,
         maxDevices: data.maxDevices ?? 1,
         sortOrder: data.sortOrder ?? 0,
+        baseCredits: data.baseCredits ?? 0,
       },
     });
+
   }
 
   static async update(id: string, data: {
@@ -75,7 +80,9 @@ export class SubscriptionPlansService {
     bonusDays?: number;
     maxDevices?: number;
     sortOrder?: number;
+    baseCredits?: number;
   }) {
+
     await this.getById(id);
 
     if (data.isDemo === true) {

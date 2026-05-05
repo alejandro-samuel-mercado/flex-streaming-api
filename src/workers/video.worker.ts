@@ -30,7 +30,8 @@ export const videoWorker = new Worker(
 
       // ── Lock: prevent double-processing ───────────────────────────────
       // If the record is already PROCESSING, another worker is handling it
-      if (existsInitial.status === 'PROCESSING') {
+      // EXCEPT if this is a retry attempt (server restart/crash recovery), in which case we MUST proceed
+      if (existsInitial.status === 'PROCESSING' && job.attemptsMade === 0) {
         job.log('Job skipped: VideoFile is already being processed by another worker.');
         return { skipped: true };
       }

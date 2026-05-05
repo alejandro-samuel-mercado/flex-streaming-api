@@ -16,6 +16,7 @@ const CONTENT_LIST_SELECT = {
     viewCount: true,
     featured: true,
     country: true,
+    originalTitle: true,
     trailerUrl: true,
     createdAt: true,
     isFreeWithMembership: true,
@@ -24,7 +25,7 @@ const CONTENT_LIST_SELECT = {
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
     platform: { select: { name: true, logoUrl: true } },
     ageRating: { select: { id: true, code: true, label: true } },
-    videoFiles: { select: { status: true, qualities: { select: { resolution: true } } } },
+    videoFiles: { select: { type: true, status: true, qualities: { select: { resolution: true } } } },
 } satisfies Prisma.ContentSelect;
 
 export class ContentService {
@@ -270,7 +271,7 @@ export class ContentService {
         const content = await prisma.content.create({
             data: {
                 ...(finalContentData as Prisma.ContentCreateInput),
-                originalTitle: originalTitle || undefined,
+                originalTitle: originalTitle || null,
                 title: mainTitle,
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id: string) => ({ genreId: id })) } : undefined,
@@ -407,13 +408,16 @@ export class ContentService {
             || processedTranslations?.find((t: any) => t.title)?.title 
             || originalTitle;
 
-        // Clean up contentData to avoid issues with platformId vs platform etc.
-        const { platformId, ...cleanContentData } = contentData;
+        // Clean up contentData and handle BigInts
+        const { platformId, budget, revenue, ...cleanContentData } = contentData;
 
         return prisma.content.update({
             where: { id },
             data: {
                 ...(cleanContentData as Prisma.ContentUpdateInput),
+                originalTitle: originalTitle !== undefined ? originalTitle : undefined,
+                budget: budget !== undefined ? (budget ? BigInt(budget) : null) : undefined,
+                revenue: revenue !== undefined ? (revenue ? BigInt(revenue) : null) : undefined,
                 title: mainTitle !== undefined ? mainTitle : undefined,
                 platform: platformId !== undefined ? (platformId ? { connect: { id: platformId } } : { disconnect: true }) : undefined,
                 translations: (processedTranslations && processedTranslations.length > 0) ? {

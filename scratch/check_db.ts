@@ -2,19 +2,12 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  const activeCount = await prisma.content.count({ where: { status: 'ACTIVE' } });
-  const totalCount = await prisma.content.count();
-  const platforms = await prisma.platform.findMany({
-    include: { _count: { select: { contents: true } } }
+  const contents = await prisma.content.findMany({
+    take: 5,
+    select: { id: true, slug: true, originalTitle: true, title: true }
   });
-  
-  console.log('--- DATABASE STATS ---');
-  console.log('Total Content:', totalCount);
-  console.log('Active Content:', activeCount);
-  console.log('Platforms and Content Count:');
-  platforms.forEach(p => {
-    console.log(`- ${p.name} (ID: ${p.id}): ${p._count.contents} items`);
-  });
+  console.log('Sample content from DB:');
+  console.log(JSON.stringify(contents, null, 2));
 }
 
-main().finally(() => prisma.$disconnect());
+main().catch(console.error).finally(() => prisma.$disconnect());

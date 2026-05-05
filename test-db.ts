@@ -1,7 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
-async function run() {
-  const c1 = await prisma.content.findFirst({ where: { slug: 'the-avengers-e1tm' } });
-  console.log("Slug fetch:", c1 ? c1.id : "null");
+async function main() {
+  const videos = await prisma.videoFile.findMany({ where: { status: 'PROCESSING' } });
+  console.log(JSON.stringify(videos, null, 2));
 }
-run().finally(() => prisma.$disconnect());
+main().finally(() => prisma.$disconnect());

@@ -120,7 +120,7 @@ app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 50,
   message: { success: false, error: 'Too many auth requests' },
   standardHeaders: true,
   legacyHeaders: false,

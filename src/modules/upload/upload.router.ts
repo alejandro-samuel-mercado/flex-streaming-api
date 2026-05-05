@@ -11,6 +11,29 @@ import fs from 'fs';
 export const uploadRouter = Router();
 console.log('📂 [UploadRouter] Initializing...');
 
+/**
+ * GET /api/upload/chunk-status/:fileId
+ * MOVED TO TOP to ensure it's matched first
+ */
+uploadRouter.get('/chunk-status/:fileId', (async (req: any, res: any, next: any) => {
+  try {
+    const { fileId } = req.params;
+    console.log(`🔍 [UploadRouter] Checking status for ${fileId}`);
+    const chunkDir = path.join(env.UPLOAD_DIR, 'chunks', fileId);
+    
+    if (!fs.existsSync(chunkDir)) {
+      return res.json({ success: true, uploadedChunks: [] });
+    }
+
+    const files = fs.readdirSync(chunkDir);
+    const uploadedChunks = files
+      .map(f => parseInt(f))
+      .filter(n => !isNaN(n));
+    
+    res.json({ success: true, uploadedChunks });
+  } catch (err) { next(err); }
+}) as any);
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, env.UPLOAD_DIR);
@@ -346,6 +369,8 @@ uploadRouter.post('/chunk', chunkUpload.single('chunk'), (async (req: any, res: 
     res.json({ success: true, message: `Chunk ${chunkIndex} saved` });
   } catch (err) { next(err); }
 }) as any);
+
+// Chunk status route moved to top
 
 /**
  * POST /api/upload/complete

@@ -13,8 +13,10 @@ import { UserRole } from '@prisma/client';
 
 const BCRYPT_ROUNDS = 12;
 
-async function canManageAccount(managedById: string, userId: string, userRole: UserRole): Promise<boolean> {
-  if (userRole === 'ADMIN') return true;
+async function canAccessAccount(managedById: string, userId: string, userRole: UserRole, isWrite = false): Promise<boolean> {
+  if (userRole === 'ADMIN') {
+    return !isWrite; // Admin can read but not write
+  }
   if (managedById === userId) return true;
   if (userRole === 'SUPER_VENDOR') {
     // Check if the account is managed by one of this super vendor's child vendors
@@ -153,7 +155,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
       throw new AppError(403, 'You can only view your own clients', 'FORBIDDEN');
     }
 
@@ -169,7 +171,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
       throw new AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
     }
 
@@ -188,8 +190,8 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
-      throw new AppError(403, 'You can only delete your own clients', 'FORBIDDEN');
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
+      throw new AppError(403, 'You do not have permission to delete this client', 'FORBIDDEN');
     }
 
     if (account.status === 'ACTIVE' && userRole !== 'ADMIN') {
@@ -223,7 +225,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
       throw new AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
     }
 
@@ -335,7 +337,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
       throw new AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
     }
 
@@ -361,7 +363,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
       throw new AppError(403, 'You can only view your own clients\' devices', 'FORBIDDEN');
     }
 
@@ -377,7 +379,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
       throw new AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
     }
 
@@ -401,7 +403,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
       throw new AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
     }
 
@@ -424,7 +426,7 @@ export class EndUsersService {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
     }
 
-    if (!(await canManageAccount(account.managedById, userId, userRole))) {
+    if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
       throw new AppError(403, 'You can only view your own clients\' history', 'FORBIDDEN');
     }
 

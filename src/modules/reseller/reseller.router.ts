@@ -82,10 +82,11 @@ resellerRouter.patch('/vendors/:id/status', auth, superVendorPlus, (async (req, 
   } catch (err) { next(err); }
 }) as RequestHandler);
 
-// DELETE /api/reseller/vendors/:id — Delete vendor (ADMIN only)
-resellerRouter.delete('/vendors/:id', auth, adminOnly, (async (req, res, next) => {
+// DELETE /api/reseller/vendors/:id — Delete vendor (ADMIN or SUPER_VENDOR)
+resellerRouter.delete('/vendors/:id', auth, superVendorPlus, (async (req, res, next) => {
   try {
-    await ResellerService.deleteVendor(req.params.id);
+    const authReq = req as unknown as AuthenticatedRequest;
+    await ResellerService.deleteVendor(req.params.id, authReq.user!.id, authReq.user!.role);
     ok(res, { message: 'Vendor deleted successfully' });
   } catch (err) { next(err); }
 }) as RequestHandler);
@@ -112,6 +113,20 @@ resellerRouter.get('/vendors/:id/credits/history', auth, superVendorPlus, (async
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const result = await ResellerService.getCreditHistory(req.params.id, authReq.user!.id, authReq.user!.role, page, limit);
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+// POST /api/reseller/vendors/:id/plan — Assign subscription plan to a vendor
+resellerRouter.post('/vendors/:id/plan', auth, superVendorPlus, (async (req, res, next) => {
+  try {
+    const authReq = req as unknown as AuthenticatedRequest;
+    const { planId } = z.object({ planId: z.string() }).parse(req.body);
+    const result = await ResellerService.assignPlanToVendor(
+      req.params.id,
+      authReq.user!.id,
+      authReq.user!.role,
+      planId,
+    );
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);

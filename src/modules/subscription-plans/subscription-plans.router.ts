@@ -28,7 +28,9 @@ const CreatePlanSchema = z.object({
   bonusDays: z.number().int().min(0).default(0),
   maxDevices: z.number().int().min(1).default(1),
   sortOrder: z.number().int().default(0),
+  baseCredits: z.number().int().min(0).optional(),
 });
+
 
 const UpdatePlanSchema = CreatePlanSchema.partial();
 

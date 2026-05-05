@@ -10,7 +10,7 @@ console.log('🚀 [ContentRouter] Router loaded and routes defined');
 
 const ContentFiltersSchema = z.object({
   page: z.coerce.number().min(1).default(1),
-  limit: z.coerce.number().min(1).max(100).default(50), // Increased max for better browsing
+  limit: z.coerce.number().min(1).max(1000).default(50), // Increased max to support admin duplication checks
   search: z.string().optional(),
   type: z.string().optional(),
   status: z.string().optional(),

@@ -13,15 +13,16 @@ export class CreditPackagesService {
   static async getActivePackages() {
     return prisma.creditPackage.findMany({
       where: { isActive: true },
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { baseCredits: 'asc' },
     });
   }
 
   static async getAllPackages() {
     return prisma.creditPackage.findMany({
-      orderBy: { sortOrder: 'asc' },
+      orderBy: { baseCredits: 'asc' },
     });
   }
+
 
   static async getById(id: string) {
     const pkg = await prisma.creditPackage.findUnique({ where: { id } });

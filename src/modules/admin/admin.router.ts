@@ -2,12 +2,18 @@ import { Router, RequestHandler, Response, NextFunction } from 'express';
 import { authenticate, requireRole, AuthenticatedRequest } from '../../shared/middleware/auth.middleware';
 import { ok } from '../../shared/utils/api-response';
 import { prisma } from '../../shared/config/prisma';
+import { videoQueue } from '../../services/queue.service';
+import bcrypt from 'bcrypt';
+import { z } from 'zod';
+
 
 export const adminRouter = Router();
 
 // All admin routes require ADMIN role
 adminRouter.use(authenticate as RequestHandler);
 adminRouter.use(requireRole('ADMIN') as RequestHandler);
+
+
 
 // ─── Dashboard KPIs ──────────────────────────────────────────────────────────
 
@@ -78,14 +84,20 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
 // ─── Users Management ────────────────────────────────────────────────────────
 
 adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
+
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const role = req.query.role as string | undefined;
+    const search = req.query.search as string | undefined;
 
+    const where: any = { deletedAt: null };
+    
     if (role === 'END_USER') {
       const [users, total] = await Promise.all([
         prisma.endUserAccount.findMany({
+          where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
           skip: (page - 1) * limit,
           take: limit,
           orderBy: { createdAt: 'desc' },
@@ -96,16 +108,24 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
             connectedDevices: true,
           },
         }),
-        prisma.endUserAccount.count(),
+        prisma.endUserAccount.count({
+           where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
+        }),
       ]);
       return ok(res, { users, total, page, limit });
     }
 
-    const where: any = {};
     if (role === 'VENDOR') {
-      where.role = { in: ['VENDOR', 'SUPER_VENDOR'] };
+      where.role = 'SUPER_VENDOR';
     } else if (role) {
       where.role = role;
+    }
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' } },
+        { email: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     const [users, total] = await Promise.all([
@@ -115,8 +135,8 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
         take: limit,
         orderBy: { createdAt: 'desc' },
         select: {
-          id: true, email: true, name: true, role: true, isActive: true, createdAt: true,
-          _count: { select: { profiles: true, memberships: true } },
+          id: true, email: true, name: true, role: true, isActive: true, createdAt: true, credits: true,
+          _count: { select: { profiles: true, memberships: true, children: true, managedEndUsers: true } },
         },
       }),
       prisma.user.count({ where }),
@@ -126,16 +146,84 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
   } catch (err) { next(err); }
 }) as RequestHandler);
 
-adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+adminRouter.post('/users', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
+
   try {
-    const { role, isActive } = req.body;
-    const user = await prisma.user.update({
-      where: { id: req.params.id },
-      data: { ...(role ? { role } : {}), ...(isActive !== undefined ? { isActive } : {}) },
+    const schema = z.object({
+      name: z.string().min(2),
+      email: z.string().email(),
+      password: z.string().min(6),
+      role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']),
     });
+
+    const { name, email, password, role } = schema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'Email already registered' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const user = await prisma.user.create({
+      data: { name, email, passwordHash, role },
+      select: { id: true, email: true, name: true, role: true, isActive: true },
+    });
+
     ok(res, user);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
+
+  try {
+    const schema = z.object({
+      name: z.string().min(2).optional(),
+      email: z.string().email().optional(),
+      password: z.string().min(6).optional(),
+      role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']).optional(),
+      isActive: z.boolean().optional(),
+    });
+
+    const { name, email, password, role, isActive } = schema.parse(req.body);
+    const data: any = {};
+
+    if (name) data.name = name;
+    if (email) data.email = email;
+    if (role) data.role = role;
+    if (isActive !== undefined) data.isActive = isActive;
+    if (password) {
+      data.passwordHash = await bcrypt.hash(password, 12);
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data,
+      select: { id: true, email: true, name: true, role: true, isActive: true },
+    });
+
+    ok(res, user);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+adminRouter.delete('/users/:id', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+
+
+  try {
+    const { id } = req.params;
+    
+    // Prevent self-deletion
+    if (id === req.user?.id) {
+      return res.status(400).json({ success: false, error: 'No puedes eliminar tu propia cuenta' });
+    }
+
+    await prisma.user.delete({ where: { id } });
+    ok(res, { success: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
 
 // ─── Site Config ─────────────────────────────────────────────────────────────
 
@@ -180,7 +268,23 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
         qualities: { select: { resolution: true } },
       },
     });
-    ok(res, videos);
+
+    // ─── Fetch real-time progress from BullMQ for active jobs ───
+    const videosWithProgress = await Promise.all(videos.map(async (v: any) => {
+      if (v.status === 'PROCESSING' && v.processingJobId) {
+        try {
+          const job = await videoQueue.getJob(v.processingJobId);
+          if (job) {
+            return { ...v, progress: job.progress };
+          }
+        } catch (e) {
+          console.warn(`[AdminRouter] Could not fetch progress for job ${v.processingJobId}`);
+        }
+      }
+      return v;
+    }));
+
+    ok(res, videosWithProgress);
   } catch (err) { next(err); }
 }) as RequestHandler);
 
