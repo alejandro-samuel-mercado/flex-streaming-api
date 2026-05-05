@@ -26,11 +26,11 @@ export declare class EndUsersService {
             } | null;
             id: string;
             password: string;
-            createdAt: Date;
-            maxDevices: number;
             username: string;
+            createdAt: Date;
             startDate: Date | null;
             endDate: Date | null;
+            maxDevices: number;
             managedBy: {
                 id: string;
                 email: string;
@@ -51,8 +51,8 @@ export declare class EndUsersService {
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
         password: string;
-        createdAt: Date;
         username: string;
+        createdAt: Date;
     }>;
     static getById(accountId: string, userId: string, userRole: UserRole): Promise<{
         connectedDevicesCount: number;
@@ -62,9 +62,9 @@ export declare class EndUsersService {
             isActive: boolean;
             createdAt: Date;
             updatedAt: Date;
+            maxDevices: number;
             description: string | null;
             durationDays: number;
-            maxDevices: number;
             creditCost: number;
             isDemo: boolean;
             demoHours: number | null;
@@ -98,19 +98,19 @@ export declare class EndUsersService {
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
         password: string;
+        username: string;
         passwordHash: string;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
         userId: string | null;
-        country: string | null;
-        maxDevices: number;
         managedById: string;
         planId: string | null;
-        username: string;
         startDate: Date | null;
         endDate: Date | null;
+        country: string | null;
         notes: string | null;
+        maxDevices: number;
     }>;
     static changePassword(accountId: string, userId: string, userRole: UserRole, newPassword: string): Promise<{
         id: string;
@@ -122,19 +122,19 @@ export declare class EndUsersService {
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
         password: string;
+        username: string;
         passwordHash: string;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
         userId: string | null;
-        country: string | null;
-        maxDevices: number;
         managedById: string;
         planId: string | null;
-        username: string;
         startDate: Date | null;
         endDate: Date | null;
+        country: string | null;
         notes: string | null;
+        maxDevices: number;
     }>;
     static addPlan(accountId: string, userId: string, userRole: UserRole, planId: string): Promise<{
         plan: {
@@ -147,19 +147,19 @@ export declare class EndUsersService {
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
         password: string;
+        username: string;
         passwordHash: string;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
         userId: string | null;
-        country: string | null;
-        maxDevices: number;
         managedById: string;
         planId: string | null;
-        username: string;
         startDate: Date | null;
         endDate: Date | null;
+        country: string | null;
         notes: string | null;
+        maxDevices: number;
     }>;
     static togglePause(accountId: string, userId: string, userRole: UserRole): Promise<{
         status: import(".prisma/client").$Enums.EndUserAccountStatus;

@@ -9,9 +9,8 @@
 
 import { Router, Request, Response, NextFunction, RequestHandler } from 'express';
 import { authenticate, AuthenticatedRequest } from '../../shared/middleware/auth.middleware';
-import { ok, created } from '../../shared/utils/api-response';
+import { ok } from '../../shared/utils/api-response';
 import {
-    registerSchema,
     loginSchema,
     forgotPasswordSchema,
     resetPasswordSchema,

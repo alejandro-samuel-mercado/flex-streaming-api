@@ -18,5 +18,17 @@ export declare class FFmpegService {
     static generateThumbnail(inputPath: string, outputFolder: string): Promise<{
         path: string;
     }>;
+    /**
+     * Extract embedded subtitles from video containers (MKV, MP4, etc.)
+     * Converts any subtitle format (SRT, ASS, SSA, SUB) to WebVTT (.vtt)
+     * Returns metadata for each extracted subtitle track.
+     */
+    static extractSubtitles(inputPath: string, outputFolder: string): Promise<{
+        language: string;
+        label: string;
+        filePath: string;
+        isDefault: boolean;
+        isForced: boolean;
+    }[]>;
 }
 //# sourceMappingURL=ffmpeg.service.d.ts.map

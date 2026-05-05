@@ -21,9 +21,9 @@ export declare class FavoritesService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
     }>;

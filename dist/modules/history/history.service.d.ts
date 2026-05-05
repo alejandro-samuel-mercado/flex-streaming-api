@@ -28,9 +28,9 @@ export declare class HistoryService {
                     id: string;
                     contentId: string | null;
                     episodeId: string | null;
-                    url: string;
                     width: number | null;
                     height: number | null;
+                    url: string;
                 }[];
             } | null;
             episode: {
@@ -68,9 +68,9 @@ export declare class HistoryService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         } | null;
     } & {

@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.videoQueueEvents = exports.videoQueue = void 0;
 exports.addVideoJob = addVideoJob;
 exports.removeVideoJob = removeVideoJob;
+exports.getJobLogs = getJobLogs;
 const bullmq_1 = require("bullmq");
 const ioredis_1 = __importDefault(require("ioredis"));
 const env_1 = require("../shared/config/env");
@@ -39,5 +40,17 @@ async function removeVideoJob(jobId) {
         // The worker will fail when it tries to update the (now deleted) DB record.
     }
     return false;
+}
+async function getJobLogs(jobId) {
+    try {
+        const job = await exports.videoQueue.getJob(jobId);
+        if (!job)
+            return { logs: [], count: 0 };
+        return await exports.videoQueue.getJobLogs(jobId);
+    }
+    catch (err) {
+        console.warn(`⚠️ [Queue] Could not get logs for job ${jobId}: ${err.message}`);
+        return { logs: [], count: 0 };
+    }
 }
 //# sourceMappingURL=queue.service.js.map

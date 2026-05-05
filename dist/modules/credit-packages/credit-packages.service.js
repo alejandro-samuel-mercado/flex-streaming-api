@@ -13,12 +13,12 @@ class CreditPackagesService {
     static async getActivePackages() {
         return prisma_1.prisma.creditPackage.findMany({
             where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
+            orderBy: { baseCredits: 'asc' },
         });
     }
     static async getAllPackages() {
         return prisma_1.prisma.creditPackage.findMany({
-            orderBy: { sortOrder: 'asc' },
+            orderBy: { baseCredits: 'asc' },
         });
     }
     static async getById(id) {

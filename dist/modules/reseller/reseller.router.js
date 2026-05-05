@@ -84,10 +84,11 @@ exports.resellerRouter.patch('/vendors/:id/status', auth, superVendorPlus, (asyn
         next(err);
     }
 }));
-// DELETE /api/reseller/vendors/:id — Delete vendor (ADMIN only)
-exports.resellerRouter.delete('/vendors/:id', auth, adminOnly, (async (req, res, next) => {
+// DELETE /api/reseller/vendors/:id — Delete vendor (ADMIN or SUPER_VENDOR)
+exports.resellerRouter.delete('/vendors/:id', auth, superVendorPlus, (async (req, res, next) => {
     try {
-        await reseller_service_1.ResellerService.deleteVendor(req.params.id);
+        const authReq = req;
+        await reseller_service_1.ResellerService.deleteVendor(req.params.id, authReq.user.id, authReq.user.role);
         (0, api_response_1.ok)(res, { message: 'Vendor deleted successfully' });
     }
     catch (err) {
@@ -113,6 +114,18 @@ exports.resellerRouter.get('/vendors/:id/credits/history', auth, superVendorPlus
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 20;
         const result = await reseller_service_1.ResellerService.getCreditHistory(req.params.id, authReq.user.id, authReq.user.role, page, limit);
+        (0, api_response_1.ok)(res, result);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// POST /api/reseller/vendors/:id/plan — Assign subscription plan to a vendor
+exports.resellerRouter.post('/vendors/:id/plan', auth, superVendorPlus, (async (req, res, next) => {
+    try {
+        const authReq = req;
+        const { planId } = zod_1.z.object({ planId: zod_1.z.string() }).parse(req.body);
+        const result = await reseller_service_1.ResellerService.assignPlanToVendor(req.params.id, authReq.user.id, authReq.user.role, planId);
         (0, api_response_1.ok)(res, result);
     }
     catch (err) {

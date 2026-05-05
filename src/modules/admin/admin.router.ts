@@ -142,7 +142,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
       prisma.user.count({ where }),
     ]);
 
-    ok(res, { users, total, page, limit });
+    return ok(res, { users, total, page, limit });
   } catch (err) { next(err); }
 }) as RequestHandler);
 
@@ -171,7 +171,7 @@ adminRouter.post('/users', (async (req: AuthenticatedRequest, res: Response, nex
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
-    ok(res, user);
+    return ok(res, user);
   } catch (err) { next(err); }
 }) as RequestHandler);
 
@@ -204,7 +204,7 @@ adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, 
       select: { id: true, email: true, name: true, role: true, isActive: true },
     });
 
-    ok(res, user);
+    return ok(res, user);
   } catch (err) { next(err); }
 }) as RequestHandler);
 
@@ -220,7 +220,7 @@ adminRouter.delete('/users/:id', (async (req: AuthenticatedRequest, res: Respons
     }
 
     await prisma.user.delete({ where: { id } });
-    ok(res, { success: true });
+    return ok(res, { success: true });
   } catch (err) { next(err); }
 }) as RequestHandler);
 

@@ -14,12 +14,12 @@ class SubscriptionPlansService {
     static async getActivePlans() {
         return prisma_1.prisma.subscriptionPlan.findMany({
             where: { isActive: true },
-            orderBy: { sortOrder: 'asc' },
+            orderBy: { durationDays: 'asc' },
         });
     }
     static async getAllPlans() {
         return prisma_1.prisma.subscriptionPlan.findMany({
-            orderBy: { sortOrder: 'asc' },
+            orderBy: { durationDays: 'asc' },
         });
     }
     static async getById(id) {
@@ -47,6 +47,7 @@ class SubscriptionPlansService {
                 bonusDays: data.bonusDays ?? 0,
                 maxDevices: data.maxDevices ?? 1,
                 sortOrder: data.sortOrder ?? 0,
+                baseCredits: data.baseCredits ?? 0,
             },
         });
     }

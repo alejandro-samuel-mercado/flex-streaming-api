@@ -15,9 +15,10 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const prisma_1 = require("../../shared/config/prisma");
 const error_handler_1 = require("../../shared/middleware/error-handler");
 const BCRYPT_ROUNDS = 12;
-async function canManageAccount(managedById, userId, userRole) {
-    if (userRole === 'ADMIN')
-        return true;
+async function canAccessAccount(managedById, userId, userRole, isWrite = false) {
+    if (userRole === 'ADMIN') {
+        return !isWrite; // Admin can read but not write
+    }
     if (managedById === userId)
         return true;
     if (userRole === 'SUPER_VENDOR') {
@@ -132,7 +133,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
             throw new error_handler_1.AppError(403, 'You can only view your own clients', 'FORBIDDEN');
         }
         return {
@@ -145,7 +146,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
         }
         const passwordHash = await bcrypt_1.default.hash(newPassword, BCRYPT_ROUNDS);
@@ -160,8 +161,8 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
-            throw new error_handler_1.AppError(403, 'You can only delete your own clients', 'FORBIDDEN');
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
+            throw new error_handler_1.AppError(403, 'You do not have permission to delete this client', 'FORBIDDEN');
         }
         if (account.status === 'ACTIVE' && userRole !== 'ADMIN') {
             throw new error_handler_1.AppError(400, 'Cannot delete an active account. Deactivate it first.', 'ACCOUNT_ACTIVE');
@@ -188,7 +189,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
         }
         const plan = await prisma_1.prisma.subscriptionPlan.findUnique({ where: { id: planId } });
@@ -289,7 +290,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
         }
         let newStatus;
@@ -313,7 +314,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
             throw new error_handler_1.AppError(403, 'You can only view your own clients\' devices', 'FORBIDDEN');
         }
         return prisma_1.prisma.deviceSession.findMany({
@@ -326,7 +327,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
         }
         await prisma_1.prisma.deviceSession.updateMany({
@@ -345,7 +346,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only manage your own clients\' devices', 'FORBIDDEN');
         }
         const device = await prisma_1.prisma.deviceSession.findUnique({ where: { id: deviceId } });
@@ -363,7 +364,7 @@ class EndUsersService {
         if (!account || account.deletedAt) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
         }
-        if (!(await canManageAccount(account.managedById, userId, userRole))) {
+        if (!(await canAccessAccount(account.managedById, userId, userRole, false))) {
             throw new error_handler_1.AppError(403, 'You can only view your own clients\' history', 'FORBIDDEN');
         }
         return prisma_1.prisma.endUserPlanHistory.findMany({

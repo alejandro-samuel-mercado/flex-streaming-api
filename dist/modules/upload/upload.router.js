@@ -48,6 +48,28 @@ const sharp_1 = __importDefault(require("sharp"));
 const fs_1 = __importDefault(require("fs"));
 exports.uploadRouter = (0, express_1.Router)();
 console.log('📂 [UploadRouter] Initializing...');
+/**
+ * GET /api/upload/chunk-status/:fileId
+ * MOVED TO TOP to ensure it's matched first
+ */
+exports.uploadRouter.get('/chunk-status/:fileId', (async (req, res, next) => {
+    try {
+        const { fileId } = req.params;
+        console.log(`🔍 [UploadRouter] Checking status for ${fileId}`);
+        const chunkDir = path_1.default.join(env_1.env.UPLOAD_DIR, 'chunks', fileId);
+        if (!fs_1.default.existsSync(chunkDir)) {
+            return res.json({ success: true, uploadedChunks: [] });
+        }
+        const files = fs_1.default.readdirSync(chunkDir);
+        const uploadedChunks = files
+            .map(f => parseInt(f))
+            .filter(n => !isNaN(n));
+        res.json({ success: true, uploadedChunks });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 const storage = multer_1.default.diskStorage({
     destination: (_req, _file, cb) => {
         cb(null, env_1.env.UPLOAD_DIR);
@@ -117,14 +139,41 @@ exports.uploadRouter.post('/subtitle', subtitleUpload.single('subtitle'), (async
             res.status(400).json({ success: false, error: 'Subtitle file, videoFileId and language are required' });
             return;
         }
-        const subtitleUrl = `/media/subtitles/${file.filename}`;
+        const ext = path_1.default.extname(file.originalname).toLowerCase();
+        let finalPath = file.path;
+        // ── Encoding & format normalization ──────────────────────────────
+        // 1. Read the raw file and strip UTF-8 BOM (common in Spanish subtitles)
+        let content = fs_1.default.readFileSync(file.path, 'utf-8');
+        content = content.replace(/^\uFEFF/, ''); // Strip BOM
+        // 2. If it's SRT, convert to VTT (HLS.js only supports VTT natively)
+        if (ext === '.srt') {
+            const vttContent = 'WEBVTT\n\n' + content
+                // Remove SRT sequence numbers (lines that are just a number before timestamps)
+                .replace(/^\d+\s*$/gm, '')
+                // Convert SRT timestamps (00:00:00,000) to VTT format (00:00:00.000)
+                .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+                // Clean up extra blank lines
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+            // Write as .vtt with a new filename
+            finalPath = file.path.replace(/\.srt$/i, '.vtt');
+            fs_1.default.writeFileSync(finalPath, vttContent, 'utf-8');
+            // Remove the original .srt
+            fs_1.default.unlinkSync(file.path);
+        }
+        else {
+            // It's already VTT — just write back the BOM-stripped version
+            fs_1.default.writeFileSync(file.path, content, 'utf-8');
+        }
+        const finalFilename = path_1.default.basename(finalPath);
+        const subtitleUrl = `/media/subtitles/${finalFilename}`;
         const subtitle = await prisma_1.prisma.subtitleTrack.create({
             data: {
                 videoFileId,
                 language,
                 label: label || language,
                 url: subtitleUrl,
-                format: path_1.default.extname(file.originalname).replace('.', '').toUpperCase()
+                format: 'VTT' // Always VTT after conversion
             }
         });
         res.json({ success: true, data: subtitle });
@@ -276,9 +325,13 @@ exports.uploadRouter.delete('/video/:id', async (req, res, next) => {
         }
         // 3. Delete the record
         await prisma_1.prisma.videoFile.delete({ where: { id } });
-        // 4. (Optional) Delete the physical file if it exists
+        // 4. Delete the physical file ONLY if it was uploaded to our temp directory (not if auto-scanned from elsewhere)
         if (videoFile.originalPath && fs_1.default.existsSync(videoFile.originalPath)) {
-            fs_1.default.unlinkSync(videoFile.originalPath);
+            const absolutePath = path_1.default.resolve(videoFile.originalPath);
+            const absoluteUploadDir = path_1.default.resolve(env_1.env.UPLOAD_DIR || path_1.default.join(env_1.env.MEDIA_PATH, 'uploads'));
+            if (absolutePath.startsWith(absoluteUploadDir)) {
+                fs_1.default.unlinkSync(videoFile.originalPath);
+            }
         }
         return res.json({ success: true, message: 'Video upload cancelled and deleted' });
     }
@@ -323,6 +376,7 @@ exports.uploadRouter.post('/chunk', chunkUpload.single('chunk'), (async (req, re
         next(err);
     }
 }));
+// Chunk status route moved to top
 /**
  * POST /api/upload/complete
  */

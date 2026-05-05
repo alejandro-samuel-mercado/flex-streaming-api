@@ -20,17 +20,20 @@ const CONTENT_LIST_SELECT = {
     viewCount: true,
     featured: true,
     country: true,
+    originalTitle: true,
     trailerUrl: true,
     createdAt: true,
+    isFreeWithMembership: true,
     translations: { select: { language: true, title: true, description: true, tagline: true } },
     thumbnails: { where: { type: 'POSTER' }, take: 1 },
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
+    platform: { select: { name: true, logoUrl: true } },
     ageRating: { select: { id: true, code: true, label: true } },
-    videoFiles: { select: { status: true } },
+    videoFiles: { select: { type: true, status: true, qualities: { select: { resolution: true } } } },
 };
 class ContentService {
     static async getAllContent(filters) {
-        const { page, limit, search, type, status, genreId, platformId, sort } = filters;
+        const { page, limit, search, type, status, genreId, tagId, platformId, isFree, featured, sort, incomplete, minYear } = filters;
         const skip = (page - 1) * limit;
         // 1. Initialize an empty AND array
         const conditions = [
@@ -54,6 +57,30 @@ class ContentService {
         // 5. Genre filter
         if (genreId)
             conditions.push({ genres: { some: { genreId } } });
+        // 5b. Tag filter
+        if (tagId)
+            conditions.push({ tags: { some: { tagId } } });
+        // 5c. Free / Featured
+        if (isFree !== undefined) {
+            conditions.push({ isFreeWithMembership: !isFree });
+        }
+        if (featured !== undefined) {
+            conditions.push({ featured });
+        }
+        if (minYear !== undefined) {
+            conditions.push({ releaseYear: { gte: minYear } });
+        }
+        // 5d. Incomplete filter
+        if (incomplete) {
+            conditions.push({
+                status: 'PENDING',
+                OR: [
+                    { translations: { none: {} } },
+                    { translations: { every: { description: { equals: '' } } } },
+                    { thumbnails: { none: { type: 'POSTER' } } }
+                ]
+            });
+        }
         // 6. Search filter
         if (search) {
             conditions.push({
@@ -67,8 +94,8 @@ class ContentService {
         console.log('[DEBUG] Final Prisma Where:', JSON.stringify(where, null, 2));
         const orderBy = sort === 'popular' ? { viewCount: 'desc' } :
             sort === 'rating' ? { rating: 'desc' } :
-                sort === 'az' ? { slug: 'asc' } :
-                    sort === 'za' ? { slug: 'desc' } :
+                sort === 'az' ? { title: 'asc' } :
+                    sort === 'za' ? { title: 'desc' } :
                         sort === 'oldest' ? { createdAt: 'asc' } :
                             { createdAt: 'desc' };
         const [data, total] = await Promise.all([
@@ -170,7 +197,8 @@ class ContentService {
         });
     }
     static async createContent(data) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data;
+        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data;
+        const originalTitle = data.originalTitle;
         // Generate slug if missing
         if (!contentData.slug) {
             const title = originalTitle || translations?.[0]?.title;
@@ -194,14 +222,47 @@ class ContentService {
             tagline: t.tagline
         }));
         const { posterPath, backdropPath, ...finalContentData } = contentData;
+        const mainTitle = processedTranslations?.find((t) => t.language === 'es' && t.title)?.title
+            || processedTranslations?.find((t) => t.title)?.title
+            || originalTitle;
         const content = await prisma_1.prisma.content.create({
             data: {
                 ...finalContentData,
+                originalTitle: originalTitle || null,
+                title: mainTitle,
                 translations: processedTranslations ? { create: processedTranslations } : undefined,
                 genres: genreIds ? { create: genreIds.map((id) => ({ genreId: id })) } : undefined,
                 tags: tagIds ? { create: tagIds.map((id) => ({ tagId: id })) } : undefined,
-                actors: actorIds ? { create: actorIds.map((id, idx) => ({ actorId: id, order: idx })) } : undefined,
-                directors: directorIds ? { create: directorIds.map((id) => ({ directorId: id })) } : undefined,
+                actors: data.actors ? {
+                    create: data.actors.map((actor, idx) => ({
+                        order: idx,
+                        character: actor.character || null,
+                        actor: {
+                            connectOrCreate: {
+                                where: { tmdbId: actor.tmdbId?.toString() || `temp-${Date.now()}-${idx}` },
+                                create: {
+                                    name: actor.name,
+                                    tmdbId: actor.tmdbId?.toString() || null,
+                                    photoUrl: actor.photoUrl || null
+                                }
+                            }
+                        }
+                    }))
+                } : actorIds ? { create: actorIds.map((id, idx) => ({ actorId: id, order: idx })) } : undefined,
+                directors: data.directors ? {
+                    create: data.directors.map((director) => ({
+                        director: {
+                            connectOrCreate: {
+                                where: { tmdbId: director.tmdbId?.toString() || `temp-${Date.now()}` },
+                                create: {
+                                    name: director.name,
+                                    tmdbId: director.tmdbId?.toString() || null,
+                                    photoUrl: director.photoUrl || null
+                                }
+                            }
+                        }
+                    }))
+                } : directorIds ? { create: directorIds.map((id) => ({ directorId: id })) } : undefined,
             },
         });
         // ─── Post-Creation: TMDB Image Import ────────────────────────────────
@@ -235,18 +296,80 @@ class ContentService {
         return content;
     }
     static async updateContent(id, data) {
-        const { genreIds, tagIds, actorIds, directorIds, translations, originalTitle, ...contentData } = data;
+        const { genreIds, tagIds, actorIds, directorIds, translations, ...contentData } = data;
+        const originalTitle = data.originalTitle;
         const processedTranslations = translations?.map((t) => ({
             language: t.language,
             title: t.title,
             description: t.description || t.synopsis || '',
             tagline: t.tagline
         }));
+        // Handle raw actors/directors for updates if passed (for TMDB import on edit)
+        let actorsOperation = undefined;
+        if (data.actors) {
+            actorsOperation = {
+                deleteMany: {},
+                create: data.actors.map((actor, idx) => ({
+                    order: idx,
+                    character: actor.character || null,
+                    actor: {
+                        connectOrCreate: {
+                            where: { tmdbId: actor.tmdbId?.toString() || `temp-${Date.now()}-${idx}` },
+                            create: {
+                                name: actor.name,
+                                tmdbId: actor.tmdbId?.toString() || null,
+                                photoUrl: actor.photoUrl || null
+                            }
+                        }
+                    }
+                }))
+            };
+        }
+        else if (actorIds) {
+            actorsOperation = {
+                deleteMany: {},
+                create: actorIds.map((id, idx) => ({ actorId: id, order: idx }))
+            };
+        }
+        let directorsOperation = undefined;
+        if (data.directors) {
+            directorsOperation = {
+                deleteMany: {},
+                create: data.directors.map((director) => ({
+                    director: {
+                        connectOrCreate: {
+                            where: { tmdbId: director.tmdbId?.toString() || `temp-${Date.now()}` },
+                            create: {
+                                name: director.name,
+                                tmdbId: director.tmdbId?.toString() || null,
+                                photoUrl: director.photoUrl || null
+                            }
+                        }
+                    }
+                }))
+            };
+        }
+        else if (directorIds) {
+            directorsOperation = {
+                deleteMany: {},
+                create: directorIds.map((id) => ({ directorId: id }))
+            };
+        }
+        const mainTitle = processedTranslations?.find((t) => t.language === 'es' && t.title)?.title
+            || processedTranslations?.find((t) => t.title)?.title
+            || originalTitle;
+        // Clean up contentData and handle BigInts
+        const { platformId, budget, revenue, ...cleanContentData } = contentData;
         return prisma_1.prisma.content.update({
             where: { id },
             data: {
-                ...contentData,
-                translations: processedTranslations ? {
+                ...cleanContentData,
+                originalTitle: originalTitle !== undefined ? originalTitle : undefined,
+                budget: budget !== undefined ? (budget ? BigInt(budget) : null) : undefined,
+                revenue: revenue !== undefined ? (revenue ? BigInt(revenue) : null) : undefined,
+                title: mainTitle !== undefined ? mainTitle : undefined,
+                platform: platformId !== undefined ? (platformId ? { connect: { id: platformId } } : { disconnect: true }) : undefined,
+                translations: (processedTranslations && processedTranslations.length > 0) ? {
                     deleteMany: {},
                     create: processedTranslations
                 } : undefined,
@@ -258,14 +381,8 @@ class ContentService {
                     deleteMany: {},
                     create: tagIds.map((id) => ({ tagId: id }))
                 } : undefined,
-                actors: actorIds ? {
-                    deleteMany: {},
-                    create: actorIds.map((id, idx) => ({ actorId: id, order: idx }))
-                } : undefined,
-                directors: directorIds ? {
-                    deleteMany: {},
-                    create: directorIds.map((id) => ({ directorId: id }))
-                } : undefined,
+                actors: actorsOperation,
+                directors: directorsOperation,
             },
             include: {
                 translations: true,

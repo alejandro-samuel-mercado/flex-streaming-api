@@ -8,7 +8,7 @@ exports.registerSchema = zod_1.z.object({
     password: zod_1.z.string().min(8).max(72),
 });
 exports.loginSchema = zod_1.z.object({
-    email: zod_1.z.string().email(),
+    username: zod_1.z.string().min(1),
     password: zod_1.z.string().min(1),
 });
 exports.forgotPasswordSchema = zod_1.z.object({

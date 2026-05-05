@@ -11,12 +11,14 @@ export declare class ContentService {
         actorId?: string;
         platformId?: string;
         isFree?: boolean;
+        featured?: boolean;
         minYear?: number;
         maxYear?: number;
         minDuration?: number;
         maxDuration?: number;
         sort: string;
         lang: string;
+        incomplete?: boolean;
     }): Promise<{
         data: {
             type: import(".prisma/client").$Enums.ContentType;
@@ -33,14 +35,16 @@ export declare class ContentService {
             } | null;
             id: string;
             createdAt: Date;
+            country: string | null;
             slug: string;
             releaseYear: number | null;
+            originalTitle: string | null;
             duration: number | null;
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
-            country: string | null;
             trailerUrl: string | null;
+            isFreeWithMembership: boolean;
             translations: {
                 language: string;
                 title: string;
@@ -48,7 +52,11 @@ export declare class ContentService {
                 tagline: string | null;
             }[];
             videoFiles: {
+                type: import(".prisma/client").$Enums.VideoFileType;
                 status: import(".prisma/client").$Enums.ProcessingStatus;
+                qualities: {
+                    resolution: string;
+                }[];
             }[];
             genres: ({
                 genre: {
@@ -65,9 +73,9 @@ export declare class ContentService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
         total: number;
@@ -96,18 +104,18 @@ export declare class ContentService {
         translations: {
             id: string;
             language: string;
-            contentId: string;
             title: string;
+            contentId: string;
             description: string;
             tagline: string | null;
         }[];
         videoFiles: ({
             qualities: {
                 id: string;
-                width: number;
-                height: number;
                 videoFileId: string;
                 resolution: string;
+                width: number;
+                height: number;
                 bitrate: number;
                 playlistUrl: string;
                 codec: string;
@@ -125,8 +133,8 @@ export declare class ContentService {
                 id: string;
                 language: string;
                 label: string;
-                url: string;
                 videoFileId: string;
+                url: string;
                 isDefault: boolean;
                 format: string;
                 isForced: boolean;
@@ -166,10 +174,10 @@ export declare class ContentService {
                 videoFiles: ({
                     qualities: {
                         id: string;
-                        width: number;
-                        height: number;
                         videoFileId: string;
                         resolution: string;
+                        width: number;
+                        height: number;
                         bitrate: number;
                         playlistUrl: string;
                         codec: string;
@@ -195,9 +203,9 @@ export declare class ContentService {
                     id: string;
                     contentId: string | null;
                     episodeId: string | null;
-                    url: string;
                     width: number | null;
                     height: number | null;
+                    url: string;
                 }[];
             } & {
                 number: number;
@@ -240,9 +248,9 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
         actors: ({
             actor: {
@@ -285,17 +293,23 @@ export declare class ContentService {
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
+        originalTitle: string | null;
+        title: string | null;
         duration: number | null;
         rating: number | null;
         reviewCount: number;
         viewCount: bigint;
         downloadCount: bigint;
         featured: boolean;
-        country: string | null;
         languages: string[];
+        originalLanguage: string | null;
+        budget: bigint | null;
+        revenue: bigint | null;
+        isAdult: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -308,6 +322,10 @@ export declare class ContentService {
     static getFeaturedContent(): Promise<{
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
+        platform: {
+            name: string;
+            logoUrl: string | null;
+        } | null;
         ageRating: {
             code: string;
             id: string;
@@ -315,14 +333,16 @@ export declare class ContentService {
         } | null;
         id: string;
         createdAt: Date;
+        country: string | null;
         slug: string;
         releaseYear: number | null;
+        originalTitle: string | null;
         duration: number | null;
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
-        country: string | null;
         trailerUrl: string | null;
+        isFreeWithMembership: boolean;
         translations: {
             language: string;
             title: string;
@@ -330,7 +350,11 @@ export declare class ContentService {
             tagline: string | null;
         }[];
         videoFiles: {
+            type: import(".prisma/client").$Enums.VideoFileType;
             status: import(".prisma/client").$Enums.ProcessingStatus;
+            qualities: {
+                resolution: string;
+            }[];
         }[];
         genres: ({
             genre: {
@@ -347,14 +371,18 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
     }[]>;
     static getTrendingContent(): Promise<{
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
+        platform: {
+            name: string;
+            logoUrl: string | null;
+        } | null;
         ageRating: {
             code: string;
             id: string;
@@ -362,14 +390,16 @@ export declare class ContentService {
         } | null;
         id: string;
         createdAt: Date;
+        country: string | null;
         slug: string;
         releaseYear: number | null;
+        originalTitle: string | null;
         duration: number | null;
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
-        country: string | null;
         trailerUrl: string | null;
+        isFreeWithMembership: boolean;
         translations: {
             language: string;
             title: string;
@@ -377,7 +407,11 @@ export declare class ContentService {
             tagline: string | null;
         }[];
         videoFiles: {
+            type: import(".prisma/client").$Enums.VideoFileType;
             status: import(".prisma/client").$Enums.ProcessingStatus;
+            qualities: {
+                resolution: string;
+            }[];
         }[];
         genres: ({
             genre: {
@@ -394,14 +428,18 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
     }[]>;
     static getRecentContent(): Promise<{
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
+        platform: {
+            name: string;
+            logoUrl: string | null;
+        } | null;
         ageRating: {
             code: string;
             id: string;
@@ -409,14 +447,16 @@ export declare class ContentService {
         } | null;
         id: string;
         createdAt: Date;
+        country: string | null;
         slug: string;
         releaseYear: number | null;
+        originalTitle: string | null;
         duration: number | null;
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
-        country: string | null;
         trailerUrl: string | null;
+        isFreeWithMembership: boolean;
         translations: {
             language: string;
             title: string;
@@ -424,7 +464,11 @@ export declare class ContentService {
             tagline: string | null;
         }[];
         videoFiles: {
+            type: import(".prisma/client").$Enums.VideoFileType;
             status: import(".prisma/client").$Enums.ProcessingStatus;
+            qualities: {
+                resolution: string;
+            }[];
         }[];
         genres: ({
             genre: {
@@ -441,14 +485,18 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
     }[]>;
     static getRelatedContent(contentId: string): Promise<{
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
+        platform: {
+            name: string;
+            logoUrl: string | null;
+        } | null;
         ageRating: {
             code: string;
             id: string;
@@ -456,14 +504,16 @@ export declare class ContentService {
         } | null;
         id: string;
         createdAt: Date;
+        country: string | null;
         slug: string;
         releaseYear: number | null;
+        originalTitle: string | null;
         duration: number | null;
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
-        country: string | null;
         trailerUrl: string | null;
+        isFreeWithMembership: boolean;
         translations: {
             language: string;
             title: string;
@@ -471,7 +521,11 @@ export declare class ContentService {
             tagline: string | null;
         }[];
         videoFiles: {
+            type: import(".prisma/client").$Enums.VideoFileType;
             status: import(".prisma/client").$Enums.ProcessingStatus;
+            qualities: {
+                resolution: string;
+            }[];
         }[];
         genres: ({
             genre: {
@@ -488,9 +542,9 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
     }[]>;
     static createContent(data: Record<string, unknown>): Promise<{
@@ -500,17 +554,23 @@ export declare class ContentService {
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
+        originalTitle: string | null;
+        title: string | null;
         duration: number | null;
         rating: number | null;
         reviewCount: number;
         viewCount: bigint;
         downloadCount: bigint;
         featured: boolean;
-        country: string | null;
         languages: string[];
+        originalLanguage: string | null;
+        budget: bigint | null;
+        revenue: bigint | null;
+        isAdult: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -524,18 +584,18 @@ export declare class ContentService {
         translations: {
             id: string;
             language: string;
-            contentId: string;
             title: string;
+            contentId: string;
             description: string;
             tagline: string | null;
         }[];
         videoFiles: ({
             qualities: {
                 id: string;
-                width: number;
-                height: number;
                 videoFileId: string;
                 resolution: string;
+                width: number;
+                height: number;
                 bitrate: number;
                 playlistUrl: string;
                 codec: string;
@@ -582,9 +642,9 @@ export declare class ContentService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
         actors: ({
             actor: {
@@ -627,17 +687,23 @@ export declare class ContentService {
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
+        originalTitle: string | null;
+        title: string | null;
         duration: number | null;
         rating: number | null;
         reviewCount: number;
         viewCount: bigint;
         downloadCount: bigint;
         featured: boolean;
-        country: string | null;
         languages: string[];
+        originalLanguage: string | null;
+        budget: bigint | null;
+        revenue: bigint | null;
+        isAdult: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -654,17 +720,23 @@ export declare class ContentService {
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
+        originalTitle: string | null;
+        title: string | null;
         duration: number | null;
         rating: number | null;
         reviewCount: number;
         viewCount: bigint;
         downloadCount: bigint;
         featured: boolean;
-        country: string | null;
         languages: string[];
+        originalLanguage: string | null;
+        budget: bigint | null;
+        revenue: bigint | null;
+        isAdult: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;

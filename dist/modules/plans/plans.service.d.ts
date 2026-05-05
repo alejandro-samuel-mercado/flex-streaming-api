@@ -5,10 +5,10 @@ export declare class PlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
-        description: string | null;
-        price: import("@prisma/client/runtime/library").Decimal;
-        durationDays: number;
         maxDevices: number;
+        description: string | null;
+        durationDays: number;
+        price: import("@prisma/client/runtime/library").Decimal;
         hasHd: boolean;
         has4k: boolean;
         allowDownload: boolean;

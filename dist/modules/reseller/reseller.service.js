@@ -13,6 +13,7 @@ exports.ResellerService = void 0;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const prisma_1 = require("../../shared/config/prisma");
 const error_handler_1 = require("../../shared/middleware/error-handler");
+const end_users_service_1 = require("../end-users/end-users.service");
 const BCRYPT_ROUNDS = 12;
 class ResellerService {
     static async createSuperVendor(adminId, data) {
@@ -46,6 +47,9 @@ class ResellerService {
                         createdById: adminId,
                     },
                 });
+            }
+            if (data.planId) {
+                await this.assignPlanToVendor(user.id, adminId, 'ADMIN', data.planId);
             }
             return user;
         });
@@ -116,6 +120,9 @@ class ResellerService {
                     },
                 });
             }
+            if (data.planId) {
+                await this.assignPlanToVendor(user.id, creatorId, creatorRole, data.planId);
+            }
             return user;
         });
     }
@@ -126,6 +133,10 @@ class ResellerService {
         };
         if (userRole === 'SUPER_VENDOR') {
             where.parentId = userId;
+        }
+        else if (userRole === 'ADMIN') {
+            // Admins only manage Super Resellers
+            where.role = 'SUPER_VENDOR';
         }
         const vendors = await prisma_1.prisma.user.findMany({
             where,
@@ -173,6 +184,9 @@ class ResellerService {
         if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
             throw new error_handler_1.AppError(403, 'You can only view your own vendors', 'FORBIDDEN');
         }
+        if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Admins can only manage Super Resellers', 'FORBIDDEN');
+        }
         return vendor;
     }
     static async updateVendorStatus(vendorId, requesterId, requesterRole, isActive) {
@@ -182,16 +196,25 @@ class ResellerService {
         if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
             throw new error_handler_1.AppError(403, 'You can only manage your own vendors', 'FORBIDDEN');
         }
+        if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Admins can only manage Super Resellers', 'FORBIDDEN');
+        }
         return prisma_1.prisma.user.update({
             where: { id: vendorId },
             data: { isActive },
             select: { id: true, email: true, name: true, role: true, isActive: true },
         });
     }
-    static async deleteVendor(vendorId) {
+    static async deleteVendor(vendorId, requesterId, requesterRole) {
         const vendor = await prisma_1.prisma.user.findUnique({ where: { id: vendorId } });
         if (!vendor)
             throw new error_handler_1.AppError(404, 'Vendor not found', 'NOT_FOUND');
+        if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
+            throw new error_handler_1.AppError(403, 'You can only delete your own vendors', 'FORBIDDEN');
+        }
+        if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Admins can only manage Super Resellers', 'FORBIDDEN');
+        }
         const activeClients = await prisma_1.prisma.endUserAccount.count({
             where: { managedById: vendorId, status: 'ACTIVE' },
         });
@@ -214,6 +237,9 @@ class ResellerService {
         // Hierarchy check: SUPER_VENDOR can only give to their direct child vendors
         if (fromRole === 'SUPER_VENDOR' && toUser.parentId !== fromUserId) {
             throw new error_handler_1.AppError(403, 'You can only assign credits to your own vendors', 'FORBIDDEN');
+        }
+        if (fromRole === 'ADMIN' && toUser.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Admins can only assign credits to Super Resellers', 'FORBIDDEN');
         }
         return prisma_1.prisma.$transaction(async (tx) => {
             let fromUserName = 'Admin';
@@ -295,6 +321,38 @@ class ResellerService {
             page,
             totalPages: Math.ceil(total / limit),
         };
+    }
+    static async assignPlanToVendor(vendorId, requesterId, requesterRole, planId) {
+        const vendor = await prisma_1.prisma.user.findUnique({
+            where: { id: vendorId },
+            include: { endUserAccount: true }
+        });
+        if (!vendor)
+            throw new error_handler_1.AppError(404, 'Vendor not found', 'NOT_FOUND');
+        if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
+            throw new error_handler_1.AppError(403, 'You can only assign plans to your own vendors', 'FORBIDDEN');
+        }
+        if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Admins can only assign plans to Super Resellers', 'FORBIDDEN');
+        }
+        let accountId = vendor.endUserAccount?.id;
+        if (!accountId) {
+            // Create own end user account for the vendor
+            const username = `v_${vendor.email.split('@')[0]}_${Math.random().toString(36).substring(7)}`;
+            const password = 'password123';
+            const passwordHash = await bcrypt_1.default.hash(password, BCRYPT_ROUNDS);
+            const account = await prisma_1.prisma.endUserAccount.create({
+                data: {
+                    username,
+                    password,
+                    passwordHash,
+                    managedById: requesterId,
+                    userId: vendor.id,
+                }
+            });
+            accountId = account.id;
+        }
+        return end_users_service_1.EndUsersService.addPlan(accountId, requesterId, requesterRole, planId);
     }
 }
 exports.ResellerService = ResellerService;

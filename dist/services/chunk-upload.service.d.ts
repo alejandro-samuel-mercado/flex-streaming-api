@@ -8,5 +8,10 @@ export declare class ChunkUploadService {
      * Merges all chunks into a final file
      */
     static mergeChunks(fileId: string, fileName: string, totalChunks: number): Promise<string>;
+    /**
+     * Deletes chunk directories older than maxAgeMs (default: 24 hours).
+     * Call this periodically to prevent disk from filling up with abandoned uploads.
+     */
+    static cleanupStaleChunks(maxAgeMs?: number): number;
 }
 //# sourceMappingURL=chunk-upload.service.d.ts.map

@@ -40,6 +40,8 @@ const envSchema = zod_1.z.object({
     FFMPEG_PATH: zod_1.z.string().default('ffmpeg'),
     FFPROBE_PATH: zod_1.z.string().default('ffprobe'),
     MAX_CONCURRENT_ENCODING: zod_1.z.coerce.number().default(2),
+    // Media Scanner
+    MEDIA_SCAN_DIRS: zod_1.z.string().optional().default(''),
 });
 const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {

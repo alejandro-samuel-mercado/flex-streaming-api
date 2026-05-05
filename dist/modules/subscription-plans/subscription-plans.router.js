@@ -27,6 +27,7 @@ const CreatePlanSchema = zod_1.z.object({
     bonusDays: zod_1.z.number().int().min(0).default(0),
     maxDevices: zod_1.z.number().int().min(1).default(1),
     sortOrder: zod_1.z.number().int().default(0),
+    baseCredits: zod_1.z.number().int().min(0).optional(),
 });
 const UpdatePlanSchema = CreatePlanSchema.partial();
 // GET /api/subscription-plans — Active plans (for plan selectors)

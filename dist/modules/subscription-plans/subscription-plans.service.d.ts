@@ -12,9 +12,9 @@ export declare class SubscriptionPlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -29,9 +29,9 @@ export declare class SubscriptionPlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -46,9 +46,9 @@ export declare class SubscriptionPlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -68,15 +68,16 @@ export declare class SubscriptionPlansService {
         bonusDays?: number;
         maxDevices?: number;
         sortOrder?: number;
+        baseCredits?: number;
     }): Promise<{
         id: string;
         name: string;
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -96,15 +97,16 @@ export declare class SubscriptionPlansService {
         bonusDays?: number;
         maxDevices?: number;
         sortOrder?: number;
+        baseCredits?: number;
     }): Promise<{
         id: string;
         name: string;
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -119,9 +121,9 @@ export declare class SubscriptionPlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;
@@ -136,9 +138,9 @@ export declare class SubscriptionPlansService {
         isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        maxDevices: number;
         description: string | null;
         durationDays: number;
-        maxDevices: number;
         creditCost: number;
         isDemo: boolean;
         demoHours: number | null;

@@ -5,6 +5,39 @@
  * Express server with Socket.io for real-time upload progress,
  * all module routers, and differentiated rate limiting.
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -49,12 +82,11 @@ const subscription_plans_router_1 = require("./modules/subscription-plans/subscr
 const credit_packages_router_1 = require("./modules/credit-packages/credit-packages.router");
 const end_users_router_1 = require("./modules/end-users/end-users.router");
 const tmdb_router_1 = require("./modules/admin/tmdb.router");
+const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.router");
+const auto_scanner_worker_1 = require("./workers/auto-scanner.worker");
+const chunk_upload_service_1 = require("./services/chunk-upload.service");
 const app = (0, express_1.default)();
 exports.app = app;
-app.use((_req, _res, next) => {
-    console.log(`[${new Date().toISOString()}] ${_req.method} ${_req.url}`);
-    next();
-});
 const httpServer = (0, http_1.createServer)(app);
 exports.httpServer = httpServer;
 const io = new socket_io_1.Server(httpServer, {
@@ -76,7 +108,20 @@ queue_service_1.videoQueueEvents.on('completed', ({ jobId }) => {
 });
 // ─── Security & Utilities ────────────────────────────────────────────────────
 app.use((0, helmet_1.default)({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use((0, compression_1.default)());
+// Trust proxy — required for correct IP detection behind Nginx/Cloudflare/VPS reverse proxies
+// Without this, req.ip is always the proxy IP, breaking the HMAC token validation
+app.set('trust proxy', 1);
+// Compression — explicitly skip already-compressed media files
+// .ts (HLS segments) and .mp4 are H.264/AAC encoded; gzipping them wastes CPU and can make them larger
+app.use((0, compression_1.default)({
+    filter: (req, res) => {
+        const url = req.url || '';
+        // Skip compression for media segments
+        if (/\.(ts|mp4|webm|mkv|avi|mov)$/i.test(url))
+            return false;
+        return compression_1.default.filter(req, res);
+    }
+}));
 app.use((0, morgan_1.default)(env_1.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use((0, cors_1.default)({
@@ -88,19 +133,28 @@ app.use((0, cors_1.default)({
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true }));
 // ─── Static Files ─────────────────────────────────────────────────────────────
+// Serve uploads (profile images, posters, etc.) — non-sensitive
 app.use('/uploads', express_1.default.static(path_1.default.resolve(env_1.env.UPLOAD_DIR)));
-app.use('/media', express_1.default.static(path_1.default.resolve(env_1.env.MEDIA_PATH)));
+app.use('/api/uploads', express_1.default.static(path_1.default.resolve(env_1.env.UPLOAD_DIR))); // Alias for frontend consistency
+// NOTE: /media is intentionally NOT exposed via express.static.
+// All HLS access is authenticated through /api/stream/hls/:videoFileId/* with signed tokens.
+// Thumbnails and subtitles are still served statically as they are not protected content.
+app.use('/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH)));
+app.use('/api/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH))); // Alias
+app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH)));
+app.use('/api/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH))); // Alias
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000,
-    max: 10,
+    max: 50,
     message: { success: false, error: 'Too many auth requests' },
     standardHeaders: true,
     legacyHeaders: false,
 });
 const streamLimiter = (0, express_rate_limit_1.default)({
     windowMs: 60 * 1000,
-    max: 60,
+    max: 500, // HLS: each .ts segment = 1 request. 6s segments → ~10 req/min at normal playback,
+    // but ABR + prefetch + multiple quality checks can spike. 500/min is safe.
     message: { success: false, error: 'Too many stream requests' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -133,6 +187,7 @@ app.use('/api/history', history_router_1.historyRouter);
 app.use('/api/reviews', reviews_router_1.reviewsRouter);
 app.use('/api/admin', admin_router_1.adminRouter);
 app.use('/api/admin/tmdb', tmdb_router_1.tmdbRouter);
+app.use('/api/admin/media-scanner', media_scanner_router_1.mediaScannerRouter);
 app.use('/api/upload', uploadLimiter, auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), upload_router_1.uploadRouter);
 app.use('/api/platforms', platforms_router_1.platformsRouter);
 app.use('/api/plans', plans_router_1.plansRouter);
@@ -169,9 +224,20 @@ async function bootstrap() {
         await redis_1.redis.connect();
         await prisma_1.prisma.$connect();
         console.log('✅ Database connected');
+        // Start auto-scanner worker
+        auto_scanner_worker_1.AutoScannerWorker.start(io);
+        console.log('🔍 Auto-scanner worker initialized');
         httpServer.listen(env_1.env.BACKEND_PORT, () => {
             console.log(`🚀 PeliPlus API running at http://localhost:${env_1.env.BACKEND_PORT}`);
         });
+        // Periodic cleanup of abandoned chunk uploads (every 6 hours)
+        setInterval(() => {
+            const cleaned = chunk_upload_service_1.ChunkUploadService.cleanupStaleChunks();
+            if (cleaned > 0)
+                console.log(`🧹 Cleaned ${cleaned} stale chunk upload(s)`);
+        }, 6 * 60 * 60 * 1000);
+        // Run once at startup too
+        chunk_upload_service_1.ChunkUploadService.cleanupStaleChunks();
     }
     catch (error) {
         console.error('❌ Failed to start server:', error);
@@ -179,4 +245,22 @@ async function bootstrap() {
     }
 }
 bootstrap();
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+const gracefulShutdown = async () => {
+    console.log('🛑 [Server] Shutting down gracefully...');
+    try {
+        const { videoQueue, videoQueueEvents } = await Promise.resolve().then(() => __importStar(require('./services/queue.service')));
+        await videoQueue.close();
+        await videoQueueEvents.close();
+        await prisma_1.prisma.$disconnect();
+        console.log('✅ [Server] Connections closed. Exiting.');
+        process.exit(0);
+    }
+    catch (err) {
+        console.error('❌ [Server] Error during shutdown:', err);
+        process.exit(1);
+    }
+};
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 //# sourceMappingURL=index.js.map

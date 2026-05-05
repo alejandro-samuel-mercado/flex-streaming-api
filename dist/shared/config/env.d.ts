@@ -21,6 +21,7 @@ export declare const env: {
     FFMPEG_PATH: string;
     FFPROBE_PATH: string;
     MAX_CONCURRENT_ENCODING: number;
+    MEDIA_SCAN_DIRS: string;
     GOOGLE_CLIENT_ID?: string | undefined;
     GOOGLE_CLIENT_SECRET?: string | undefined;
     SMTP_HOST?: string | undefined;

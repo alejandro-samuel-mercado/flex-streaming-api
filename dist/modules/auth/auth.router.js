@@ -48,16 +48,6 @@ const api_response_1 = require("../../shared/utils/api-response");
 const auth_schemas_1 = require("./auth.schemas");
 const authService = __importStar(require("./auth.service"));
 exports.authRouter = (0, express_1.Router)();
-exports.authRouter.post('/register', async (req, res, next) => {
-    try {
-        const input = auth_schemas_1.registerSchema.parse(req.body);
-        const result = await authService.register(input);
-        (0, api_response_1.created)(res, result);
-    }
-    catch (err) {
-        next(err);
-    }
-});
 exports.authRouter.post('/login', async (req, res, next) => {
     try {
         const input = auth_schemas_1.loginSchema.parse(req.body);

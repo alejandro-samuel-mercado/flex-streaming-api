@@ -21,13 +21,13 @@ export declare class HomepageService {
             } | null;
             id: string;
             createdAt: Date;
+            country: string | null;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
-            country: string | null;
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
@@ -51,9 +51,9 @@ export declare class HomepageService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
         recent: {
@@ -72,13 +72,13 @@ export declare class HomepageService {
             } | null;
             id: string;
             createdAt: Date;
+            country: string | null;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
-            country: string | null;
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
@@ -102,9 +102,9 @@ export declare class HomepageService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
         freeContent: {
@@ -123,13 +123,13 @@ export declare class HomepageService {
             } | null;
             id: string;
             createdAt: Date;
+            country: string | null;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
-            country: string | null;
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
@@ -153,9 +153,9 @@ export declare class HomepageService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
         platforms: ({
@@ -171,9 +171,9 @@ export declare class HomepageService {
                     id: string;
                     contentId: string | null;
                     episodeId: string | null;
-                    url: string;
                     width: number | null;
                     height: number | null;
+                    url: string;
                 }[];
             }[];
         } & {
@@ -201,10 +201,10 @@ export declare class HomepageService {
             isActive: boolean;
             createdAt: Date;
             updatedAt: Date;
-            description: string | null;
-            price: Prisma.Decimal;
-            durationDays: number;
             maxDevices: number;
+            description: string | null;
+            durationDays: number;
+            price: Prisma.Decimal;
             hasHd: boolean;
             has4k: boolean;
             allowDownload: boolean;

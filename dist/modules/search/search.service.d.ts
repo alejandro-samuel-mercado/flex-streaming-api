@@ -22,9 +22,9 @@ export declare class SearchService {
                 id: string;
                 contentId: string | null;
                 episodeId: string | null;
-                url: string;
                 width: number | null;
                 height: number | null;
+                url: string;
             }[];
         }[];
         actors: {
@@ -51,9 +51,9 @@ export declare class SearchService {
             id: string;
             contentId: string | null;
             episodeId: string | null;
-            url: string;
             width: number | null;
             height: number | null;
+            url: string;
         }[];
     }[]>;
 }

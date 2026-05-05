@@ -13,8 +13,8 @@ export declare class PlatformsService {
             translations: {
                 id: string;
                 language: string;
-                contentId: string;
                 title: string;
+                contentId: string;
                 description: string;
                 tagline: string | null;
             }[];
@@ -25,17 +25,23 @@ export declare class PlatformsService {
             createdAt: Date;
             updatedAt: Date;
             deletedAt: Date | null;
+            country: string | null;
             slug: string;
             tmdbId: string | null;
             releaseYear: number | null;
+            originalTitle: string | null;
+            title: string | null;
             duration: number | null;
             rating: number | null;
             reviewCount: number;
             viewCount: bigint;
             downloadCount: bigint;
             featured: boolean;
-            country: string | null;
             languages: string[];
+            originalLanguage: string | null;
+            budget: bigint | null;
+            revenue: bigint | null;
+            isAdult: boolean;
             subtitleLangs: string[];
             platformId: string | null;
             trailerUrl: string | null;

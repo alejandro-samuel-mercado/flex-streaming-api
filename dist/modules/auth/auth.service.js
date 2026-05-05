@@ -61,7 +61,42 @@ async function register(input) {
     return { user, accessToken, refreshToken };
 }
 async function login(input) {
-    const user = await prisma_1.prisma.user.findUnique({ where: { email: input.email } });
+    // 1. Try finding in normal User table (identifier as email)
+    let user = await prisma_1.prisma.user.findUnique({ where: { email: input.username } });
+    // 2. If not found, try finding in EndUserAccount table (identifier as username)
+    if (!user) {
+        const endUser = await prisma_1.prisma.endUserAccount.findUnique({
+            where: { username: input.username },
+            include: { user: true },
+        });
+        if (endUser) {
+            // If endUser exists but has no linked User record, we treat it as a virtual user for JWT
+            // Or we can check password against endUser.passwordHash
+            const passwordValid = await bcrypt_1.default.compare(input.password, endUser.passwordHash);
+            if (!passwordValid)
+                throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
+            if (endUser.status === 'INACTIVE' || endUser.status === 'PAUSED' || endUser.status === 'EXPIRED') {
+                throw new error_handler_1.AppError(403, `Account is ${endUser.status.toLowerCase()}`, 'ACCOUNT_RESTRICTED');
+            }
+            // Return a virtual user object for the token
+            const { accessToken, refreshToken } = generateTokens(endUser.id, endUser.username, 'END_USER');
+            const refreshTtlSeconds = 30 * 24 * 60 * 60;
+            await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, endUser.id);
+            await prisma_1.prisma.refreshToken.create({
+                data: {
+                    token: refreshToken,
+                    userId: endUser.userId || 'VIRTUAL_' + endUser.id, // Handle cases without linked user
+                    expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+                },
+            });
+            return {
+                user: { id: endUser.id, email: endUser.username, name: endUser.username, role: 'END_USER' },
+                accessToken,
+                refreshToken,
+            };
+        }
+    }
+    // 3. Fallback to normal user logic if found in step 1
     if (!user || !user.passwordHash || !user.isActive) {
         throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     }

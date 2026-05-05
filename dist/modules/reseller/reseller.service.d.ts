@@ -11,6 +11,7 @@ export declare class ResellerService {
         name: string;
         password: string;
         credits?: number;
+        planId?: string;
     }): Promise<{
         id: string;
         email: string;
@@ -24,6 +25,7 @@ export declare class ResellerService {
         name: string;
         password: string;
         credits?: number;
+        planId?: string;
     }): Promise<{
         id: string;
         email: string;
@@ -77,7 +79,7 @@ export declare class ResellerService {
         name: string | null;
         isActive: boolean;
     }>;
-    static deleteVendor(vendorId: string): Promise<{
+    static deleteVendor(vendorId: string, requesterId: string, requesterRole: UserRole): Promise<{
         id: string;
         email: string;
         role: import(".prisma/client").$Enums.UserRole;
@@ -104,18 +106,43 @@ export declare class ResellerService {
             id: string;
             createdAt: Date;
             userId: string;
+            planId: string | null;
             description: string | null;
             amount: number;
             balanceBefore: number;
             balanceAfter: number;
             relatedUserId: string | null;
             packageId: string | null;
-            planId: string | null;
             createdById: string | null;
         }[];
         total: number;
         page: number;
         totalPages: number;
+    }>;
+    static assignPlanToVendor(vendorId: string, requesterId: string, requesterRole: UserRole, planId: string): Promise<{
+        plan: {
+            id: string;
+            name: string;
+            durationDays: number;
+        } | null;
+    } & {
+        type: import(".prisma/client").$Enums.EndUserAccountType;
+        status: import(".prisma/client").$Enums.EndUserAccountStatus;
+        id: string;
+        password: string;
+        username: string;
+        passwordHash: string;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
+        userId: string | null;
+        managedById: string;
+        planId: string | null;
+        startDate: Date | null;
+        endDate: Date | null;
+        country: string | null;
+        notes: string | null;
+        maxDevices: number;
     }>;
 }
 //# sourceMappingURL=reseller.service.d.ts.map
