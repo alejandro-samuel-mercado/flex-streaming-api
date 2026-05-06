@@ -332,6 +332,52 @@ uploadRouter.delete('/video/:id', async (req, res, next) => {
   }
 });
 
+uploadRouter.post('/video/:id/retry', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    const videoFile = await prisma.videoFile.findUnique({
+      where: { id }
+    });
+
+    if (!videoFile) {
+      return res.status(404).json({ success: false, error: 'Video file not found' });
+    }
+
+    if (videoFile.status !== 'FAILED') {
+      return res.status(400).json({ success: false, error: 'Solo se pueden reintentar videos fallidos' });
+    }
+
+    if (!fs.existsSync(videoFile.originalPath)) {
+      return res.status(400).json({ success: false, error: 'El archivo original ya no existe en el disco' });
+    }
+
+    const { addVideoJob } = await import('../../services/queue.service');
+
+    await prisma.videoFile.update({
+      where: { id },
+      data: { status: 'QUEUED', errorMessage: null }
+    });
+
+    const job = await addVideoJob({
+      videoFileId: videoFile.id,
+      contentId: videoFile.contentId || '',
+      type: videoFile.type,
+      episodeId: videoFile.episodeId || undefined,
+      videoPath: videoFile.originalPath,
+    });
+
+    await prisma.videoFile.update({
+      where: { id },
+      data: { processingJobId: job.id }
+    });
+
+    return res.json({ success: true, message: 'Video encolado para reintento', jobId: job.id });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 uploadRouter.delete('/subtitle/:id', (async (req: any, res: any, next: any) => {
   try {
     const { id } = req.params;

@@ -5,8 +5,6 @@ import { TMDBService, TMDBFullDetails } from '../../services/tmdb.service';
 import { addVideoJob } from '../../services/queue.service';
 import { env } from '../../shared/config/env';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 export interface ScannedFile {
   fileName: string;
   cleanName: string;
@@ -15,6 +13,15 @@ export interface ScannedFile {
   extension: string;
   lastModified: Date;
   alreadyImported: boolean;
+  contentType: 'MOVIE' | 'SERIES';
+  // Only for SERIES (already-HLS episodes)
+  episode?: {
+    m3u8Path: string;
+    season: number;
+    episodeNumber: number;
+    tmdbSeriesId: number | null;
+    seriesFolderName: string;
+  };
 }
 
 export interface ImportResult {
@@ -26,126 +33,117 @@ export interface ImportResult {
   error?: string;
 }
 
-// ─── Constants ───────────────────────────────────────────────────────────────
-
 const VIDEO_EXTENSIONS = new Set([
   '.mkv', '.mp4', '.avi', '.webm', '.mov', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.mxf', '.rmvb', '.vob'
 ]);
 
 const NOISE_PATTERNS = [
-  // Resolutions
   /\b(360p|480p|720p|1080p|2160p|4k|uhd)\b/gi,
-  // Codecs
   /\b(x264|x265|h264|h265|hevc|avc|xvid|divx|av1)\b/gi,
-  // Sources
   /\b(blu[\s-]?ray|bdrip|brrip|web[\s-]?dl|web[\s-]?rip|hdtv|dvdrip|hdrip|cam|ts|screener|r5)\b/gi,
-  // Audio
   /\b(aac|ac3|dts|dd5\.?1|atmos|truehd|flac|mp3)\b/gi,
-  // Groups/tags in brackets
   /\[.*?\]/g,
   /\(.*?\)/g,
-  // File sizes
   /\b\d+(\.\d+)?\s*(gb|mb|tb)\b/gi,
-  // Common release group patterns
   /[-\.]\w{2,10}$/g,
-  // Year at end (but we extract it first)
   /\b(19|20)\d{2}\b/g,
-  // Common separators -> spaces
   /[._]/g,
-  // Multiple spaces
   /\s{2,}/g,
 ];
 
-// ─── Service ─────────────────────────────────────────────────────────────────
+// ── Parsers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Parse TMDB id from folder names like "1399_juego_de_tronos" or "1399_S01E01".
+ */
+function parseTmdbId(folderName: string): number | null {
+  const m = folderName.match(/^(\d+)_/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Parse season and episode from folder names like "1399_S01E01".
+ */
+function parseSeasonEpisode(folderName: string): { season: number; episode: number } | null {
+  const m = folderName.match(/[Ss](\d+)[Ee](\d+)/);
+  if (!m) return null;
+  return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
+}
 
 export class MediaScannerService {
 
-  /**
-   * Get suggested directories from environment variable
-   */
   static getSuggestedDirectories(): string[] {
     const dirs = env.MEDIA_SCAN_DIRS;
     if (!dirs) return [];
-    return dirs
-      .split(';')
-      .map(d => d.trim())
-      .filter(d => d.length > 0);
+    return dirs.split(';').map(d => d.trim()).filter(d => d.length > 0);
   }
 
-  /**
-   * Clean a file name for TMDB search.
-   * Since user says files just have the movie/series name, we mostly
-   * just strip the extension and clean up dots/underscores.
-   */
   static cleanFileName(fileName: string): string {
-    // Remove extension
     let clean = fileName.replace(/\.[^/.]+$/, '');
-
-    // Apply noise patterns
-    for (const pattern of NOISE_PATTERNS) {
-      clean = clean.replace(pattern, ' ');
-    }
-
-    // Replace dots and underscores with spaces
-    clean = clean.replace(/[._-]/g, ' ');
-
-    // Remove multiple spaces and trim
-    clean = clean.replace(/\s{2,}/g, ' ').trim();
-
+    for (const pattern of NOISE_PATTERNS) clean = clean.replace(pattern, ' ');
+    clean = clean.replace(/[._-]/g, ' ').replace(/\s{2,}/g, ' ').trim();
     return clean;
   }
 
   /**
-   * Scan a directory recursively (up to maxDepth levels) for video files
+   * Scan both a movies folder (raw video files) and a series folder (already-HLS episodes).
    */
-  static async scanDirectory(dirPath: string, maxDepth: number = 3): Promise<ScannedFile[]> {
-    const files: ScannedFile[] = [];
-
-    if (!fs.existsSync(dirPath)) {
-      throw new Error(`Directorio no encontrado: ${dirPath}`);
-    }
-
-    const stat = fs.statSync(dirPath);
-    if (!stat.isDirectory()) {
-      throw new Error(`La ruta no es un directorio: ${dirPath}`);
-    }
-
-    // Get all existing imported paths to filter duplicates
-    const existingVideos = await prisma.videoFile.findMany({
-      select: { originalPath: true }
-    });
+  static async scanDirectories(moviePath?: string, seriesPath?: string): Promise<ScannedFile[]> {
+    const existingVideos = await prisma.videoFile.findMany({ select: { originalPath: true } });
     const importedPaths = new Set(existingVideos.map(v => v.originalPath));
 
-    this._scanRecursive(dirPath, files, importedPaths, 0, maxDepth);
+    const allFiles: ScannedFile[] = [];
 
-    // Sort by name
+    if (moviePath && fs.existsSync(moviePath)) {
+      const movieFiles: ScannedFile[] = [];
+      this._scanMoviesRecursive(moviePath, movieFiles, importedPaths, 0, 2);
+      allFiles.push(...movieFiles);
+    }
+
+    if (seriesPath && fs.existsSync(seriesPath)) {
+      const seriesFiles: ScannedFile[] = [];
+      this._scanSeriesRecursive(seriesPath, seriesFiles, importedPaths, '', 0, 6);
+      allFiles.push(...seriesFiles);
+    }
+
+    allFiles.sort((a, b) => a.fileName.localeCompare(b.fileName));
+    return allFiles;
+  }
+
+  /** Legacy single-folder scan (movies only). */
+  static async scanDirectory(dirPath: string, maxDepth = 2, contentType: 'MOVIE' | 'SERIES' = 'MOVIE'): Promise<ScannedFile[]> {
+    if (!fs.existsSync(dirPath)) throw new Error(`Directorio no encontrado: ${dirPath}`);
+    const stat = fs.statSync(dirPath);
+    if (!stat.isDirectory()) throw new Error(`La ruta no es un directorio: ${dirPath}`);
+
+    const existingVideos = await prisma.videoFile.findMany({ select: { originalPath: true } });
+    const importedPaths = new Set(existingVideos.map(v => v.originalPath));
+
+    const files: ScannedFile[] = [];
+    if (contentType === 'SERIES') {
+      this._scanSeriesRecursive(dirPath, files, importedPaths, '', 0, 6);
+    } else {
+      this._scanMoviesRecursive(dirPath, files, importedPaths, 0, maxDepth);
+    }
     files.sort((a, b) => a.fileName.localeCompare(b.fileName));
-
     return files;
   }
 
-  private static _scanRecursive(
-    dirPath: string,
-    results: ScannedFile[],
-    importedPaths: Set<string>,
-    currentDepth: number,
-    maxDepth: number
+  // ── Private scanners ──────────────────────────────────────────────────────
+
+  private static _scanMoviesRecursive(
+    dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
+    currentDepth: number, maxDepth: number
   ): void {
     if (currentDepth > maxDepth) return;
-
     let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch (err: any) {
-      console.warn(`[MediaScanner] Cannot read directory ${dirPath}: ${err.message}`);
-      return;
-    }
+    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
+    catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return; }
 
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
-
       if (entry.isDirectory()) {
-        this._scanRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
+        this._scanMoviesRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
         if (VIDEO_EXTENSIONS.has(ext)) {
@@ -158,416 +156,364 @@ export class MediaScannerService {
               fileSize: stat.size,
               extension: ext.replace('.', '').toUpperCase(),
               lastModified: stat.mtime,
-              alreadyImported: importedPaths.has(fullPath)
+              alreadyImported: importedPaths.has(fullPath),
+              contentType: 'MOVIE'
             });
-          } catch (err: any) {
-            console.warn(`[MediaScanner] Cannot stat file ${fullPath}: ${err.message}`);
-          }
+          } catch { /* skip */ }
         }
       }
     }
   }
 
   /**
-   * Import a single file: search TMDB, create content, enqueue video processing.
+   * Series scanner: looks for episode FOLDERS containing index.m3u8 or video.m3u8.
+   * Expected structure: /series/{tmdbId}_{name}/temporada N/{tmdbId}_S{s}E{e}/index.m3u8
+   * The filePath stored is the episode folder path (used as the unique key).
    */
-  static async importFile(filePath: string): Promise<ImportResult> {
-    const fileName = path.basename(filePath);
-    const cleanName = this.cleanFileName(fileName);
+  private static _scanSeriesRecursive(
+    dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
+    seriesFolderName: string, currentDepth: number, maxDepth: number
+  ): void {
+    if (currentDepth > maxDepth) return;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
+    catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return; }
 
-    // Check if already imported
-    const existingVideo = await prisma.videoFile.findFirst({
-      where: { originalPath: filePath }
-    });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const fullPath = path.join(dirPath, entry.name);
+
+      // Detect if this directory is an episode folder (contains index.m3u8 or video.m3u8)
+      const m3u8Path = this._findM3u8(fullPath);
+      if (m3u8Path) {
+        // This is an episode folder
+        const seInfo = parseSeasonEpisode(entry.name);
+        const tmdbSeriesId = parseTmdbId(seriesFolderName || entry.name);
+        const stat = fs.statSync(fullPath);
+
+        // key used to detect if already imported: episode folder path
+        const key = fullPath;
+        results.push({
+          fileName: entry.name,
+          cleanName: this.cleanFileName(entry.name),
+          filePath: key,
+          fileSize: stat.size,
+          extension: 'HLS',
+          lastModified: stat.mtime,
+          alreadyImported: importedPaths.has(key),
+          contentType: 'SERIES',
+          episode: {
+            m3u8Path,
+            season: seInfo?.season ?? 1,
+            episodeNumber: seInfo?.episode ?? 1,
+            tmdbSeriesId,
+            seriesFolderName: seriesFolderName || entry.name
+          }
+        });
+      } else {
+        // Not an episode — go deeper, passing the series folder name at depth 0
+        const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
+        this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
+      }
+    }
+  }
+
+  /** Find index.m3u8 or video.m3u8 directly inside a folder. */
+  private static _findM3u8(dirPath: string): string | null {
+    try {
+      const entries = fs.readdirSync(dirPath);
+      for (const name of entries) {
+        if (name === 'index.m3u8' || name === 'video.m3u8') {
+          return path.join(dirPath, name);
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  // ── Import ────────────────────────────────────────────────────────────────
+
+  static async importFile(filePath: string, contentType: 'MOVIE' | 'SERIES' = 'MOVIE', episode?: ScannedFile['episode']): Promise<ImportResult> {
+    const fileName = path.basename(filePath);
+
+    const existingVideo = await prisma.videoFile.findFirst({ where: { originalPath: filePath } });
     if (existingVideo) {
-      return {
-        filePath,
-        fileName,
-        success: false,
-        tmdbMatch: false,
-        error: 'Este archivo ya fue importado'
-      };
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Este archivo ya fue importado' };
     }
 
     try {
-      // Search TMDB
-      const tmdbResult = await TMDBService.searchWithFallback(cleanName);
+      if (contentType === 'SERIES' && episode) {
+        return await this._importSeriesEpisode(filePath, fileName, episode);
+      }
 
+      // Movie flow
+      const cleanName = this.cleanFileName(fileName);
+      const tmdbResult = await TMDBService.searchWithFallback(cleanName);
       if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
-        // Good match — create content with full TMDB data
-        return await this._importWithTMDB(filePath, fileName, tmdbResult.bestMatch);
+        return await this._importWithTMDB(filePath, fileName, tmdbResult.bestMatch, 'MOVIE');
       } else {
-        // No match — create minimal content
-        return await this._importMinimal(filePath, fileName, cleanName);
+        return await this._importMinimal(filePath, fileName, cleanName, 'MOVIE');
       }
     } catch (error: any) {
       console.error(`[MediaScanner] Error importing ${fileName}:`, error.message);
-      return {
-        filePath,
-        fileName,
-        success: false,
-        tmdbMatch: false,
-        error: error.message
-      };
+      return { filePath, fileName, success: false, tmdbMatch: false, error: error.message };
     }
   }
 
   /**
-   * Import with full TMDB data
+   * Import a series episode that is ALREADY in HLS format.
+   * Does NOT enqueue FFmpeg processing — just registers in DB pointing to existing m3u8.
    */
-  private static async _importWithTMDB(
-    filePath: string,
-    fileName: string,
-    tmdbMatch: any
+  private static async _importSeriesEpisode(
+    episodeFolderPath: string,
+    folderName: string,
+    episode: NonNullable<ScannedFile['episode']>
   ): Promise<ImportResult> {
-    const mediaType = tmdbMatch.media_type === 'tv' ? 'tv' :
-      tmdbMatch.media_type === 'movie' ? 'movie' :
-        (tmdbMatch.title ? 'movie' : 'tv');
+    // Derive relative m3u8 URL from the m3u8Path
+    // e.g. /home/media/series/1399_xxx/temporada 1/1399_S01E01/index.m3u8
+    // → we store it as-is and let the streaming module serve it
+    const m3u8Url = episode.m3u8Path; // absolute path; the streaming service reads from MEDIA_PATH
 
-    // Get full details
-    const details: TMDBFullDetails = await TMDBService.getFullDetails(
-      tmdbMatch.id,
-      mediaType as 'movie' | 'tv'
-    );
+    // Find or create the series content
+    let contentId: string;
+    let tmdbMatch = false;
 
-    // Check if content with this tmdbId already exists
-    const existingContent = await prisma.content.findFirst({
-      where: { tmdbId: details.tmdbId }
+    if (episode.tmdbSeriesId) {
+      // Look up existing content by TMDB id first
+      const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
+      if (existing) {
+        contentId = existing.id;
+        tmdbMatch = true;
+      } else {
+        // Fetch from TMDB and create content
+        try {
+          const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
+          contentId = await this._createSeriesContent(details);
+          tmdbMatch = true;
+        } catch (err: any) {
+          console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
+          contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
+        }
+      }
+    } else {
+      contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
+    }
+
+    // Create VideoFile as COMPLETED (no processing needed)
+    const relativeM3u8 = m3u8Url; // Store absolute path so streaming module can resolve it
+    await prisma.videoFile.create({
+      data: {
+        contentId,
+        type: 'EPISODE',
+        originalPath: episodeFolderPath,
+        status: 'COMPLETED',
+        masterPlaylist: relativeM3u8,
+        hlsPath: episodeFolderPath,
+        fileSize: BigInt(0),
+        qualities: {
+          create: [
+            { resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: relativeM3u8, codec: 'h264' }
+          ]
+        }
+      }
     });
 
+    console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId}`);
+
+    return { filePath: episodeFolderPath, fileName: folderName, success: true, contentId, tmdbMatch };
+  }
+
+  private static async _createSeriesContent(details: TMDBFullDetails): Promise<string> {
+    const baseSlug = details.title.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
+    const genreIds = await this._matchGenres(details.genres);
+    const actorIds = await this._matchActors(details.actors);
+    const directorIds = await this._matchDirectors(details.directors);
+
+    const content = await prisma.content.create({
+      data: {
+        type: details.type,
+        status: 'PENDING',
+        slug,
+        releaseYear: details.releaseYear,
+        originalTitle: details.originalTitle || null,
+        duration: details.duration,
+        rating: details.rating,
+        tmdbId: details.tmdbId,
+        imdbId: details.imdbId,
+        country: details.country,
+        languages: details.languages || [],
+        originalLanguage: details.originalLanguage || null,
+        budget: details.budget ? BigInt(details.budget) : null,
+        revenue: details.revenue ? BigInt(details.revenue) : null,
+        isAdult: details.isAdult || false,
+        translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
+        genres: genreIds.length > 0 ? { create: genreIds.map(gId => ({ genreId: gId })) } : undefined,
+        actors: actorIds.length > 0 ? { create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx })) } : undefined,
+        directors: directorIds.length > 0 ? { create: directorIds.map(dId => ({ directorId: dId })) } : undefined,
+      }
+    });
+    await this._downloadTMDBImages(content.id, details);
+    return content.id;
+  }
+
+  private static async _createMinimalSeriesContent(seriesFolderName: string): Promise<string> {
+    const cleanName = this.cleanFileName(seriesFolderName);
+    const slug = cleanName.toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+      + '-' + Math.random().toString(36).substring(2, 6);
+    const content = await prisma.content.create({
+      data: {
+        type: 'SERIES', status: 'PENDING', slug,
+        translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
+      }
+    });
+    return content.id;
+  }
+
+  private static async _importWithTMDB(filePath: string, fileName: string, tmdbMatch: any, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
+    const mediaType = tmdbMatch.media_type === 'tv' ? 'tv' : tmdbMatch.media_type === 'movie' ? 'movie' : (tmdbMatch.title ? 'movie' : 'tv');
+    const details = await TMDBService.getFullDetails(tmdbMatch.id, mediaType as 'movie' | 'tv');
+
+    const existingContent = await prisma.content.findFirst({ where: { tmdbId: details.tmdbId } });
     let contentId: string;
 
     if (existingContent) {
-      // Content exists but maybe from a different file — just add the video
       contentId = existingContent.id;
-      
-      // If it was soft-deleted, restore it so it shows up in the admin panel
       if (existingContent.deletedAt) {
-        await prisma.content.update({
-          where: { id: contentId },
-          data: { deletedAt: null, status: 'PENDING' }
-        });
+        await prisma.content.update({ where: { id: contentId }, data: { deletedAt: null, status: 'PENDING' } });
       }
     } else {
-      // Generate unique slug
-      const baseSlug = details.title
-        .toLowerCase()
+      const baseSlug = details.title.toLowerCase()
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
+        .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
       const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
+      const genreIds = await this._matchGenres(details.genres);
+      const actorIds = await this._matchActors(details.actors);
+      const directorIds = await this._matchDirectors(details.directors);
 
-      // Match genres
-      const genreConnections = await this._matchGenres(details.genres);
-
-      // Match actors
-      const actorConnections = await this._matchActors(details.actors);
-
-      // Match directors
-      const directorConnections = await this._matchDirectors(details.directors);
-
-      // Create content
       const content = await prisma.content.create({
         data: {
-          type: details.type,
-          status: 'PENDING', // Will become READY after video processing
-          slug,
-          releaseYear: details.releaseYear,
-          originalTitle: details.originalTitle || null,
-          duration: details.duration,
-          rating: details.rating,
-          tmdbId: details.tmdbId,
-          imdbId: details.imdbId,
-          country: details.country,
-          languages: details.languages || [],
+          type: details.type, status: 'PENDING', slug,
+          releaseYear: details.releaseYear, originalTitle: details.originalTitle || null,
+          duration: details.duration, rating: details.rating, tmdbId: details.tmdbId,
+          imdbId: details.imdbId, country: details.country, languages: details.languages || [],
           originalLanguage: details.originalLanguage || null,
           budget: details.budget ? BigInt(details.budget) : null,
           revenue: details.revenue ? BigInt(details.revenue) : null,
           isAdult: details.isAdult || false,
-          translations: {
-            create: [{
-              language: 'es',
-              title: details.title,
-              description: details.synopsis
-            }]
-          },
-          genres: genreConnections.length > 0 ? {
-            create: genreConnections.map(gId => ({ genreId: gId }))
-          } : undefined,
-          actors: actorConnections.length > 0 ? {
-            create: actorConnections.map((aId, idx) => ({ actorId: aId, order: idx }))
-          } : undefined,
-          directors: directorConnections.length > 0 ? {
-            create: directorConnections.map(dId => ({ directorId: dId }))
-          } : undefined,
+          translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
+          genres: genreIds.length > 0 ? { create: genreIds.map(gId => ({ genreId: gId })) } : undefined,
+          actors: actorIds.length > 0 ? { create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx })) } : undefined,
+          directors: directorIds.length > 0 ? { create: directorIds.map(dId => ({ directorId: dId })) } : undefined,
         }
       });
-
       contentId = content.id;
-
-      // Download and save images
       await this._downloadTMDBImages(contentId, details);
     }
 
-    // Create VideoFile and enqueue processing
-    await this._createVideoAndEnqueue(contentId, filePath);
-
-    return {
-      filePath,
-      fileName,
-      success: true,
-      contentId,
-      tmdbMatch: true
-    };
+    await this._createVideoAndEnqueue(contentId, filePath, contentType);
+    return { filePath, fileName, success: true, contentId, tmdbMatch: true };
   }
 
-  /**
-   * Import with minimal data (no TMDB match)
-   */
-  private static async _importMinimal(
-    filePath: string,
-    fileName: string,
-    cleanName: string
-  ): Promise<ImportResult> {
-    const slug = cleanName
-      .toLowerCase()
+  private static async _importMinimal(filePath: string, fileName: string, cleanName: string, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
+    const slug = cleanName.toLowerCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
       + '-' + Math.random().toString(36).substring(2, 6);
 
     const content = await prisma.content.create({
       data: {
-        type: 'MOVIE', // Default, admin can change later
-        status: 'PENDING',
-        slug,
-        translations: {
-          create: [{
-            language: 'es',
-            title: cleanName,
-            description: ''
-          }]
-        }
+        type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
+        status: 'PENDING', slug,
+        translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
       }
     });
 
-    // Create VideoFile and enqueue processing
-    await this._createVideoAndEnqueue(content.id, filePath);
-
-    return {
-      filePath,
-      fileName,
-      success: true,
-      contentId: content.id,
-      tmdbMatch: false
-    };
+    await this._createVideoAndEnqueue(content.id, filePath, contentType);
+    return { filePath, fileName, success: true, contentId: content.id, tmdbMatch: false };
   }
 
-  /**
-   * Create VideoFile record and enqueue for HLS processing
-   */
-  private static async _createVideoAndEnqueue(contentId: string, filePath: string): Promise<void> {
+  private static async _createVideoAndEnqueue(contentId: string, filePath: string, contentType: 'MOVIE' | 'SERIES'): Promise<void> {
     const videoFile = await prisma.videoFile.create({
       data: {
-        contentId,
-        type: 'MOVIE',
-        originalPath: filePath,
-        status: 'QUEUED',
-        fileSize: BigInt(fs.statSync(filePath).size)
+        contentId, type: contentType === 'SERIES' ? 'EPISODE' : 'MOVIE', originalPath: filePath,
+        status: 'QUEUED', fileSize: BigInt(fs.statSync(filePath).size)
       }
     });
-
-    const job = await addVideoJob({
-      videoFileId: videoFile.id,
-      contentId,
-      type: 'MOVIE',
-      videoPath: filePath
-    });
-
-    await prisma.videoFile.update({
-      where: { id: videoFile.id },
-      data: { processingJobId: job.id }
-    });
-
-    console.log(`📦 [MediaScanner] Enqueued video processing for ${path.basename(filePath)} → contentId: ${contentId}`);
+    const job = await addVideoJob({ videoFileId: videoFile.id, contentId, type: contentType, videoPath: filePath });
+    await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
+    console.log(`📦 [MediaScanner] Enqueued ${path.basename(filePath)} → contentId: ${contentId} (${contentType})`);
   }
 
-  /**
-   * Download poster and backdrop from TMDB
-   */
   private static async _downloadTMDBImages(contentId: string, details: TMDBFullDetails): Promise<void> {
     const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', contentId);
-    if (!fs.existsSync(mediaFolder)) {
-      fs.mkdirSync(mediaFolder, { recursive: true });
-    }
-
+    if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
     try {
       if (details.posterPath) {
-        const posterFile = path.join(mediaFolder, 'poster.jpg');
-        await TMDBService.downloadImage(details.posterPath, posterFile);
-        await prisma.thumbnail.create({
-          data: {
-            contentId,
-            type: 'POSTER',
-            url: `/media/thumbnails/${contentId}/poster.jpg`,
-            width: 500,
-            height: 750
-          }
-        });
+        await TMDBService.downloadImage(details.posterPath, path.join(mediaFolder, 'poster.jpg'));
+        await prisma.thumbnail.create({ data: { contentId, type: 'POSTER', url: `/media/thumbnails/${contentId}/poster.jpg`, width: 500, height: 750 } });
       }
-
       if (details.backdropPath) {
-        const backdropFile = path.join(mediaFolder, 'backdrop.jpg');
-        await TMDBService.downloadImage(details.backdropPath, backdropFile);
-        await prisma.thumbnail.create({
-          data: {
-            contentId,
-            type: 'BACKDROP',
-            url: `/media/thumbnails/${contentId}/backdrop.jpg`,
-            width: 1920,
-            height: 1080
-          }
-        });
+        await TMDBService.downloadImage(details.backdropPath, path.join(mediaFolder, 'backdrop.jpg'));
+        await prisma.thumbnail.create({ data: { contentId, type: 'BACKDROP', url: `/media/thumbnails/${contentId}/backdrop.jpg`, width: 1920, height: 1080 } });
       }
-    } catch (err: any) {
-      console.warn(`[MediaScanner] Error downloading images for ${contentId}: ${err.message}`);
-    }
+    } catch (err: any) { console.warn(`[MediaScanner] Image download error for ${contentId}: ${err.message}`); }
   }
 
-  /**
-   * Match TMDB genre names to local Genre records (create if needed)
-   */
-  private static async _matchGenres(tmdbGenreNames: string[]): Promise<string[]> {
+  private static async _matchGenres(names: string[]): Promise<string[]> {
     const ids: string[] = [];
-    for (const name of tmdbGenreNames) {
-      const slug = name.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/(^-|-$)/g, '');
-
-      let genre = await prisma.genre.findFirst({
-        where: {
-          OR: [
-            { name: { equals: name, mode: 'insensitive' } },
-            { slug }
-          ]
-        }
-      });
-
-      if (!genre) {
-        try {
-          genre = await prisma.genre.create({
-            data: { name, slug }
-          });
-        } catch {
-          // Unique constraint — find again
-          genre = await prisma.genre.findFirst({
-            where: { slug }
-          });
-        }
-      }
-
-      if (genre) {
-        ids.push(genre.id);
-      }
+    for (const name of names) {
+      const slug = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      let genre = await prisma.genre.findFirst({ where: { OR: [{ name: { equals: name, mode: 'insensitive' } }, { slug }] } });
+      if (!genre) { try { genre = await prisma.genre.create({ data: { name, slug } }); } catch { genre = await prisma.genre.findFirst({ where: { slug } }); } }
+      if (genre) ids.push(genre.id);
     }
     return ids;
   }
 
-  /**
-   * Match/create actors by tmdbId
-   */
-  private static async _matchActors(
-    tmdbActors: TMDBFullDetails['actors']
-  ): Promise<string[]> {
+  private static async _matchActors(actors: TMDBFullDetails['actors']): Promise<string[]> {
     const ids: string[] = [];
-    for (const a of tmdbActors.slice(0, 10)) { // Limit to top 10
-      let actor = await prisma.actor.findFirst({
-        where: { tmdbId: a.tmdbId }
-      });
-
-      if (!actor) {
-        try {
-          actor = await prisma.actor.create({
-            data: {
-              name: a.name,
-              photoUrl: a.photoUrl,
-              tmdbId: a.tmdbId
-            }
-          });
-        } catch {
-          actor = await prisma.actor.findFirst({ where: { tmdbId: a.tmdbId } });
-        }
-      }
-
+    for (const a of actors.slice(0, 10)) {
+      let actor = await prisma.actor.findFirst({ where: { tmdbId: a.tmdbId } });
+      if (!actor) { try { actor = await prisma.actor.create({ data: { name: a.name, photoUrl: a.photoUrl, tmdbId: a.tmdbId } }); } catch { actor = await prisma.actor.findFirst({ where: { tmdbId: a.tmdbId } }); } }
       if (actor) ids.push(actor.id);
     }
     return ids;
   }
 
-  /**
-   * Match/create directors by tmdbId
-   */
-  private static async _matchDirectors(
-    tmdbDirectors: TMDBFullDetails['directors']
-  ): Promise<string[]> {
+  private static async _matchDirectors(directors: TMDBFullDetails['directors']): Promise<string[]> {
     const ids: string[] = [];
-    for (const d of tmdbDirectors) {
-      let director = await prisma.director.findFirst({
-        where: { tmdbId: d.tmdbId }
-      });
-
-      if (!director) {
-        try {
-          director = await prisma.director.create({
-            data: {
-              name: d.name,
-              photoUrl: d.photoUrl,
-              tmdbId: d.tmdbId
-            }
-          });
-        } catch {
-          director = await prisma.director.findFirst({ where: { tmdbId: d.tmdbId } });
-        }
-      }
-
+    for (const d of directors) {
+      let director = await prisma.director.findFirst({ where: { tmdbId: d.tmdbId } });
+      if (!director) { try { director = await prisma.director.create({ data: { name: d.name, photoUrl: d.photoUrl, tmdbId: d.tmdbId } }); } catch { director = await prisma.director.findFirst({ where: { tmdbId: d.tmdbId } }); } }
       if (director) ids.push(director.id);
     }
     return ids;
   }
 
-  /**
-   * Batch import multiple files
-   */
   static async batchImport(
-    filePaths: string[],
+    files: { filePath: string; contentType: 'MOVIE' | 'SERIES'; episode?: ScannedFile['episode'] }[],
     onProgress?: (current: number, total: number, result: ImportResult) => void
   ): Promise<{ results: ImportResult[]; summary: { total: number; success: number; withTMDB: number; incomplete: number; errors: number } }> {
     const results: ImportResult[] = [];
-    const batchSize = 3; // Process 3 at a time to not overwhelm TMDB API
-    const total = filePaths.length;
+    const batchSize = 3;
+    const total = files.length;
 
-    for (let i = 0; i < filePaths.length; i += batchSize) {
-      const batch = filePaths.slice(i, i + batchSize);
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
       const batchResults = await Promise.allSettled(
-        batch.map(fp => this.importFile(fp))
+        batch.map(f => this.importFile(f.filePath, f.contentType, f.episode))
       );
-
       for (const r of batchResults) {
-        const result = r.status === 'fulfilled'
-          ? r.value
-          : { filePath: '', fileName: '', success: false, tmdbMatch: false, error: (r.reason as Error).message };
+        const result = r.status === 'fulfilled' ? r.value : { filePath: '', fileName: '', success: false, tmdbMatch: false, error: (r.reason as Error).message };
         results.push(result);
-
-        if (onProgress) {
-          onProgress(results.length, total, result);
-        }
+        if (onProgress) onProgress(results.length, total, result);
       }
-
-      // Small delay between batches to respect TMDB rate limits
-      if (i + batchSize < filePaths.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
+      if (i + batchSize < files.length) await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     const summary = {
@@ -577,7 +523,6 @@ export class MediaScannerService {
       incomplete: results.filter(r => r.success && !r.tmdbMatch).length,
       errors: results.filter(r => !r.success).length
     };
-
     return { results, summary };
   }
 }

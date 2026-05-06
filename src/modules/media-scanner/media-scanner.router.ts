@@ -21,18 +21,28 @@ mediaScannerRouter.get('/directories', (async (_req: AuthenticatedRequest, res: 
 }) as RequestHandler);
 
 /**
- * GET /api/admin/media-scanner/scan?path=/some/path
- * Scans a directory and returns found video files
+ * GET /api/admin/media-scanner/scan
+ * Scans one or two directories and returns found video files.
+ *
+ * Supports two modes:
+ *   - Dual folder: ?moviePath=/path/movies&seriesPath=/path/series
+ *   - Legacy single: ?path=/some/path  (treated as movies)
  */
 mediaScannerRouter.get('/scan', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const dirPath = req.query.path as string;
-    if (!dirPath) {
-      res.status(400).json({ success: false, error: 'Se requiere el parámetro "path"' });
+    const moviePath = (req.query.moviePath || req.query.path) as string | undefined;
+    const seriesPath = req.query.seriesPath as string | undefined;
+
+    if (!moviePath && !seriesPath) {
+      res.status(400).json({ success: false, error: 'Se requiere al menos un parámetro de ruta ("moviePath" o "seriesPath")' });
       return;
     }
 
-    const files = await MediaScannerService.scanDirectory(dirPath);
+    const files = await MediaScannerService.scanDirectories(
+      moviePath || undefined,
+      seriesPath || undefined
+    );
+
     const newFiles = files.filter(f => !f.alreadyImported);
     const importedFiles = files.filter(f => f.alreadyImported);
 
@@ -55,26 +65,38 @@ mediaScannerRouter.get('/scan', (async (req: AuthenticatedRequest, res: Response
 /**
  * POST /api/admin/media-scanner/import
  * Imports selected files: creates content + enqueues video processing
- * Body: { filePaths: string[] }
+ * Body: { files: { filePath: string; contentType: 'MOVIE' | 'SERIES' }[] }
+ * Also accepts legacy: { filePaths: string[] } (all treated as MOVIE)
  */
 mediaScannerRouter.post('/import', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { filePaths } = req.body;
+    let files: { filePath: string; contentType: 'MOVIE' | 'SERIES' }[];
 
-    if (!filePaths || !Array.isArray(filePaths) || filePaths.length === 0) {
-      res.status(400).json({ success: false, error: 'Se requiere un array de "filePaths"' });
+    if (req.body.files && Array.isArray(req.body.files)) {
+      // New format: [{ filePath, contentType, episode? }]
+      files = req.body.files;
+    } else if (req.body.filePaths && Array.isArray(req.body.filePaths)) {
+      // Legacy format — treat all as MOVIE
+      files = req.body.filePaths.map((fp: string) => ({ filePath: fp, contentType: 'MOVIE' as const }));
+    } else {
+      res.status(400).json({ success: false, error: 'Se requiere un array "files" con { filePath, contentType } o "filePaths"' });
+      return;
+    }
+
+    if (files.length === 0) {
+      res.status(400).json({ success: false, error: 'No se enviaron archivos para importar' });
       return;
     }
 
     // Limit batch size to prevent abuse
-    if (filePaths.length > 100) {
+    if (files.length > 100) {
       res.status(400).json({ success: false, error: 'Máximo 100 archivos por lote' });
       return;
     }
 
-    console.log(`📂 [MediaScanner] Starting batch import of ${filePaths.length} files`);
+    console.log(`📂 [MediaScanner] Starting batch import of ${files.length} files`);
 
-    const { results, summary } = await MediaScannerService.batchImport(filePaths);
+    const { results, summary } = await MediaScannerService.batchImport(files);
 
     console.log(`📂 [MediaScanner] Batch import complete: ${summary.success} success, ${summary.errors} errors`);
 
@@ -84,14 +106,24 @@ mediaScannerRouter.post('/import', (async (req: AuthenticatedRequest, res: Respo
 
 /**
  * GET /api/admin/media-scanner/status
- * Returns current auto-scanner status
+ * Returns current auto-scanner status and configured paths
  */
 mediaScannerRouter.get('/status', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { prisma } = await import('../../shared/config/prisma');
     const configs = await prisma.siteConfig.findMany({
       where: {
-        key: { in: ['AUTO_SCAN_ENABLED', 'AUTO_SCAN_PATH', 'AUTO_SCAN_INTERVAL', 'AUTO_SCAN_LAST_RUN', 'AUTO_SCAN_LAST_RESULT'] }
+        key: {
+          in: [
+            'AUTO_SCAN_ENABLED',
+            'AUTO_SCAN_PATH',        // legacy
+            'AUTO_SCAN_MOVIE_PATH',
+            'AUTO_SCAN_SERIES_PATH',
+            'AUTO_SCAN_INTERVAL',
+            'AUTO_SCAN_LAST_RUN',
+            'AUTO_SCAN_LAST_RESULT'
+          ]
+        }
       }
     });
 
@@ -99,6 +131,10 @@ mediaScannerRouter.get('/status', (async (_req: AuthenticatedRequest, res: Respo
 
     ok(res, {
       enabled: configMap['AUTO_SCAN_ENABLED'] === 'true',
+      // Dual-folder paths (new)
+      moviePath: configMap['AUTO_SCAN_MOVIE_PATH'] || '',
+      seriesPath: configMap['AUTO_SCAN_SERIES_PATH'] || '',
+      // Legacy single path (kept for backwards compat)
       path: configMap['AUTO_SCAN_PATH'] || '',
       intervalMinutes: parseInt(configMap['AUTO_SCAN_INTERVAL'] || '30'),
       lastRun: configMap['AUTO_SCAN_LAST_RUN'] || null,

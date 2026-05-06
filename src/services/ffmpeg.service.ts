@@ -1,6 +1,11 @@
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
+import { env } from '../shared/config/env';
+
+// Initialize FFmpeg and FFprobe paths from environment configuration
+if (env.FFMPEG_PATH) ffmpeg.setFfmpegPath(env.FFMPEG_PATH);
+if (env.FFPROBE_PATH) ffmpeg.setFfprobePath(env.FFPROBE_PATH);
 
 export class FFmpegService {
     /**
@@ -40,7 +45,6 @@ export class FFmpegService {
 
         const playlistPath = path.join(resolvedOutputFolder, 'master.m3u8');
         const profiles = [
-            { name: '360p', resolution: '640:360', bitrate: '800k', maxrate: '1200k', bufsize: '1600k', bandwidth: 1400000 },
             { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3750k', bufsize: '5000k', bandwidth: 4200000 },
             { name: '1080p', resolution: '1920:1080', bitrate: '5000k', maxrate: '7500k', bufsize: '10000k', bandwidth: 8400000 }
         ];
@@ -69,7 +73,7 @@ export class FFmpegService {
         let lastReportedProgress = 0;
         const totalSteps = profiles.length + audioStreams.length;
         const taskProgress: number[] = new Array(totalSteps).fill(0);
-        const tasks: Promise<boolean>[] = [];
+
 
         const reportProgress = () => {
             if (!onProgress) return;
@@ -81,16 +85,14 @@ export class FFmpegService {
             }
         };
 
-        // 1. Process Video Profiles (Parallel)
-        // If there are no separate audio streams, we must include audio in the video variant
+        // 1. Process Video Profiles (Sequential to save resources)
         const hasMultipleAudio = audioStreams.length > 0;
-
         for (let i = 0; i < profiles.length; i++) {
             const profile = profiles[i];
             const taskIndex = i;
             console.log(`🎬 [FFmpeg] Processing Video ${profile.name}...`);
 
-            tasks.push(new Promise((resolve, reject) => {
+            await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
 
@@ -98,47 +100,43 @@ export class FFmpegService {
 
                 const resetStallTimeout = () => {
                     if (stallTimeout) clearTimeout(stallTimeout);
-                    // 20 minutes without progress = consider it stalled/dead
                     stallTimeout = setTimeout(() => {
                         cmd.kill('SIGKILL');
                         reject(new Error(`[Timeout] El proceso se atascó (20 min sin avanzar). Cancelado automáticamente.`));
                     }, 20 * 60 * 1000);
                 };
 
-                // Hard timeout: 4 hours max total processing time per profile
                 hardTimeout = setTimeout(() => {
                     cmd.kill('SIGKILL');
                     reject(new Error(`[Timeout] El proceso excedió el tiempo máximo permitido (4 horas). Cancelado automáticamente.`));
                 }, 4 * 60 * 60 * 1000);
 
                 const opts: string[] = [
-                    '-preset fast',               // 'fast' is a great balance between quality and encoding speed
-                    '-threads 0',
-                    '-profile:v main',
-                    '-level 4.0',                 // Broad device compatibility
-                    `-vf scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease`,
-                    '-c:v h264',
-                    '-pix_fmt yuv420p',           // Maximum compatibility
-                    '-vsync cfr',                 // Constant framerate — no dropped/duplicated frames
-                    `-r ${fpsValue}`,             // Exact source framerate (e.g. 24000/1001 for 23.976fps)
-                    `-g ${gopSize}`,              // GOP aligned to 2 seconds
-                    `-keyint_min ${gopSize}`,     // Force consistent keyframe spacing
-                    '-sc_threshold 0',            // Disable scene-change keyframes (keeps GOP regular)
-                    `-b:v ${profile.bitrate}`,    // Target bitrate
-                    `-maxrate ${profile.maxrate}`,// Headroom for complex scenes (1.5x target)
-                    `-bufsize ${profile.bufsize}`,// VBV buffer = 2x target bitrate
-                    '-max_muxing_queue_size 1024',// Prevent frame drops on complex buffering
-                    '-hls_time 6',                // 6s segments (3 GOPs) for better seek + buffer balance
-                    '-hls_playlist_type vod',
+                    '-preset', 'veryfast',
+                    '-threads', '0',
+                    '-profile:v', 'main',
+                    '-level', '4.0',
+                    '-vf', `scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease`,
+                    '-c:v', 'h264',
+                    '-pix_fmt', 'yuv420p',
+                    '-vsync', 'cfr',
+                    '-r', fpsValue,
+                    '-g', gopSize.toString(),
+                    '-keyint_min', gopSize.toString(),
+                    '-sc_threshold', '0',
+                    '-b:v', profile.bitrate,
+                    '-maxrate', profile.maxrate,
+                    '-bufsize', profile.bufsize,
+                    '-max_muxing_queue_size', '1024',
+                    '-hls_time', '6',
+                    '-hls_playlist_type', 'vod',
                     '-hls_segment_filename', path.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
                 ];
 
                 if (hasMultipleAudio) {
-                    // Separate audio tracks: strip audio from video variant (audio handled separately)
-                    opts.splice(5, 0, '-an');
+                    opts.unshift('-map', '0:v:0', '-an');
                 } else {
-                    // Single/muxed audio: include audio directly in the video variant
-                    opts.splice(5, 0, '-c:a aac', '-b:a 192k', '-map 0:v:0', '-map 0:a:0');
+                    opts.unshift('-map', '0:v:0', '-map', '0:a:0', '-c:a', 'aac', '-b:a', '192k');
                 }
 
                 cmd
@@ -166,10 +164,10 @@ export class FFmpegService {
                         reject(err);
                     })
                     .run();
-            }));
+            });
         }
 
-        // 2. Process Audio Streams (Parallel)
+        // 2. Process Audio Streams (Sequential to save resources)
         for (let i = 0; i < audioStreams.length; i++) {
             const stream = audioStreams[i];
             const taskIndex = profiles.length + i;
@@ -178,7 +176,7 @@ export class FFmpegService {
 
             console.log(`🔊 [FFmpeg] Extracting Audio ${title}...`);
 
-            tasks.push(new Promise((resolve, reject) => {
+            await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
 
@@ -200,12 +198,12 @@ export class FFmpegService {
                 cmd
                     .outputOptions([
                         '-vn',                    // No video
-                        `-map 0:a:${i}`,          // Select specific audio stream
-                        '-c:a aac',               // AAC encoding
-                        '-b:a 192k',              // 192kbps target
-                        '-ac 2',                  // Stereo downmix for compatibility
-                        '-hls_time 6',
-                        '-hls_playlist_type vod',
+                        '-map', `0:a:${i}`,       // Select specific audio stream
+                        '-c:a', 'aac',            // AAC encoding
+                        '-b:a', '192k',           // 192kbps target
+                        '-ac', '2',               // Stereo downmix for compatibility
+                        '-hls_time', '6',
+                        '-hls_playlist_type', 'vod',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, `audio_${lang}_%03d.ts`)
                     ])
                     .output(path.join(resolvedOutputFolder, `audio_${lang}.m3u8`))
@@ -238,10 +236,8 @@ export class FFmpegService {
                         reject(err);
                     })
                     .run();
-            }));
+            });
         }
-
-        await Promise.all(tasks);
 
         // 3. Generate Master Playlist with Audio Groups
         // HLS version 6 is required for alternate audio renditions (EXT-X-MEDIA)

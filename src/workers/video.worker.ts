@@ -22,6 +22,14 @@ export const videoWorker = new Worker(
     job.log(`Starting HLS processing for contentId: ${contentId}`);
 
     try {
+      // ─── Initial Checks ───────────────────────────────────────────────
+      // Check if file exists and is readable by the process
+      try {
+        fs.accessSync(videoPath, fs.constants.R_OK);
+      } catch (err: any) {
+        throw new Error(`Cannot read input file at ${videoPath}: ${err.message}. Check permissions.`);
+      }
+
       const existsInitial = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
       if (!existsInitial) {
         job.log('Job cancelled: VideoFile record no longer exists. Aborting early.');
@@ -93,14 +101,6 @@ export const videoWorker = new Worker(
           hlsPath: outputFolder,
           qualities: {
             create: [
-              {
-                resolution: '360p',
-                width: 640,
-                height: 360,
-                bitrate: 800000,
-                playlistUrl: `/media/hls/${contentId}/360p.m3u8`,
-                codec: 'h264'
-              },
               {
                 resolution: '720p',
                 width: 1280,
@@ -237,7 +237,10 @@ export const videoWorker = new Worker(
       try {
         await prisma.videoFile.update({
           where: { id: videoFileId },
-          data: { status: 'FAILED' }
+          data: { 
+            status: 'FAILED',
+            errorMessage: error.message 
+          }
         });
       } catch (dbErr: any) {
         job.log(`Warning: could not set FAILED status: ${dbErr.message}`);
