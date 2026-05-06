@@ -86,26 +86,37 @@ export class StreamingService {
     }
 
     let hlsRoot = videoFile.hlsPath || '';
-    if (!hlsRoot.startsWith('/')) {
-        // If it's not an absolute path, it means it's a standard processed video in env.HLS_PATH
-        hlsRoot = path.resolve(env.HLS_PATH, videoFileId);
+    
+    // 1. If hlsPath is absolute, use it directly.
+    // 2. If it's relative, resolve it against CWD.
+    // 3. If it's empty, fallback to the standard structure: media/hls/CONTENT_ID
+    if (hlsRoot) {
+        if (!path.isAbsolute(hlsRoot)) {
+            hlsRoot = path.resolve(process.cwd(), hlsRoot);
+        }
+    } else {
+        // Fallback for older records: use contentId if available, otherwise videoFileId
+        const folderName = videoFile.contentId || videoFileId;
+        hlsRoot = path.resolve(env.HLS_PATH, folderName);
     }
 
     // Resolve the full path and verify it stays inside hlsRoot.
     const resolvedPath = path.resolve(hlsRoot, filePath);
 
     if (!resolvedPath.startsWith(hlsRoot)) {
+      console.warn(`[Streaming] Blocked access attempt outside HLS root: ${resolvedPath}`);
       return { status: 403, headers: {}, stream: null };
+    }
+
+    if (!fs.existsSync(resolvedPath)) {
+      console.log(`[Streaming] File not found: ${resolvedPath} (hlsRoot: ${hlsRoot})`);
+      return { status: 404, headers: {}, stream: null };
     }
 
     // Whitelist only valid HLS file extensions
     const ext = path.extname(resolvedPath).toLowerCase();
     if (!['.m3u8', '.ts', '.vtt'].includes(ext)) {
       return { status: 403, headers: {}, stream: null };
-    }
-
-    if (!fs.existsSync(resolvedPath)) {
-      return { status: 404, headers: {}, stream: null };
     }
 
     const contentType =
