@@ -83,20 +83,146 @@ export async function login(input: LoginInput) {
       const passwordValid = await bcrypt.compare(input.password, endUser.passwordHash);
       if (!passwordValid) throw new AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
       
-      if (endUser.status === 'INACTIVE' || endUser.status === 'PAUSED' || endUser.status === 'EXPIRED') {
+      // Handle INACTIVE accounts with a plan: activate on first login
+      if (endUser.status === 'INACTIVE' && endUser.planId) {
+        const plan = await prisma.subscriptionPlan.findUnique({ where: { id: endUser.planId } });
+        if (plan) {
+          const now = new Date();
+          const totalDays = plan.durationDays + (plan.bonusDays ?? 0);
+          const endDate = new Date(now.getTime() + totalDays * 24 * 60 * 60 * 1000);
+
+          await prisma.endUserAccount.update({
+            where: { id: endUser.id },
+            data: {
+              status: 'ACTIVE',
+              startDate: now,
+              endDate,
+            },
+          });
+          // Update local reference for the response
+          endUser.status = 'ACTIVE' as any;
+        }
+      }
+
+      // Handle DEMO accounts: check if demo period has expired
+      if (endUser.status === 'DEMO' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
+        await prisma.endUserAccount.update({
+          where: { id: endUser.id },
+          data: { status: 'EXPIRED' },
+        });
+        throw new AppError(403, 'Demo period has expired', 'ACCOUNT_RESTRICTED');
+      }
+
+      // Block other restricted statuses
+      if (endUser.status === 'PAUSED' || endUser.status === 'EXPIRED') {
          throw new AppError(403, `Account is ${endUser.status.toLowerCase()}`, 'ACCOUNT_RESTRICTED');
       }
 
+      // Block INACTIVE accounts without a plan
+      if (endUser.status === 'INACTIVE') {
+        throw new AppError(403, 'Account has no active plan', 'ACCOUNT_RESTRICTED');
+      }
+
+      // Check if active account has expired
+      if (endUser.status === 'ACTIVE' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
+        await prisma.endUserAccount.update({
+          where: { id: endUser.id },
+          data: { status: 'EXPIRED' },
+        });
+        throw new AppError(403, 'Account has expired', 'ACCOUNT_RESTRICTED');
+      }
+
+      // Device limits & Auto-disconnect logic
+      const deviceToken = input.deviceId || uuidv4();
+      const deviceName = input.deviceName || 'Web Browser';
+      const deviceType = (input.deviceType as any) || 'WEB';
+
+      const activeSessions = await prisma.deviceSession.findMany({
+        where: { endUserAccountId: endUser.id, isActive: true },
+        orderBy: { lastSeen: 'asc' },
+      });
+
+      if (activeSessions.length >= endUser.maxDevices) {
+        const numToDisconnect = activeSessions.length - endUser.maxDevices + 1;
+        const sessionsToDisconnect = activeSessions.slice(0, numToDisconnect);
+
+        await prisma.deviceSession.updateMany({
+          where: { id: { in: sessionsToDisconnect.map((s) => s.id) } },
+          data: { isActive: false },
+        });
+      }
+
+      await prisma.deviceSession.upsert({
+        where: { deviceToken },
+        create: {
+          deviceToken,
+          deviceName,
+          deviceType,
+          isActive: true,
+          lastSeen: new Date(),
+          endUserAccountId: endUser.id,
+        },
+        update: {
+          isActive: true,
+          deviceName,
+          lastSeen: new Date(),
+          endUserAccountId: endUser.id,
+        },
+      });
+
+      // Ensure the endUser has a linked User record to support profiles, history, etc.
+      if (!endUser.userId) {
+        const clientEmail = `${endUser.username}@client.flex`;
+        // Check if user with this email already exists (edge case)
+        let linkedUser = await prisma.user.findUnique({ where: { email: clientEmail } });
+        
+        if (!linkedUser) {
+          linkedUser = await prisma.user.create({
+            data: {
+              email: clientEmail,
+              name: endUser.username,
+              role: 'END_USER',
+              isActive: true,
+              profiles: {
+                create: {
+                  name: endUser.username,
+                  isKids: false,
+                }
+              }
+            }
+          });
+        }
+
+        await prisma.endUserAccount.update({
+          where: { id: endUser.id },
+          data: { userId: linkedUser.id }
+        });
+        endUser.userId = linkedUser.id;
+        endUser.user = linkedUser;
+      } else {
+          // Ensure they have at least one profile
+          const profileCount = await prisma.profile.count({ where: { userId: endUser.userId } });
+          if (profileCount === 0) {
+              await prisma.profile.create({
+                  data: {
+                      userId: endUser.userId,
+                      name: endUser.username,
+                  }
+              });
+          }
+      }
+
       // Return a virtual user object for the token
-      const { accessToken, refreshToken } = generateTokens(endUser.id, endUser.username, 'END_USER');
+      const { accessToken, refreshToken } = generateTokens(endUser.userId, endUser.username, 'END_USER');
       
       const refreshTtlSeconds = 30 * 24 * 60 * 60;
-      await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, endUser.id);
+      await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, endUser.userId);
       
       await prisma.refreshToken.create({
         data: {
           token: refreshToken,
-          userId: endUser.userId || 'VIRTUAL_' + endUser.id, // Handle cases without linked user
+          userId: endUser.userId,
+          endUserAccountId: endUser.id,
           expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
         },
       });
@@ -148,28 +274,50 @@ export async function refreshAccessToken(refreshToken: string) {
     throw new AppError(401, 'Invalid or expired refresh token', 'INVALID_REFRESH_TOKEN');
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { id: true, email: true, role: true, isActive: true },
-  });
+  let user;
+  let role: string;
+  let email: string;
 
-  if (!user || !user.isActive) {
-    throw new AppError(401, 'User not found or inactive', 'INVALID_REFRESH_TOKEN');
+  if (userId.startsWith('VIRTUAL_')) {
+    const accountId = userId.replace('VIRTUAL_', '');
+    const account = await prisma.endUserAccount.findUnique({
+      where: { id: accountId },
+      select: { id: true, username: true, status: true },
+    });
+    if (!account || account.status === 'EXPIRED' || account.status === 'PAUSED') {
+      throw new AppError(401, 'Account restricted or not found', 'INVALID_REFRESH_TOKEN');
+    }
+    user = { id: account.id };
+    email = account.username;
+    role = 'END_USER';
+  } else {
+    const realUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, role: true, isActive: true },
+    });
+
+    if (!realUser || !realUser.isActive) {
+      throw new AppError(401, 'User not found or inactive', 'INVALID_REFRESH_TOKEN');
+    }
+    user = realUser;
+    email = realUser.email;
+    role = realUser.role;
   }
 
   // Rotate refresh token
   await redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
 
-  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.email, user.role);
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, email, role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
-  await redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, refreshTtlSeconds, user.id);
+  await redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, refreshTtlSeconds, role === 'END_USER' ? `VIRTUAL_${user.id}` : user.id);
 
   await prisma.refreshToken.create({
     data: {
       token: newRefreshToken,
-      userId: user.id,
+      userId: role === 'END_USER' ? null : user.id,
+      endUserAccountId: role === 'END_USER' ? user.id : null,
       expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
     },
   });

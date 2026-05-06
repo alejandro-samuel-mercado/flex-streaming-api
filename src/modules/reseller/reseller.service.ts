@@ -420,4 +420,30 @@ export class ResellerService {
 
     return EndUsersService.addPlan(accountId, requesterId, requesterRole, planId);
   }
+
+  static async resetVendorPassword(vendorId: string, requesterId: string, requesterRole: UserRole, newPassword: string) {
+    const vendor = await prisma.user.findUnique({ where: { id: vendorId } });
+    if (!vendor) throw new AppError(404, 'Vendor not found', 'NOT_FOUND');
+
+    if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
+      throw new AppError(403, 'You can only manage your own vendors', 'FORBIDDEN');
+    }
+
+    if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+      throw new AppError(403, 'Admins can only manage Super Resellers', 'FORBIDDEN');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    
+    // Revoke tokens if vendor has a connected endUserAccount, or just the user token
+    await prisma.refreshToken.deleteMany({
+      where: { userId: vendorId },
+    });
+
+    return prisma.user.update({
+      where: { id: vendorId },
+      data: { passwordHash },
+      select: { id: true, email: true, name: true, role: true },
+    });
+  }
 }

@@ -89,6 +89,16 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     select: { id: true, name: true, avatar: true, isKids: true, language: true },
                     orderBy: { createdAt: 'asc' },
                 },
+                endUserAccount: {
+                    select: {
+                        id: true,
+                        status: true,
+                        type: true,
+                        endDate: true,
+                        maxDevices: true,
+                        plan: { select: { id: true, name: true, durationDays: true } }
+                    }
+                }
             },
         });
         ok(res, user);

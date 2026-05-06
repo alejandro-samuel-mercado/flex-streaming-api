@@ -9,6 +9,9 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  deviceId: z.string().optional(),
+  deviceName: z.string().optional(),
+  deviceType: z.enum(['TV', 'MOBILE', 'WEB']).optional(),
 });
 
 export const forgotPasswordSchema = z.object({

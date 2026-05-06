@@ -48,6 +48,7 @@ import { endUsersRouter } from './modules/end-users/end-users.router';
 import { tmdbRouter } from './modules/admin/tmdb.router';
 import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router';
 import { AutoScannerWorker } from './workers/auto-scanner.worker';
+import { AccountExpiryWorker } from './workers/account-expiry.worker';
 import { ChunkUploadService } from './services/chunk-upload.service';
 
 const app = express();
@@ -211,6 +212,10 @@ async function bootstrap() {
     // Start auto-scanner worker
     AutoScannerWorker.start(io);
     console.log('🔍 Auto-scanner worker initialized');
+
+    // Start account expiry worker
+    AccountExpiryWorker.start();
+    console.log('⏰ Account expiry worker initialized');
 
     httpServer.listen(env.BACKEND_PORT, () => {
       console.log(`🚀 PeliPlus API running at http://localhost:${env.BACKEND_PORT}`);

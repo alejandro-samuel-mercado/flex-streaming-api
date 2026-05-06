@@ -5,6 +5,7 @@ import { prisma } from '../../shared/config/prisma';
 import { videoQueue } from '../../services/queue.service';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
+import { ResellerService } from '../reseller/reseller.service';
 
 
 export const adminRouter = Router();
@@ -95,9 +96,13 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
     const where: any = { deletedAt: null };
     
     if (role === 'END_USER') {
+      const adminId = req.user!.id;
+      const endUserWhere: any = { managedById: adminId, deletedAt: null };
+      if (search) endUserWhere.username = { contains: search, mode: 'insensitive' };
+
       const [users, total] = await Promise.all([
         prisma.endUserAccount.findMany({
-          where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
+          where: endUserWhere,
           skip: (page - 1) * limit,
           take: limit,
           orderBy: { createdAt: 'desc' },
@@ -108,9 +113,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
             connectedDevices: true,
           },
         }),
-        prisma.endUserAccount.count({
-           where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
-        }),
+        prisma.endUserAccount.count({ where: endUserWhere }),
       ]);
       return ok(res, { users, total, page, limit });
     }
@@ -219,7 +222,17 @@ adminRouter.delete('/users/:id', (async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ success: false, error: 'No puedes eliminar tu propia cuenta' });
     }
 
-    await prisma.user.delete({ where: { id } });
+    const userToDelete = await prisma.user.findUnique({ where: { id } });
+    if (!userToDelete) {
+      return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+    }
+
+    if (userToDelete.role === 'ADMIN') {
+      await prisma.user.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+    } else {
+      await ResellerService.deleteVendor(id, req.user!.id, req.user!.role);
+    }
+    
     return ok(res, { success: true });
   } catch (err) { next(err); }
 }) as RequestHandler);

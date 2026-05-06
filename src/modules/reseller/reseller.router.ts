@@ -130,3 +130,29 @@ resellerRouter.post('/vendors/:id/plan', auth, superVendorPlus, (async (req, res
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+// GET /api/reseller/transactions — Get own credit history
+resellerRouter.get('/transactions', authenticate as RequestHandler, requireRole('VENDOR', 'SUPER_VENDOR', 'ADMIN') as RequestHandler, (async (req, res, next) => {
+  try {
+    const authReq = req as unknown as AuthenticatedRequest;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const result = await ResellerService.getCreditHistory(authReq.user!.id, authReq.user!.id, authReq.user!.role, page, limit);
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+// PATCH /api/reseller/vendors/:id/password — Reset vendor password
+resellerRouter.patch('/vendors/:id/password', auth, superVendorPlus, (async (req, res, next) => {
+  try {
+    const authReq = req as unknown as AuthenticatedRequest;
+    const { password } = z.object({ password: z.string().min(6) }).parse(req.body);
+    const result = await ResellerService.resetVendorPassword(
+      req.params.id,
+      authReq.user!.id,
+      authReq.user!.role,
+      password
+    );
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);

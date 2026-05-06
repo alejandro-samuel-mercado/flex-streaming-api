@@ -25,6 +25,7 @@ const CreateEndUserSchema = z.object({
   password: z.string().min(4).max(50),
   country: z.string().optional(),
   notes: z.string().optional(),
+  planId: z.string().optional(),
 });
 
 const ChangePasswordSchema = z.object({
@@ -45,17 +46,18 @@ endUsersRouter.get('/', auth, vendorPlus, (async (req, res, next) => {
       search: req.query.search as string | undefined,
       status: req.query.status as string | undefined,
       type: req.query.type as string | undefined,
+      expiringInDays: req.query.expiringInDays ? parseInt(req.query.expiringInDays as string) : undefined,
     });
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
 
-// POST /api/end-users — Create end user account
+// POST /api/end-users — Create end user account (optionally with plan)
 endUsersRouter.post('/', auth, vendorPlus, (async (req, res, next) => {
   try {
     const authReq = req as unknown as AuthenticatedRequest;
     const data = CreateEndUserSchema.parse(req.body);
-    const account = await EndUsersService.create(authReq.user!.id, data);
+    const account = await EndUsersService.create(authReq.user!.id, authReq.user!.role, data);
     created(res, account);
   } catch (err) { next(err); }
 }) as RequestHandler);

@@ -39,8 +39,20 @@ export function errorHandler(
 
   console.error('Unhandled error:', err);
 
+  // Mask technical errors (Prisma, etc.) for the client
+  let clientMessage = 'Internal server error';
+  
+  if (env.NODE_ENV !== 'production') {
+    clientMessage = err.message;
+  }
+
+  // Specifically mask Prisma errors or internal invocation errors to protect technical details
+  if (err.message.includes('Prisma') || err.message.includes('invocation') || err.message.includes('fkey')) {
+    clientMessage = 'Error de base de datos. Por favor, contacte al soporte técnico.';
+  }
+
   res.status(500).json({
     success: false,
-    error: env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
+    error: clientMessage,
   });
 }
