@@ -21,7 +21,7 @@ streamingRouter.post('/request-access', authenticate as RequestHandler, (async (
 }) as RequestHandler);
 
 // ─── Serve HLS segments (token-validated) ────────────────────────────────────
-streamingRouter.get('/hls/:videoFileId/*', ((req: Request, res, next) => {
+streamingRouter.get('/hls/:videoFileId/*', (async (req: Request, res, next) => {
   try {
     const token = req.query.token as string;
     if (!token) {
@@ -33,7 +33,7 @@ streamingRouter.get('/hls/:videoFileId/*', ((req: Request, res, next) => {
     const filePath = req.params[0]; // Everything after videoFileId/
     const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
 
-    const result = StreamingService.serveSegment(videoFileId, filePath, token, ip);
+    const result = await StreamingService.serveSegment(videoFileId, filePath, token, ip);
     if (result.stream) {
       res.writeHead(result.status, result.headers);
       result.stream.pipe(res);

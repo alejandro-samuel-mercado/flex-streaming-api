@@ -68,24 +68,33 @@ export class StreamingService {
   /**
    * Serve HLS segments with token validation.
    */
-  static serveSegment(
+  static async serveSegment(
     videoFileId: string,
     filePath: string,
     token: string,
     ip: string
-  ): { status: number; headers: Record<string, string>; stream: fs.ReadStream | null } {
+  ): Promise<{ status: number; headers: Record<string, string>; stream: fs.ReadStream | null }> {
     // Verify token
     if (!verifySignedToken(token, videoFileId, ip)) {
       return { status: 403, headers: {}, stream: null };
     }
 
-    // ── Path traversal protection ────────────────────────────────────────────
-    // Resolve the full path and verify it stays inside HLS_PATH.
-    // Prevents attacks like filePath = "../../etc/passwd"
-    const hlsRoot = path.resolve(env.HLS_PATH);
+    // ── Resolve base HLS directory ───────────────────────────────────────────
+    const videoFile = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
+    if (!videoFile) {
+        return { status: 404, headers: {}, stream: null };
+    }
+
+    let hlsRoot = videoFile.hlsPath || '';
+    if (!hlsRoot.startsWith('/')) {
+        // If it's not an absolute path, it means it's a standard processed video in env.HLS_PATH
+        hlsRoot = path.resolve(env.HLS_PATH, videoFileId);
+    }
+
+    // Resolve the full path and verify it stays inside hlsRoot.
     const resolvedPath = path.resolve(hlsRoot, filePath);
 
-    if (!resolvedPath.startsWith(hlsRoot + path.sep) && resolvedPath !== hlsRoot) {
+    if (!resolvedPath.startsWith(hlsRoot)) {
       return { status: 403, headers: {}, stream: null };
     }
 
