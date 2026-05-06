@@ -300,19 +300,36 @@ export class MediaScannerService {
     }
 
     // Create VideoFile as COMPLETED (no processing needed)
-    const relativeM3u8 = m3u8Url; // Store absolute path so streaming module can resolve it
-    await prisma.videoFile.create({
+    const videoFile = await prisma.videoFile.create({
       data: {
         contentId,
         type: 'EPISODE',
         originalPath: episodeFolderPath,
         status: 'COMPLETED',
-        masterPlaylist: relativeM3u8,
+        masterPlaylist: '', // Will be updated below
         hlsPath: episodeFolderPath,
         fileSize: BigInt(0),
+      }
+    });
+
+    // Update with virtual path using the newly created ID
+    const m3u8Filename = path.basename(m3u8Url);
+    const virtualMasterPath = `/api/stream/hls/${videoFile.id}/${m3u8Filename}`;
+
+    await prisma.videoFile.update({
+      where: { id: videoFile.id },
+      data: {
+        masterPlaylist: virtualMasterPath,
         qualities: {
           create: [
-            { resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: relativeM3u8, codec: 'h264' }
+            { 
+              resolution: '720p', 
+              width: 1280, 
+              height: 720, 
+              bitrate: 2500000, 
+              playlistUrl: virtualMasterPath, 
+              codec: 'h264' 
+            }
           ]
         }
       }

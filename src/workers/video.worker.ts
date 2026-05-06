@@ -90,7 +90,7 @@ export const videoWorker = new Worker(
         return { cancelled: true };
       }
 
-      const masterPlaylistUrl = `/media/hls/${contentId}/master.m3u8`;
+      const masterPlaylistUrl = `/api/stream/hls/${videoFileId}/master.m3u8`;
 
       // Wait until Prisma is available correctly
       await prisma.videoFile.update({
@@ -106,7 +106,7 @@ export const videoWorker = new Worker(
                 width: 1280,
                 height: 720,
                 bitrate: 2500000,
-                playlistUrl: `/media/hls/${contentId}/720p.m3u8`,
+                playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
                 codec: 'h264'
               },
               {
@@ -114,7 +114,7 @@ export const videoWorker = new Worker(
                 width: 1920,
                 height: 1080,
                 bitrate: 5000000,
-                playlistUrl: `/media/hls/${contentId}/1080p.m3u8`,
+                playlistUrl: `/api/stream/hls/${videoFileId}/1080p.m3u8`,
                 codec: 'h264'
               }
             ]
