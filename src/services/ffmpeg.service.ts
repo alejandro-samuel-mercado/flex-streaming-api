@@ -164,7 +164,7 @@ export class FFmpegService {
                         reportProgress();
                         resolve(true);
                     })
-                    .on('error', (err, stdout, stderr) => {
+                    .on('error', (err, _stdout, stderr) => {
                         clearTimeout(stallTimeout);
                         clearTimeout(hardTimeout);
                         console.error(`Error during FFmpeg profile ${profile.name}: ${err.message}`);
@@ -388,7 +388,7 @@ export class FFmpegService {
                             '-c:s webvtt'
                         ])
                         .output(outFilePath)
-                        .on('error', (err, stdout, stderr) => {
+                        .on('error', (err, _stdout, stderr) => {
                             clearTimeout(timeout);
                             if (stderr) console.warn(`FFmpeg Subtitle STDERR:\n${stderr}`);
                             reject(err);
