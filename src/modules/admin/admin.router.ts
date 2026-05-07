@@ -291,15 +291,29 @@ adminRouter.put('/settings', (async (req: AuthenticatedRequest, res: Response, n
 
 adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const videos = await prisma.videoFile.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        content: { select: { id: true, slug: true } },
-        episode: { include: { season: { include: { content: { select: { id: true, slug: true } } } } } },
-        qualities: { select: { resolution: true } },
-      },
-    });
+    // ─── Fetch All Active/Pending + Recent History ───
+    const [activeVideos, historyVideos] = await Promise.all([
+      prisma.videoFile.findMany({
+        where: { status: { in: ['PROCESSING', 'PENDING'] } },
+        include: {
+          content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+          episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+          qualities: { select: { resolution: true } },
+        },
+      }),
+      prisma.videoFile.findMany({
+        where: { status: { in: ['COMPLETED', 'FAILED'] } },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+        include: {
+          content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+          episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+          qualities: { select: { resolution: true } },
+        },
+      })
+    ]);
+
+    const videos = [...activeVideos, ...historyVideos];
 
     // ─── Fetch real-time progress from BullMQ for active jobs ───
     const videosWithProgress = await Promise.all(videos.map(async (v: any) => {
