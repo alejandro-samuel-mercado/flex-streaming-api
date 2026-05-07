@@ -50,17 +50,35 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
       prisma.videoFile.findMany({
         orderBy: { updatedAt: 'desc' },
         take: 5,
-        select: { id: true, type: true, status: true, updatedAt: true, content: { select: { translations: { select: { title: true }, take: 1 } } } }
+        select: { 
+          id: true, 
+          type: true, 
+          status: true, 
+          updatedAt: true, 
+          content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } },
+          episode: { include: { season: { include: { content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } } } } } }
+        }
       })
     ]);
 
     // Map recentActivity into a generic notification / activity shape
-    const activityLogs = recentActivity.map(v => ({
-      name: v.content?.translations?.[0]?.title ? `${v.content.translations[0].title} (${v.type})` : `Archivo de video`,
-      status: v.status,
-      time: v.updatedAt.toISOString(),
-      type: 'VIDEO_PROCESSING'
-    }));
+    const activityLogs = recentActivity.map(v => {
+      let name = 'Archivo de video';
+      const content = v.content || (v as any).episode?.season?.content;
+      if (content) {
+        const title = content.translations?.[0]?.title || content.slug;
+        name = `${title} (${v.type})`;
+        if ((v as any).episode) {
+          name = `${title} - T${(v as any).episode.season.number}E${(v as any).episode.number}`;
+        }
+      }
+      return {
+        name,
+        status: v.status,
+        time: v.updatedAt.toISOString(),
+        type: 'VIDEO_PROCESSING'
+      };
+    });
 
     ok(res, {
       kpis: {
@@ -278,23 +296,28 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
       take: 50,
       include: {
         content: { select: { id: true, slug: true } },
+        episode: { include: { season: { include: { content: { select: { id: true, slug: true } } } } } },
         qualities: { select: { resolution: true } },
       },
     });
 
     // ─── Fetch real-time progress from BullMQ for active jobs ───
-    const videosWithProgress = await Promise.all(videos.map(async (v: any) => {
+      const resVideo = { ...v };
+      if (!resVideo.content && resVideo.episode?.season?.content) {
+        resVideo.content = resVideo.episode.season.content;
+      }
+
       if (v.status === 'PROCESSING' && v.processingJobId) {
         try {
           const job = await videoQueue.getJob(v.processingJobId);
           if (job) {
-            return { ...v, progress: job.progress };
+            return { ...resVideo, progress: job.progress };
           }
         } catch (e) {
           console.warn(`[AdminRouter] Could not fetch progress for job ${v.processingJobId}`);
         }
       }
-      return v;
+      return resVideo;
     }));
 
     ok(res, videosWithProgress);
