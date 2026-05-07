@@ -293,7 +293,7 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
   try {
     const videos = await prisma.videoFile.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: 100,
       include: {
         content: { select: { id: true, slug: true } },
         episode: { include: { season: { include: { content: { select: { id: true, slug: true } } } } } },
