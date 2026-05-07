@@ -37,6 +37,7 @@ export class FFmpegService {
         if (!fs.existsSync(resolvedOutputFolder)) {
             fs.mkdirSync(resolvedOutputFolder, { recursive: true });
         }
+        console.log(`🎬 [FFmpeg] Output Folder: ${resolvedOutputFolder}`);
 
         // Get metadata to find audio tracks
         const metadata = await this.getMetadata(resolvedInputPath);

@@ -117,10 +117,21 @@ export class StreamingService {
         const folderId = videoFile.contentId || videoFile.episodeId || videoFileId;
         hlsRoot = path.resolve(env.HLS_PATH, folderId);
         
-        // If the folderId (e.g. series ID) doesn't exist, try the other IDs
-        if (!fs.existsSync(hlsRoot)) {
-            const altFolderId = videoFile.episodeId || videoFile.contentId || videoFileId;
-            hlsRoot = path.resolve(env.HLS_PATH, altFolderId);
+        // If not found and it's an episode, try the episode's own ID or the series ID
+        if (!fs.existsSync(hlsRoot) && videoFile.episodeId) {
+            // Check if it's stored under episodeId
+            hlsRoot = path.resolve(env.HLS_PATH, videoFile.episodeId);
+            
+            if (!fs.existsSync(hlsRoot)) {
+                // Last resort: find the parent content ID via episode -> season
+                const ep = await prisma.episode.findUnique({
+                    where: { id: videoFile.episodeId },
+                    include: { season: { select: { contentId: true } } }
+                });
+                if (ep?.season?.contentId) {
+                    hlsRoot = path.resolve(env.HLS_PATH, ep.season.contentId);
+                }
+            }
         }
     }
 
