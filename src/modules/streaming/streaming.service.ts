@@ -108,17 +108,20 @@ export class StreamingService {
 
     let hlsRoot = videoFile.hlsPath || '';
     
-    // 1. If hlsPath is absolute, use it directly.
-    // 2. If it's relative, resolve it against CWD.
-    // 3. If it's empty, fallback to the standard structure: media/hls/CONTENT_ID
     if (hlsRoot) {
         if (!path.isAbsolute(hlsRoot)) {
             hlsRoot = path.resolve(process.cwd(), hlsRoot);
         }
     } else {
-        // Fallback for older records: use contentId if available, otherwise videoFileId
-        const folderName = videoFile.contentId || videoFileId;
-        hlsRoot = path.resolve(env.HLS_PATH, folderName);
+        // Fallback: Try series ID first, then episode ID, then video file ID
+        const folderId = videoFile.contentId || videoFile.episodeId || videoFileId;
+        hlsRoot = path.resolve(env.HLS_PATH, folderId);
+        
+        // If the folderId (e.g. series ID) doesn't exist, try the other IDs
+        if (!fs.existsSync(hlsRoot)) {
+            const altFolderId = videoFile.episodeId || videoFile.contentId || videoFileId;
+            hlsRoot = path.resolve(env.HLS_PATH, altFolderId);
+        }
     }
 
     // Resolve the full path and verify it stays inside hlsRoot.

@@ -476,15 +476,49 @@ export class MediaScannerService {
   }
 
   private static async _createVideoAndEnqueue(contentId: string, filePath: string, contentType: 'MOVIE' | 'SERIES'): Promise<void> {
+    const fileName = path.basename(filePath);
+    let episodeId: string | null = null;
+
+    if (contentType === 'SERIES') {
+      // 1. Parse Season/Episode from filename (e.g. S01E01)
+      const seInfo = parseSeasonEpisode(fileName) || { season: 1, episode: 1 };
+      
+      // 2. Find or Create Season
+      const season = await prisma.season.upsert({
+        where: { contentId_number: { contentId, number: seInfo.season } },
+        update: {},
+        create: { contentId, number: seInfo.season }
+      });
+
+      // 3. Find or Create Episode
+      const episode = await prisma.episode.upsert({
+        where: { seasonId_number: { seasonId: season.id, number: seInfo.episode } },
+        update: {},
+        create: { seasonId: season.id, number: seInfo.episode }
+      });
+      episodeId = episode.id;
+    }
+
     const videoFile = await prisma.videoFile.create({
       data: {
-        contentId, type: contentType === 'SERIES' ? 'EPISODE' : 'MOVIE', originalPath: filePath,
-        status: 'QUEUED', fileSize: BigInt(fs.statSync(filePath).size)
+        contentId: contentType === 'MOVIE' ? contentId : null,
+        episodeId,
+        type: contentType === 'SERIES' ? 'EPISODE' : 'MOVIE',
+        originalPath: filePath,
+        status: 'QUEUED',
+        fileSize: BigInt(fs.statSync(filePath).size)
       }
     });
-    const job = await addVideoJob({ videoFileId: videoFile.id, contentId, type: contentType, videoPath: filePath });
+
+    const job = await addVideoJob({ 
+      videoFileId: videoFile.id, 
+      contentId: contentType === 'SERIES' && episodeId ? episodeId : contentId, 
+      type: contentType, 
+      videoPath: filePath 
+    });
+
     await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
-    console.log(`📦 [MediaScanner] Enqueued ${path.basename(filePath)} → contentId: ${contentId} (${contentType})`);
+    console.log(`📦 [MediaScanner] Enqueued ${fileName} → ${contentType === 'SERIES' ? 'Episode ' + episodeId : 'Content ' + contentId}`);
   }
 
   private static async _downloadTMDBImages(contentId: string, details: TMDBFullDetails): Promise<void> {
