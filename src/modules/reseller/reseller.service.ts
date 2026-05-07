@@ -30,6 +30,11 @@ export class ResellerService {
     const initialCredits = data.credits ?? 0;
 
     return prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { email: data.email } });
+      if (existing) {
+        throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      }
+
       const user = await tx.user.create({
         data: {
           email: data.email,
@@ -41,7 +46,7 @@ export class ResellerService {
         },
         select: { id: true, email: true, name: true, role: true, credits: true, createdAt: true },
       });
-
+      // ... (rest of the logic remains same, prisma will rollback on any error inside)
       if (initialCredits > 0) {
         await tx.creditTransaction.create({
           data: {
@@ -61,6 +66,9 @@ export class ResellerService {
       }
 
       return user;
+    }).catch(err => {
+      if (err.code === 'P2002') throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      throw err;
     });
   }
 
@@ -84,6 +92,11 @@ export class ResellerService {
     const initialCredits = data.credits ?? 0;
 
     return prisma.$transaction(async (tx) => {
+      const existing = await tx.user.findUnique({ where: { email: data.email } });
+      if (existing) {
+        throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      }
+
       // If not admin, check credits inside transaction
       if (creatorRole !== 'ADMIN' && initialCredits > 0) {
         const creator = await tx.user.findUnique({ where: { id: creatorId } });
@@ -98,8 +111,6 @@ export class ResellerService {
           where: { id: creatorId },
           data: { credits: creatorAfter },
         });
-
-        // We create the log for the creator later, after the vendor is created to have the ID
       }
 
       const user = await tx.user.create({
@@ -116,7 +127,6 @@ export class ResellerService {
 
       if (initialCredits > 0) {
         if (creatorRole !== 'ADMIN') {
-          // Now fetch the creator again to get the balance after update or just use the calculated one
           const creator = await tx.user.findUnique({ where: { id: creatorId } });
           
           await tx.creditTransaction.create({
@@ -152,6 +162,9 @@ export class ResellerService {
       }
 
       return user;
+    }).catch(err => {
+      if (err.code === 'P2002') throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      throw err;
     });
   }
 
