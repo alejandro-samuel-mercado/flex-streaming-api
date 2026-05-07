@@ -97,7 +97,11 @@ export class FFmpegService {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
 
-                const cmd = ffmpeg(resolvedInputPath);
+                const cmd = ffmpeg(resolvedInputPath)
+                    .inputOptions([
+                        '-analyzeduration', '100M',
+                        '-probesize', '100M'
+                    ]);
 
                 const resetStallTimeout = () => {
                     if (stallTimeout) clearTimeout(stallTimeout);
@@ -160,10 +164,11 @@ export class FFmpegService {
                         reportProgress();
                         resolve(true);
                     })
-                    .on('error', (err) => {
+                    .on('error', (err, stdout, stderr) => {
                         clearTimeout(stallTimeout);
                         clearTimeout(hardTimeout);
                         console.error(`Error during FFmpeg profile ${profile.name}: ${err.message}`);
+                        if (stderr) console.error(`FFmpeg STDERR [${profile.name}]:\n${stderr}`);
                         reject(err);
                     })
                     .run();
@@ -183,7 +188,11 @@ export class FFmpegService {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
 
-                const cmd = ffmpeg(resolvedInputPath);
+                const cmd = ffmpeg(resolvedInputPath)
+                    .inputOptions([
+                        '-analyzeduration', '100M',
+                        '-probesize', '100M'
+                    ]);
 
                 const resetStallTimeout = () => {
                     if (stallTimeout) clearTimeout(stallTimeout);
@@ -370,18 +379,23 @@ export class FFmpegService {
                     }, 5 * 60 * 1000);
 
                     cmd
+                        .inputOptions([
+                            '-analyzeduration', '100M',
+                            '-probesize', '100M'
+                        ])
                         .outputOptions([
                             `-map 0:s:${i}`,
                             '-c:s webvtt'
                         ])
                         .output(outFilePath)
+                        .on('error', (err, stdout, stderr) => {
+                            clearTimeout(timeout);
+                            if (stderr) console.warn(`FFmpeg Subtitle STDERR:\n${stderr}`);
+                            reject(err);
+                        })
                         .on('end', () => {
                             clearTimeout(timeout);
                             resolve();
-                        })
-                        .on('error', (err) => {
-                            clearTimeout(timeout);
-                            reject(err);
                         })
                         .run();
                 });
