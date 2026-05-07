@@ -299,10 +299,31 @@ export class MediaScannerService {
       contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
     }
 
+    // Find or create the Season
+    const season = await prisma.season.upsert({
+      where: { contentId_number: { contentId, number: episode.season } },
+      update: {},
+      create: {
+        contentId,
+        number: episode.season,
+      }
+    });
+
+    // Find or create the Episode
+    const episodeRecord = await prisma.episode.upsert({
+      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
+      update: {},
+      create: {
+        seasonId: season.id,
+        number: episode.episodeNumber,
+      }
+    });
+
     // Create VideoFile as COMPLETED (no processing needed)
     const videoFile = await prisma.videoFile.create({
       data: {
-        contentId,
+        contentId: null, // Episodes are linked via episodeId, not contentId directly
+        episodeId: episodeRecord.id,
         type: 'EPISODE',
         originalPath: episodeFolderPath,
         status: 'COMPLETED',
