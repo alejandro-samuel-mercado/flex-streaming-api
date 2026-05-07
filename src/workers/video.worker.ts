@@ -155,41 +155,35 @@ export const videoWorker = new Worker(
 
       const jobType = job.data.type || 'MOVIE';
 
-      // ─── Determine content status: READY only if data is complete ─────
-      if (jobType === 'MOVIE') {
-        const content = await prisma.content.findUnique({
+      // ─── Determine content status: READY if video is done ─────
+      const content = await prisma.content.findUnique({
+        where: { id: contentId },
+        include: {
+          translations: true,
+          thumbnails: true,
+          genres: true
+        }
+      });
+
+      if (content) {
+        // If it's a movie or series/anime, it should be READY since video is done
+        await prisma.content.update({
           where: { id: contentId },
-          include: {
-            translations: true,
-            thumbnails: true,
-            genres: true
-          }
+          data: { status: 'READY' }
         });
-
-        if (content) {
-          const hasDescription = content.translations.some(
-            (t: any) => t.description && t.description.trim().length > 0
-          );
-          const hasPoster = content.thumbnails.some(
-            (t: any) => t.type === 'POSTER'
-          );
-          const hasGenres = content.genres.length > 0;
-
-          if (hasDescription && hasPoster && hasGenres) {
-            // All data complete → READY
-            await prisma.content.update({
-              where: { id: contentId },
-              data: { status: 'READY' }
-            });
-            job.log(`Content ${contentId} marked as READY (data complete)`);
-          } else {
-            // Missing data → stays PENDING
-            const missing: string[] = [];
-            if (!hasDescription) missing.push('sinopsis');
-            if (!hasPoster) missing.push('poster');
-            if (!hasGenres) missing.push('géneros');
-            job.log(`Content ${contentId} stays PENDING — missing: ${missing.join(', ')}`);
-          }
+        job.log(`Content ${contentId} marked as READY (video processing complete)`);
+        
+        // Log warnings about missing data but DON'T block the status
+        const hasDescription = content.translations.some((t: any) => t.description && t.description.trim().length > 0);
+        const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
+        const hasGenres = content.genres.length > 0;
+        
+        if (!hasDescription || !hasPoster || !hasGenres) {
+          const missing = [];
+          if (!hasDescription) missing.push('sinopsis');
+          if (!hasPoster) missing.push('poster');
+          if (!hasGenres) missing.push('géneros');
+          job.log(`Warning: Content ${contentId} is READY but missing metadata: ${missing.join(', ')}`);
         }
       } else if (jobType === 'TRAILER') {
           // If it's a trailer, update the trailerUrl field
