@@ -291,10 +291,11 @@ adminRouter.put('/settings', (async (req: AuthenticatedRequest, res: Response, n
 
 adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    // ─── Fetch All Active/Pending + Recent History ───
+    // ─── Fetch All Active/Pending (No limit) + History (50 last) ───
     const [activeVideos, historyVideos] = await Promise.all([
       prisma.videoFile.findMany({
         where: { status: { in: ['PROCESSING', 'PENDING'] } },
+        orderBy: { createdAt: 'desc' },
         include: {
           content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
           episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
@@ -304,7 +305,7 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
       prisma.videoFile.findMany({
         where: { status: { in: ['COMPLETED', 'FAILED'] } },
         orderBy: { updatedAt: 'desc' },
-        take: 20,
+        take: 50,
         include: {
           content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
           episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },

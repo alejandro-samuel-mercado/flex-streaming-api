@@ -8,14 +8,14 @@ export const streamingRouter = Router();
 // ─── Request streaming access (signed URL) ───────────────────────────────────
 streamingRouter.post('/request-access', authenticate as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { contentId, episodeId: _episodeId } = req.body;
+    const { contentId, episodeId } = req.body;
     if (!contentId) {
       res.status(400).json({ success: false, error: 'contentId is required' });
       return;
     }
 
     const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-    const access = await StreamingService.requestAccess(req.user!.id, contentId, ip);
+    const access = await StreamingService.requestAccess(req.user!.id, contentId, ip, episodeId);
     ok(res, access);
   } catch (err) { next(err); }
 }) as RequestHandler);

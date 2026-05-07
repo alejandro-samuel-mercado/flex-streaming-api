@@ -9,23 +9,44 @@ export class StreamingService {
    * Generates a signed streaming token for a content item.
    * Uses HMAC signed URLs instead of JWT for better security.
    */
-  static async requestAccess(_userId: string, contentId: string, ip: string) {
-    const content = await prisma.content.findFirst({
-      where: { id: contentId, status: { in: ['READY', 'ACTIVE'] }, deletedAt: null },
-      include: {
-        videoFiles: {
-          where: { status: 'COMPLETED' },
-          include: { qualities: true, audioTracks: true, subtitleTracks: true },
-          take: 1,
+  static async requestAccess(_userId: string, contentId: string, ip: string, episodeId?: string) {
+    let videoFile;
+
+    if (episodeId) {
+      // 1. Fetch from Episode
+      const episode = await prisma.episode.findFirst({
+        where: { id: episodeId, season: { contentId: contentId } },
+        include: {
+          videoFiles: {
+            where: { status: 'COMPLETED' },
+            include: { qualities: true, audioTracks: true, subtitleTracks: true },
+            take: 1,
+          },
         },
-      },
-    });
+      });
 
-    if (!content || content.videoFiles.length === 0) {
-      throw new Error('Content or video stream not found');
+      if (!episode || episode.videoFiles.length === 0) {
+        throw new Error('Episode or video stream not found');
+      }
+      videoFile = episode.videoFiles[0];
+    } else {
+      // 2. Fetch from Movie (direct content)
+      const content = await prisma.content.findFirst({
+        where: { id: contentId, status: { in: ['READY', 'ACTIVE'] }, deletedAt: null },
+        include: {
+          videoFiles: {
+            where: { status: 'COMPLETED' },
+            include: { qualities: true, audioTracks: true, subtitleTracks: true },
+            take: 1,
+          },
+        },
+      });
+
+      if (!content || content.videoFiles.length === 0) {
+        throw new Error('Content or video stream not found');
+      }
+      videoFile = content.videoFiles[0];
     }
-
-    const videoFile = content.videoFiles[0];
 
     // Generate signed token (4 hours TTL)
     const token = generateSignedUrl(videoFile.id, ip, 14400);
