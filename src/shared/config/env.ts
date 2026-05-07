@@ -36,7 +36,7 @@ const envSchema = z.object({
     SUBTITLES_PATH: z.string().default('./media/subtitles'),
     FFMPEG_PATH: z.string().default('ffmpeg'),
     FFPROBE_PATH: z.string().default('ffprobe'),
-    MAX_CONCURRENT_ENCODING: z.coerce.number().default(2),
+    MAX_CONCURRENT_ENCODING: z.coerce.number().default(1),
 
     // Media Scanner
     MEDIA_SCAN_DIRS: z.string().optional().default(''),

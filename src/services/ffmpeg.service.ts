@@ -129,8 +129,10 @@ export class FFmpegService {
                     '-maxrate', profile.maxrate,
                     '-bufsize', profile.bufsize,
                     '-max_muxing_queue_size', '1024',
-                    '-hls_time', '6',
+                    '-hls_time', '10',
                     '-hls_playlist_type', 'vod',
+                    '-hls_flags', 'independent_segments',
+                    '-hls_segment_type', 'mpegts',
                     '-hls_segment_filename', path.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
                 ];
 
