@@ -302,6 +302,7 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
     });
 
     // ─── Fetch real-time progress from BullMQ for active jobs ───
+    const videosWithProgress = await Promise.all(videos.map(async (v: any) => {
       const resVideo = { ...v };
       if (!resVideo.content && resVideo.episode?.season?.content) {
         resVideo.content = resVideo.episode.season.content;
