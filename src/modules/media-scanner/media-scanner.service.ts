@@ -425,32 +425,56 @@ export class MediaScannerService {
         await prisma.content.update({ where: { id: contentId }, data: { deletedAt: null, status: 'PENDING' } });
       }
     } else {
-      const baseSlug = details.title.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-      const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
-      const genreIds = await this._matchGenres(details.genres);
-      const actorIds = await this._matchActors(details.actors);
-      const directorIds = await this._matchDirectors(details.directors);
-
-      const content = await prisma.content.create({
-        data: {
-          type: details.type, status: 'PENDING', slug,
-          releaseYear: details.releaseYear, originalTitle: details.originalTitle || null,
-          duration: details.duration, rating: details.rating, tmdbId: details.tmdbId,
-          imdbId: details.imdbId, country: details.country, languages: details.languages || [],
-          originalLanguage: details.originalLanguage || null,
-          budget: details.budget ? BigInt(details.budget) : null,
-          revenue: details.revenue ? BigInt(details.revenue) : null,
-          isAdult: details.isAdult || false,
-          translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
-          genres: genreIds.length > 0 ? { create: genreIds.map(gId => ({ genreId: gId })) } : undefined,
-          actors: actorIds.length > 0 ? { create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx })) } : undefined,
-          directors: directorIds.length > 0 ? { create: directorIds.map(dId => ({ directorId: dId })) } : undefined,
+      // Try to find by title before creating new
+      const existingByTitle = await prisma.content.findFirst({
+        where: {
+          translations: { some: { title: { equals: details.title, mode: 'insensitive' } } },
+          type: details.type,
+          deletedAt: null
         }
       });
-      contentId = content.id;
-      await this._downloadTMDBImages(contentId, details);
+
+      if (existingByTitle) {
+        contentId = existingByTitle.id;
+        // Update existing with TMDB data
+        await prisma.content.update({
+          where: { id: contentId },
+          data: {
+            tmdbId: details.tmdbId,
+            imdbId: details.imdbId,
+            releaseYear: details.releaseYear,
+            rating: details.rating,
+            // ... add other relevant updates if needed
+          }
+        });
+      } else {
+        const baseSlug = details.title.toLowerCase()
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
+        const genreIds = await this._matchGenres(details.genres);
+        const actorIds = await this._matchActors(details.actors);
+        const directorIds = await this._matchDirectors(details.directors);
+
+        const content = await prisma.content.create({
+          data: {
+            type: details.type, status: 'PENDING', slug,
+            releaseYear: details.releaseYear, originalTitle: details.originalTitle || null,
+            duration: details.duration, rating: details.rating, tmdbId: details.tmdbId,
+            imdbId: details.imdbId, country: details.country, languages: details.languages || [],
+            originalLanguage: details.originalLanguage || null,
+            budget: details.budget ? BigInt(Math.floor(details.budget)) : null,
+            revenue: details.revenue ? BigInt(Math.floor(details.revenue)) : null,
+            isAdult: details.isAdult || false,
+            translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
+            genres: genreIds.length > 0 ? { create: genreIds.map(gId => ({ genreId: gId })) } : undefined,
+            actors: actorIds.length > 0 ? { create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx })) } : undefined,
+            directors: directorIds.length > 0 ? { create: directorIds.map(dId => ({ directorId: dId })) } : undefined,
+          }
+        });
+        contentId = content.id;
+        await this._downloadTMDBImages(contentId, details);
+      }
     }
 
     await this._createVideoAndEnqueue(contentId, filePath, contentType);
@@ -458,21 +482,36 @@ export class MediaScannerService {
   }
 
   private static async _importMinimal(filePath: string, fileName: string, cleanName: string, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
-    const slug = cleanName.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-      + '-' + Math.random().toString(36).substring(2, 6);
-
-    const content = await prisma.content.create({
-      data: {
+    const existingByTitle = await prisma.content.findFirst({
+      where: {
+        translations: { some: { title: { equals: cleanName, mode: 'insensitive' } } },
         type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
-        status: 'PENDING', slug,
-        translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
+        deletedAt: null
       }
     });
 
-    await this._createVideoAndEnqueue(content.id, filePath, contentType);
-    return { filePath, fileName, success: true, contentId: content.id, tmdbMatch: false };
+    let contentId: string;
+
+    if (existingByTitle) {
+      contentId = existingByTitle.id;
+    } else {
+      const slug = cleanName.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+        + '-' + Math.random().toString(36).substring(2, 6);
+
+      const content = await prisma.content.create({
+        data: {
+          type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
+          status: 'PENDING', slug,
+          translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
+        }
+      });
+      contentId = content.id;
+    }
+
+    await this._createVideoAndEnqueue(contentId, filePath, contentType);
+    return { filePath, fileName, success: true, contentId, tmdbMatch: false };
   }
 
   private static async _createVideoAndEnqueue(contentId: string, filePath: string, contentType: 'MOVIE' | 'SERIES'): Promise<void> {

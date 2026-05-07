@@ -210,6 +210,45 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
       if (director) directorIds.push(director.id);
     }
 
+    // Ensure unique IDs to avoid Prisma P2002 on nested creates
+    const uniqueGenreIds = Array.from(new Set(genreIds));
+    const uniqueActorIds = Array.from(new Set(actorIds));
+    const uniqueDirectorIds = Array.from(new Set(directorIds));
+
+    // Check if tmdbId is already used by ANOTHER content
+    const tmdbConflict = await prisma.content.findFirst({
+      where: {
+        tmdbId: String(details.tmdbId),
+        id: { not: contentId }
+      }
+    });
+
+    // Check if imdbId is already used by ANOTHER content (if provided)
+    if (details.imdbId) {
+      const imdbConflict = await prisma.content.findFirst({
+        where: {
+          imdbId: details.imdbId,
+          id: { not: contentId }
+        }
+      });
+
+      if (imdbConflict) {
+        res.status(409).json({
+          success: false,
+          error: `El ID de IMDB ${details.imdbId} ya está asignado a otro contenido: "${imdbConflict.title}" (ID: ${imdbConflict.id})`
+        });
+        return;
+      }
+    }
+
+    if (tmdbConflict) {
+      res.status(409).json({
+        success: false,
+        error: `El ID de TMDB ${details.tmdbId} ya está asignado a otro contenido: "${tmdbConflict.title}" (ID: ${tmdbConflict.id})`
+      });
+      return;
+    }
+
     // Update content
     await prisma.content.update({
       where: { id: contentId },
@@ -226,8 +265,8 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
         country: details.country || undefined,
         languages: details.languages || [],
         originalLanguage: details.originalLanguage || undefined,
-        budget: details.budget ? BigInt(details.budget) : undefined,
-        revenue: details.revenue ? BigInt(details.revenue) : undefined,
+        budget: details.budget ? BigInt(Math.floor(details.budget)) : undefined,
+        revenue: details.revenue ? BigInt(Math.floor(details.revenue)) : undefined,
         isAdult: details.isAdult || false,
         translations: {
           deleteMany: {},
@@ -239,15 +278,15 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
         },
         genres: {
           deleteMany: {},
-          create: genreIds.map(gId => ({ genreId: gId }))
+          create: uniqueGenreIds.map(gId => ({ genreId: gId }))
         },
         actors: {
           deleteMany: {},
-          create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx }))
+          create: uniqueActorIds.map((aId, idx) => ({ actorId: aId, order: idx }))
         },
         directors: {
           deleteMany: {},
-          create: directorIds.map(dId => ({ directorId: dId }))
+          create: uniqueDirectorIds.map(dId => ({ directorId: dId }))
         }
       }
     });
@@ -317,5 +356,8 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
     });
 
     ok(res, updated);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    console.error('❌ [MediaScanner] Error in apply-tmdb:', err);
+    next(err);
+  }
 }) as RequestHandler);
