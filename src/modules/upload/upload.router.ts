@@ -177,9 +177,15 @@ uploadRouter.post('/image', (_req, _res, next) => {
     const sharpInstance = sharp(file.buffer);
     
     if (type === 'POSTER') {
-      sharpInstance.resize(600, 900, { fit: 'cover', position: 'center' });
+      sharpInstance.resize(600, 900, { 
+        fit: 'cover', 
+        position: 'entropy' // Smart crop based on image content
+      });
     } else if (type === 'BACKDROP') {
-      sharpInstance.resize(1920, 1080, { fit: 'cover', position: 'center' });
+      sharpInstance.resize(1920, 1080, { 
+        fit: 'cover', 
+        position: 'entropy' 
+      });
     }
 
     await sharpInstance.webp({ quality: 85 }).toFile(fullPath);
