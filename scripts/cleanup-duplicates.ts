@@ -5,9 +5,8 @@ const prisma = new PrismaClient();
 async function cleanup() {
   console.log('🚀 [Cleanup] Iniciando limpieza de duplicados...');
 
-  // 1. Obtener todos los contenidos (Series y Películas)
+  // 1. Obtener todos los contenidos (Series y Películas) incluyendo los marcados como borrados
   const allContent = await prisma.content.findMany({
-    where: { deletedAt: null },
     include: {
       translations: true,
       seasons: {
@@ -21,21 +20,32 @@ async function cleanup() {
 
   for (const c of allContent) {
     const title = c.translations.find(t => t.language === 'es')?.title || c.originalTitle || 'Untitled';
-    const key = c.tmdbId ? `tmdb-${c.tmdbId}` : `title-${title.toLowerCase().trim()}-${c.type}`;
+    const cleanTitle = title.toLowerCase().trim();
+    const key = c.tmdbId ? `tmdb-${c.tmdbId}` : `title-${cleanTitle}`;
     
+    console.log(`🔍 Procesando: "${title}" | Key: ${key}`);
+
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(c);
+    groups.get(key)!.push({ ...c, cleanTitle });
   }
 
+  console.log(`📊 Grupos detectados: ${groups.size}`);
   let totalMerged = 0;
 
-  for (const [key, contents] of groups.entries()) {
+  for (const contents of groups.values()) {
     if (contents.length <= 1) continue;
 
-    console.log(`\n📦 Grupo encontrado: ${key} (${contents.length} duplicados)`);
+    const first = contents[0];
+    console.log(`\n📦 Grupo: "${first.cleanTitle}" (${contents.length} duplicados)`);
 
-    // Elegir el "bueno": el que tenga más temporadas o el más antiguo
+    // Elegir el "bueno": 
+    // 1. El que NO esté borrado
+    // 2. El que tenga más episodios
+    // 3. El más antiguo
     contents.sort((a, b) => {
+        if (a.deletedAt === null && b.deletedAt !== null) return -1;
+        if (a.deletedAt !== null && b.deletedAt === null) return 1;
+        
         const aCount = a.seasons.reduce((acc: number, s: any) => acc + s.episodes.length, 0);
         const bCount = b.seasons.reduce((acc: number, s: any) => acc + s.episodes.length, 0);
         if (aCount !== bCount) return bCount - aCount;
