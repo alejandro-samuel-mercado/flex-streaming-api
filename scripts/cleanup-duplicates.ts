@@ -68,37 +68,51 @@ async function cleanup() {
     for (const dup of duplicates) {
         console.log(`   Merging: ${dup.slug} (ID: ${dup.id}) -> ${target.slug}`);
 
-        // Mover Temporadas
-        const dupSeasons = await prisma.season.findMany({ where: { contentId: dup.id } });
-        for (const s of dupSeasons) {
-            // ¿Ya existe esta temporada en el target?
-            const targetSeason = await prisma.season.findUnique({
-                where: { contentId_number: { contentId: target.id, number: s.number } }
-            });
-
-            if (targetSeason) {
-                // Mover episodios de la temporada duplicada a la temporada del target
-                await prisma.episode.updateMany({
-                    where: { seasonId: s.id },
-                    data: { seasonId: targetSeason.id }
-                });
-                // Borrar temporada duplicada (ahora vacía)
-                await prisma.season.delete({ where: { id: s.id } });
-            } else {
-                // Simplemente mover la temporada al target
+        // Mover temporadas y episodios
+        for (const dupS of dup.seasons) {
+            let targetSeason = target.seasons.find((s: any) => s.number === dupS.number);
+            
+            if (!targetSeason) {
+                // Si la temporada no existe en el target, la movemos completa
                 await prisma.season.update({
-                    where: { id: s.id },
+                    where: { id: dupS.id },
                     data: { contentId: target.id }
                 });
+            } else {
+                // Si la temporada ya existe, movemos los episodios uno por uno
+                const dupEpisodes = await prisma.episode.findMany({ where: { seasonId: dupS.id } });
+                for (const dupE of dupEpisodes) {
+                    const targetE = await prisma.episode.findUnique({
+                        where: { seasonId_number: { seasonId: targetSeason.id, number: dupE.number } }
+                    });
+
+                    if (targetE) {
+                        // Si el episodio ya existe, movemos los archivos de video al episodio del target
+                        await prisma.videoFile.updateMany({
+                            where: { episodeId: dupE.id },
+                            data: { episodeId: targetE.id }
+                        });
+                        // Borramos el episodio duplicado (ya no tiene videos)
+                        await prisma.episode.delete({ where: { id: dupE.id } });
+                    } else {
+                        // Si el episodio no existe, lo movemos a la temporada del target
+                        await prisma.episode.update({
+                            where: { id: dupE.id },
+                            data: { seasonId: targetSeason.id }
+                        });
+                    }
+                }
+                // Una vez vacía de episodios, borramos la temporada duplicada
+                await prisma.season.delete({ where: { id: dupS.id } });
             }
         }
 
-        // Mover VideoFiles (para películas o extras que apunten directo al content)
+        // Mover películas (si el contenido es tipo película)
         await prisma.videoFile.updateMany({
             where: { contentId: dup.id },
             data: { contentId: target.id }
-        });
-
+        }).catch(() => {});      
+        
         // Mover otras relaciones (Thumbnails, etc)
         await prisma.thumbnail.updateMany({
             where: { contentId: dup.id },
