@@ -30,22 +30,52 @@ export class StreamingService {
       }
       videoFile = episode.videoFiles[0];
     } else {
-      // 2. Fetch from Movie (direct content)
+      // 2. Fetch from Movie or find first episode if it's a series
       const content = await prisma.content.findFirst({
-        where: { id: contentId, status: { in: ['READY', 'ACTIVE'] }, deletedAt: null },
+        where: { id: contentId, deletedAt: null },
         include: {
           videoFiles: {
             where: { status: 'COMPLETED' },
             include: { qualities: true, audioTracks: true, subtitleTracks: true },
             take: 1,
           },
+          seasons: {
+            orderBy: { number: 'asc' },
+            take: 1,
+            include: {
+              episodes: {
+                orderBy: { number: 'asc' },
+                where: { videoFiles: { some: { status: 'COMPLETED' } } },
+                take: 1,
+                include: {
+                  videoFiles: {
+                    where: { status: 'COMPLETED' },
+                    include: { qualities: true, audioTracks: true, subtitleTracks: true },
+                    take: 1
+                  }
+                }
+              }
+            }
+          }
         },
       });
 
-      if (!content || content.videoFiles.length === 0) {
-        throw new Error('Content or video stream not found');
+      if (!content) {
+        throw new Error('Content not found');
       }
-      videoFile = content.videoFiles[0];
+
+      // If it's a series, find the first episode that has a completed video file
+      const allEpisodes = content.seasons.flatMap(s => s.episodes);
+      const firstEpisodeWithVideo = allEpisodes.find(e => e.videoFiles.length > 0);
+
+      if (firstEpisodeWithVideo) {
+        videoFile = firstEpisodeWithVideo.videoFiles[0];
+      } else if (content.videoFiles.length > 0) {
+        // Fallback to direct video file (for movies)
+        videoFile = content.videoFiles[0];
+      } else {
+        throw new Error('No video stream available for this content');
+      }
     }
 
     // Generate signed token (4 hours TTL)

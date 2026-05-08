@@ -236,11 +236,18 @@ export const videoWorker = new Worker(
             errorMessage: error.message 
           }
         });
+
+        // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
+        await prisma.content.update({
+          where: { id: contentId },
+          data: { status: 'ERROR' }
+        }).catch(() => null); // Ignore if contentId was actually an episodeId or invalid
+
       } catch (dbErr: any) {
-        job.log(`Warning: could not set FAILED status: ${dbErr.message}`);
+        job.log(`Warning: could not set FAILED/ERROR status: ${dbErr.message}`);
       }
 
-      // 2. Delete partially-written HLS output to avoid corrupt segments on disk
+      // 3. Delete partially-written HLS output to avoid corrupt segments on disk
       try {
         if (fs.existsSync(outputFolder)) {
           fs.rmSync(outputFolder, { recursive: true, force: true });
