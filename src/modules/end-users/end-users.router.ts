@@ -47,6 +47,8 @@ endUsersRouter.get('/', auth, vendorPlus, (async (req, res, next) => {
       status: req.query.status as string | undefined,
       type: req.query.type as string | undefined,
       expiringInDays: req.query.expiringInDays ? parseInt(req.query.expiringInDays as string) : undefined,
+      managedByMeOnly: req.query.managedByMeOnly === 'true',
+      managedByOthersOnly: req.query.managedByOthersOnly === 'true',
     });
     ok(res, result);
   } catch (err) { next(err); }

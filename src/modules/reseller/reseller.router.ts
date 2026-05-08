@@ -25,6 +25,7 @@ const superVendorPlus = requireSuperVendorOrAbove as RequestHandler;
 
 const CreateVendorSchema = z.object({
   email: z.string().email(),
+  username: z.string().min(3).max(50),
   name: z.string().min(1).max(100),
   password: z.string().min(6),
   credits: z.number().int().min(0).optional(),

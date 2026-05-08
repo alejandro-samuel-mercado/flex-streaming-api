@@ -67,8 +67,16 @@ export async function register(input: RegisterInput) {
 }
 
 export async function login(input: LoginInput) {
-  // 1. Try finding in normal User table (identifier as email)
-  let user = await prisma.user.findUnique({ where: { email: input.username } });
+  // 1. Try finding in normal User table (identifier as username OR email)
+  let user = await prisma.user.findFirst({
+    where: {
+      OR: [
+        { username: input.username },
+        { email: input.username }
+      ],
+      deletedAt: null
+    }
+  });
 
   // 2. If not found, try finding in EndUserAccount table (identifier as username)
   if (!user) {
@@ -245,7 +253,7 @@ export async function login(input: LoginInput) {
     throw new AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
   }
 
-  const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
+  const { accessToken, refreshToken } = generateTokens(user.id, user.username || user.email, user.role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
@@ -261,6 +269,7 @@ export async function login(input: LoginInput) {
   const safeUser = {
     id: user.id,
     email: user.email,
+    username: user.username,
     name: user.name,
     role: user.role,
   };
@@ -293,7 +302,7 @@ export async function refreshAccessToken(refreshToken: string) {
   } else {
     const realUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, role: true, isActive: true },
+      select: { id: true, email: true, username: true, role: true, isActive: true },
     });
 
     if (!realUser || !realUser.isActive) {
@@ -308,7 +317,7 @@ export async function refreshAccessToken(refreshToken: string) {
   await redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
 
-  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, email, role);
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.username || email, role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, refreshTtlSeconds, role === 'END_USER' ? `VIRTUAL_${user.id}` : user.id);

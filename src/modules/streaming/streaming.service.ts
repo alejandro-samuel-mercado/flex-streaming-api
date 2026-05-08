@@ -127,6 +127,7 @@ export class StreamingService {
   ): Promise<{ status: number; headers: Record<string, string>; stream: fs.ReadStream | null }> {
     // Verify token
     if (!verifySignedToken(token, videoFileId, ip)) {
+      console.error(`[Streaming] 403: Invalid or expired token for video ${videoFileId}. IP: ${ip}`);
       return { status: 403, headers: {}, stream: null };
     }
 
@@ -169,7 +170,7 @@ export class StreamingService {
     const resolvedPath = path.resolve(hlsRoot, filePath);
 
     if (!resolvedPath.startsWith(hlsRoot)) {
-      console.warn(`[Streaming] Blocked access attempt outside HLS root: ${resolvedPath}`);
+      console.warn(`[Streaming] 403: Blocked access attempt outside HLS root. Resolved: ${resolvedPath} | Root: ${hlsRoot}`);
       return { status: 403, headers: {}, stream: null };
     }
 
@@ -181,6 +182,7 @@ export class StreamingService {
     // Whitelist only valid HLS file extensions
     const ext = path.extname(resolvedPath).toLowerCase();
     if (!['.m3u8', '.ts', '.vtt'].includes(ext)) {
+      console.warn(`[Streaming] 403: Invalid file extension attempted: ${ext}`);
       return { status: 403, headers: {}, stream: null };
     }
 

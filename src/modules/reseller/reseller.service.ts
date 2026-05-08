@@ -16,14 +16,17 @@ const BCRYPT_ROUNDS = 12;
 export class ResellerService {
   static async createSuperVendor(adminId: string, data: {
     email: string;
+    username: string;
     name: string;
     password: string;
     credits?: number;
     planId?: string;
   }) {
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await prisma.user.findFirst({ 
+      where: { OR: [{ email: data.email }, { username: data.username }] } 
+    });
     if (existing) {
-      throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      throw new AppError(409, 'Email or username already registered', 'ALREADY_EXISTS');
     }
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
@@ -38,13 +41,14 @@ export class ResellerService {
       const user = await tx.user.create({
         data: {
           email: data.email,
+          username: data.username,
           name: data.name,
           passwordHash,
           role: 'SUPER_VENDOR',
           parentId: adminId,
           credits: initialCredits,
         },
-        select: { id: true, email: true, name: true, role: true, credits: true, createdAt: true },
+        select: { id: true, email: true, username: true, name: true, role: true, credits: true, createdAt: true },
       });
       // ... (rest of the logic remains same, prisma will rollback on any error inside)
       if (initialCredits > 0) {
@@ -74,6 +78,7 @@ export class ResellerService {
 
   static async createVendor(creatorId: string, creatorRole: UserRole, data: {
     email: string;
+    username: string;
     name: string;
     password: string;
     credits?: number;
@@ -83,9 +88,11 @@ export class ResellerService {
       throw new AppError(403, 'Only ADMIN or SUPER_VENDOR can create vendors', 'FORBIDDEN');
     }
 
-    const existing = await prisma.user.findUnique({ where: { email: data.email } });
+    const existing = await prisma.user.findFirst({ 
+      where: { OR: [{ email: data.email }, { username: data.username }] } 
+    });
     if (existing) {
-      throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      throw new AppError(409, 'Email or username already registered', 'ALREADY_EXISTS');
     }
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
@@ -116,13 +123,14 @@ export class ResellerService {
       const user = await tx.user.create({
         data: {
           email: data.email,
+          username: data.username,
           name: data.name,
           passwordHash,
           role: 'VENDOR',
           parentId: creatorId,
           credits: initialCredits,
         },
-        select: { id: true, email: true, name: true, role: true, credits: true, createdAt: true },
+        select: { id: true, email: true, username: true, name: true, role: true, credits: true, createdAt: true },
       });
 
       if (initialCredits > 0) {
@@ -186,13 +194,14 @@ export class ResellerService {
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
         role: true,
         credits: true,
         isActive: true,
         createdAt: true,
         parentId: true,
-        parent: { select: { id: true, name: true, email: true } },
+        parent: { select: { id: true, name: true, email: true, username: true } },
         _count: {
           select: {
             children: true,
@@ -212,13 +221,14 @@ export class ResellerService {
       select: {
         id: true,
         email: true,
+        username: true,
         name: true,
         role: true,
         credits: true,
         isActive: true,
         createdAt: true,
         parentId: true,
-        parent: { select: { id: true, name: true, email: true } },
+        parent: { select: { id: true, name: true, email: true, username: true } },
         _count: {
           select: { children: true, managedEndUsers: true },
         },
@@ -253,7 +263,7 @@ export class ResellerService {
     return prisma.user.update({
       where: { id: vendorId },
       data: { isActive },
-      select: { id: true, email: true, name: true, role: true, isActive: true },
+      select: { id: true, email: true, username: true, name: true, role: true, isActive: true },
     });
   }
 
@@ -415,7 +425,7 @@ export class ResellerService {
 
     if (!accountId) {
       // Create own end user account for the vendor
-      const username = `v_${vendor.email.split('@')[0]}_${Math.random().toString(36).substring(7)}`;
+      const username = `v_${vendor.username || vendor.email.split('@')[0]}_${Math.random().toString(36).substring(7)}`;
       const password = 'password123';
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
@@ -456,7 +466,7 @@ export class ResellerService {
     return prisma.user.update({
       where: { id: vendorId },
       data: { passwordHash },
-      select: { id: true, email: true, name: true, role: true },
+      select: { id: true, email: true, username: true, name: true, role: true },
     });
   }
 }

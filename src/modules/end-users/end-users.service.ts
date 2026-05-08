@@ -37,6 +37,8 @@ export class EndUsersService {
     status?: string;
     type?: string;
     expiringInDays?: number;
+    managedByMeOnly?: boolean;
+    managedByOthersOnly?: boolean;
   }) {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -50,13 +52,19 @@ export class EndUsersService {
       // Admin only sees accounts they directly created
       where.managedById = userId;
     } else if (userRole === 'SUPER_VENDOR') {
-      // SUPER_VENDOR sees accounts managed by themselves and their child vendors
       const childVendorIds = await prisma.user.findMany({
         where: { parentId: userId, role: 'VENDOR', deletedAt: null },
         select: { id: true },
       });
-      const managerIds = [userId, ...childVendorIds.map(v => v.id)];
-      where.managedById = { in: managerIds };
+      const childIds = childVendorIds.map(v => v.id);
+      
+      if (query.managedByMeOnly) {
+        where.managedById = userId;
+      } else if (query.managedByOthersOnly) {
+        where.managedById = { in: childIds };
+      } else {
+        where.managedById = { in: [userId, ...childIds] };
+      }
     } else if (userRole === 'VENDOR') {
       where.managedById = userId;
     }
@@ -142,6 +150,12 @@ export class EndUsersService {
       const plan = await prisma.subscriptionPlan.findUnique({ where: { id: data.planId } });
       if (!plan || !plan.isActive) {
         throw new AppError(404, 'Plan not found or inactive', 'PLAN_NOT_FOUND');
+      }
+
+      // Restricción: No se puede asignar demo si ya tiene contenido activo o ya es una demo
+      if (plan.isDemo) {
+         // En creación de cuenta, el 'existing' ya se comprobó arriba (username exists), 
+         // así que aquí siempre es una cuenta nueva, por lo que la demo es válida.
       }
 
       const creditsCost = plan.isDemo ? 0 : plan.creditCost;
@@ -342,6 +356,16 @@ export class EndUsersService {
     let creditsCost = 0;
 
     if (plan.isDemo) {
+      // 1. Si ya tiene una demo activa
+      if (account.type === 'DEMO' && account.status === 'DEMO' && account.endDate && account.endDate > now) {
+        throw new AppError(400, 'El usuario ya tiene una demo activa.', 'DEMO_ALREADY_ACTIVE');
+      }
+      
+      // 2. Si tiene un plan formal activo
+      if (account.type === 'FORMAL' && account.endDate && account.endDate > now) {
+        throw new AppError(400, 'No se puede asignar una demo a un usuario con un plan activo.', 'FORMAL_PLAN_ACTIVE');
+      }
+
       const hoursMs = (plan.demoHours ?? 24) * 60 * 60 * 1000;
       newEndDate = new Date(now.getTime() + hoursMs);
       newType = 'DEMO';
