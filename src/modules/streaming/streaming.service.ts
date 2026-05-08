@@ -137,23 +137,28 @@ export class StreamingService {
         return { status: 404, headers: {}, stream: null };
     }
 
-    let hlsRoot = videoFile.hlsPath || '';
+    let hlsRoot = '';
     
-    if (hlsRoot) {
-        if (!path.isAbsolute(hlsRoot)) {
-            hlsRoot = path.resolve(process.cwd(), hlsRoot);
+    // 1. Try hlsPath from DB (the most reliable source)
+    if (videoFile.hlsPath) {
+        hlsRoot = path.isAbsolute(videoFile.hlsPath) 
+            ? videoFile.hlsPath 
+            : path.resolve(process.cwd(), videoFile.hlsPath);
+    } 
+    
+    // 2. Fallback: try the folder named after the videoFileId
+    if (!hlsRoot || !fs.existsSync(hlsRoot)) {
+        hlsRoot = path.resolve(env.HLS_PATH, videoFileId);
+    }
+
+    // 3. Try legacy behavior (contentId or episodeId) if still not found
+    if (!fs.existsSync(hlsRoot)) {
+        const folderId = videoFile.contentId || videoFile.episodeId;
+        if (folderId) {
+            hlsRoot = path.resolve(env.HLS_PATH, folderId);
         }
-    } else {
-        // Fallback: Try series ID first, then episode ID, then video file ID
-        const folderId = videoFile.contentId || videoFile.episodeId || videoFileId;
-        hlsRoot = path.resolve(env.HLS_PATH, folderId);
-        
-        // If not found and it's an episode, try the episode's own ID or the series ID
-        if (!fs.existsSync(hlsRoot) && videoFile.episodeId) {
-            // Check if it's stored under episodeId
-            hlsRoot = path.resolve(env.HLS_PATH, videoFile.episodeId);
-            
-            if (!fs.existsSync(hlsRoot)) {
+    }    
+            if (!fs.existsSync(hlsRoot) && videoFile.episodeId) {
                 // Last resort: find the parent content ID via episode -> season
                 const ep = await prisma.episode.findUnique({
                     where: { id: videoFile.episodeId },
