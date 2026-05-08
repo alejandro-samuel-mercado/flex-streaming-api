@@ -30,23 +30,31 @@ function parseEpisodeInfo(filename: string) {
 }
 
 async function repair() {
-  console.log('🚀 Iniciando escaneo exhaustivo en el VPS...');
+  console.log('🚀 Iniciando reparación automática en el VPS...');
 
-  // Diagnostic: List ALL video files to see what's actually there
+  // 1. Limpieza de referencias rotas (videos que apuntan a episodios que ya no existen)
+  console.log('🧹 Verificando integridad de referencias...');
   const allVideos = await prisma.videoFile.findMany({
-    where: {
-      originalPath: { contains: 'friends', mode: 'insensitive' }
-    }
+    where: { status: ProcessingStatus.COMPLETED },
+    select: { id: true, episodeId: true, originalPath: true }
   });
-  
-  console.log(`📊 Diagnóstico: Encontrados ${allVideos.length} registros que contienen "friends" en la base de datos.`);
-  if (allVideos.length > 0) {
-    allVideos.forEach(v => {
-        console.log(`   - ID: ${v.id} | Status: ${v.status} | EpisodeId: ${v.episodeId} | Path: ${v.originalPath}`);
-    });
-  }
 
-  // 1. Buscamos videos completados que no tengan episodio asignado
+  let brokenLinks = 0;
+  for (const v of allVideos) {
+    if (v.episodeId) {
+      const epExists = await prisma.episode.findUnique({ where: { id: v.episodeId } });
+      if (!epExists) {
+        await prisma.videoFile.update({
+          where: { id: v.id },
+          data: { episodeId: null }
+        });
+        brokenLinks++;
+      }
+    }
+  }
+  if (brokenLinks > 0) console.log(`   ⚠️ Se limpiaron ${brokenLinks} referencias rotas.`);
+
+  // 2. Buscamos videos completados que no tengan episodio asignado
   const orphans = await prisma.videoFile.findMany({
     where: {
       status: ProcessingStatus.COMPLETED,
