@@ -170,7 +170,18 @@ export class StreamingService {
             }
     
     // Resolve the full path and verify it stays inside hlsRoot.
-    const resolvedPath = path.resolve(hlsRoot, filePath);
+    let resolvedPath = path.resolve(hlsRoot, filePath);
+
+    // Fallback: If requesting 'master.m3u8' but it doesn't exist, try to serve the actual master playlist
+    if (filePath === 'master.m3u8' && !fs.existsSync(resolvedPath) && videoFile.masterPlaylist) {
+        const actualFilename = videoFile.masterPlaylist.split('/').pop();
+        if (actualFilename && actualFilename !== 'master.m3u8') {
+            const fallbackPath = path.resolve(hlsRoot, actualFilename);
+            if (fs.existsSync(fallbackPath)) {
+                resolvedPath = fallbackPath;
+            }
+        }
+    }
 
     if (!resolvedPath.startsWith(hlsRoot)) {
       console.warn(`[Streaming] 403: Blocked access attempt outside HLS root. Resolved: ${resolvedPath} | Root: ${hlsRoot}`);
