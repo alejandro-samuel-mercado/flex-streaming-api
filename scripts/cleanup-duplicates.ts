@@ -21,7 +21,15 @@ async function cleanup() {
   for (const c of allContent) {
     const title = c.translations.find(t => t.language === 'es')?.title || c.originalTitle || 'Untitled';
     const cleanTitle = title.toLowerCase().trim();
-    const key = c.tmdbId ? `tmdb-${c.tmdbId}` : `title-${cleanTitle}`;
+    
+    // Si no tiene tmdbId, intentamos extraerlo del título (ej: "1668 friends" -> 1668)
+    let effectiveTmdbId = c.tmdbId;
+    if (!effectiveTmdbId) {
+        const match = cleanTitle.match(/^(\d{3,10})\b/); // Busca un número de 3 a 10 dígitos al inicio
+        if (match) effectiveTmdbId = match[1];
+    }
+
+    const key = effectiveTmdbId ? `tmdb-${effectiveTmdbId}` : `title-${cleanTitle}`;
     
     console.log(`🔍 Procesando: "${title}" | Key: ${key}`);
 
