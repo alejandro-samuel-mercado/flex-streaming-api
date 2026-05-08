@@ -12,7 +12,7 @@ async function repair() {
       episodeId: null,
       contentId: { not: null },
       content: {
-        type: { in: SERIES_TYPES }
+        type: { in: ['SERIES', 'ANIME', 'NOVELA', 'REALITY_SHOW', 'TALK_SHOW', 'VARIETY_SHOW', 'EDUCATIONAL', 'KIDS', 'FAMILY', 'DOCUDRAMA'] as any }
       }
     },
     include: {
@@ -22,7 +22,7 @@ async function repair() {
 
   console.log(`📑 Se encontraron ${videoFiles.length} archivos vinculados directamente a series.`);
 
-  for (const vf of videoFiles) {
+  for (const vf of videoFiles as any[]) {
     try {
       const path = vf.originalPath || '';
       const filename = path.split('/').pop() || '';
