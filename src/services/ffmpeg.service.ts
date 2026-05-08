@@ -99,8 +99,8 @@ export class FFmpegService {
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .inputOptions([
-                        '-analyzeduration', '10M',
-                        '-probesize', '10M'
+                        '-analyzeduration', '100M',
+                        '-probesize', '100M'
                     ]);
 
                 const resetStallTimeout = () => {
@@ -167,9 +167,9 @@ export class FFmpegService {
                     .on('error', (err, _stdout, stderr) => {
                         clearTimeout(stallTimeout);
                         clearTimeout(hardTimeout);
-                        console.error(`Error during FFmpeg profile ${profile.name}: ${err.message}`);
-                        if (stderr) console.error(`FFmpeg STDERR [${profile.name}]:\n${stderr}`);
-                        reject(err);
+                        const errorMessage = `FFmpeg Error [${profile.name}]: ${err.message}${stderr ? `\nSTDERR: ${stderr}` : ''}`;
+                        console.error(errorMessage);
+                        reject(new Error(errorMessage));
                     })
                     .run();
             });
@@ -190,8 +190,8 @@ export class FFmpegService {
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .inputOptions([
-                        '-analyzeduration', '10M',
-                        '-probesize', '10M'
+                        '-analyzeduration', '100M',
+                        '-probesize', '100M'
                     ]);
 
                 const resetStallTimeout = () => {
@@ -380,8 +380,8 @@ export class FFmpegService {
 
                     cmd
                         .inputOptions([
-                            '-analyzeduration', '10M',
-                            '-probesize', '10M'
+                            '-analyzeduration', '100M',
+                            '-probesize', '100M'
                         ])
                         .outputOptions([
                             `-map 0:s:${i}`,
