@@ -199,7 +199,6 @@ export class StreamingService {
       headers: {
         'Content-Type': contentType,
         'Content-Length': stat.size.toString(),
-        'Access-Control-Allow-Origin': '*',
         // .ts segments are immutable (content-addressed by segment number)
         // .m3u8 playlists should be re-fetched on ABR switches
         'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache',

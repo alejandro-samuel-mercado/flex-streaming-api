@@ -94,24 +94,8 @@ app.use(compression({
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
-const allowedOrigins = [
-  env.FRONTEND_URL,
-  'https://unixxtech.online',
-  'https://admin-streamflex.unixxtech.online',
-  'https://streamflex.unixxtech.online'
-].filter(Boolean);
-
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('unixxtech.online')) {
-      callback(null, true);
-    } else {
-      // In production, we might want to be stricter, but for now let's allow unixxtech.online
-      callback(null, true); 
-    }
-  },
+  origin: true, // Dynamically allow any origin (required for credentials: true)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
