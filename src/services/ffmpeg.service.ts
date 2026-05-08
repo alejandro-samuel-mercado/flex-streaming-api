@@ -99,8 +99,8 @@ export class FFmpegService {
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .inputOptions([
-                        '-analyzeduration', '100M',
-                        '-probesize', '100M'
+                        '-analyzeduration', '10M',
+                        '-probesize', '10M'
                     ]);
 
                 const resetStallTimeout = () => {
@@ -118,7 +118,7 @@ export class FFmpegService {
 
                 const opts: string[] = [
                     '-preset', 'veryfast',
-                    '-threads', '0',
+                    '-threads', '2',
                     '-profile:v', 'main',
                     '-level', '4.0',
                     '-vf', `scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
@@ -190,8 +190,8 @@ export class FFmpegService {
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .inputOptions([
-                        '-analyzeduration', '100M',
-                        '-probesize', '100M'
+                        '-analyzeduration', '10M',
+                        '-probesize', '10M'
                     ]);
 
                 const resetStallTimeout = () => {
@@ -380,8 +380,8 @@ export class FFmpegService {
 
                     cmd
                         .inputOptions([
-                            '-analyzeduration', '100M',
-                            '-probesize', '100M'
+                            '-analyzeduration', '10M',
+                            '-probesize', '10M'
                         ])
                         .outputOptions([
                             `-map 0:s:${i}`,

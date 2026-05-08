@@ -218,7 +218,7 @@ async function bootstrap() {
     console.log('⏰ Account expiry worker initialized');
 
     httpServer.listen(env.BACKEND_PORT, () => {
-      console.log(`🚀 PeliPlus API running at http://localhost:${env.BACKEND_PORT}`);
+      console.log(`🚀 Nuba API running at http://localhost:${env.BACKEND_PORT}`);
     });
 
     // Periodic cleanup of abandoned chunk uploads (every 6 hours)
