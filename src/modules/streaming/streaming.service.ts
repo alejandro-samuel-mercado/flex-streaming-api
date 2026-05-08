@@ -168,9 +168,7 @@ export class StreamingService {
                     hlsRoot = path.resolve(env.HLS_PATH, ep.season.contentId);
                 }
             }
-        }
-    }
-
+    
     // Resolve the full path and verify it stays inside hlsRoot.
     const resolvedPath = path.resolve(hlsRoot, filePath);
 
