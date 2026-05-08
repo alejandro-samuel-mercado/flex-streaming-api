@@ -30,7 +30,21 @@ function parseEpisodeInfo(filename: string) {
 }
 
 async function repair() {
-  console.log('🚀 Iniciando reparación automática de episodios huérfanos...');
+  console.log('🚀 Iniciando escaneo exhaustivo en el VPS...');
+
+  // Diagnostic: List ALL video files to see what's actually there
+  const allVideos = await prisma.videoFile.findMany({
+    where: {
+      originalPath: { contains: 'friends', mode: 'insensitive' }
+    }
+  });
+  
+  console.log(`📊 Diagnóstico: Encontrados ${allVideos.length} registros que contienen "friends" en la base de datos.`);
+  if (allVideos.length > 0) {
+    allVideos.forEach(v => {
+        console.log(`   - ID: ${v.id} | Status: ${v.status} | EpisodeId: ${v.episodeId} | Path: ${v.originalPath}`);
+    });
+  }
 
   // 1. Buscamos videos completados que no tengan episodio asignado
   const orphans = await prisma.videoFile.findMany({
