@@ -32,29 +32,60 @@ function parseEpisodeInfo(filename: string) {
 async function repair() {
   console.log('🚀 Iniciando reparación automática en el VPS...');
 
-  // 1. Limpieza de referencias rotas (videos que apuntan a episodios que ya no existen)
-  console.log('🧹 Verificando integridad de referencias...');
-  const allVideos = await prisma.videoFile.findMany({
-    where: { status: ProcessingStatus.COMPLETED },
-    select: { id: true, episodeId: true, originalPath: true }
+  // 1. REPARACIÓN AGRESIVA DE FRIENDS
+  console.log('🧹 Iniciando reconstrucción agresiva de Friends...');
+  const friendsVideos = await prisma.videoFile.findMany({
+    where: { originalPath: { contains: 'friends', mode: 'insensitive' } }
   });
 
-  let brokenLinks = 0;
-  for (const v of allVideos) {
-    if (v.episodeId) {
-      const epExists = await prisma.episode.findUnique({ where: { id: v.episodeId } });
-      if (!epExists) {
-        await prisma.videoFile.update({
-          where: { id: v.id },
-          data: { episodeId: null }
+  if (friendsVideos.length > 0) {
+    console.log(`   🎯 Encontrados ${friendsVideos.length} videos de Friends para re-vincular.`);
+    
+    // Intentamos encontrar la serie "Friends" real
+    let friendsSeries = await prisma.content.findFirst({
+        where: { slug: { contains: 'friends', mode: 'insensitive' } }
+    });
+
+    if (friendsSeries) {
+        for (const vf of friendsVideos) {
+            const info = parseEpisodeInfo(vf.originalPath);
+            if (!info) continue;
+
+            // Aseguramos temporada y episodio bajo LA SERIE CORRECTA
+            const season = await prisma.season.upsert({
+                where: { contentId_number: { contentId: friendsSeries.id, number: info.season } },
+                update: {},
+                create: { contentId: friendsSeries.id, number: info.season }
+            });
+
+            const episode = await prisma.episode.upsert({
+                where: { seasonId_number: { seasonId: season.id, number: info.episode } },
+                update: {},
+                create: { seasonId: season.id, number: info.episode }
+            });
+
+            // Forzamos el vínculo
+            await prisma.videoFile.update({
+                where: { id: vf.id },
+                data: { 
+                    episodeId: episode.id,
+                    contentId: friendsSeries.id,
+                    status: ProcessingStatus.COMPLETED // Aseguramos que esté listo
+                }
+            });
+        }
+        
+        await prisma.content.update({
+            where: { id: friendsSeries.id },
+            data: { status: ContentStatus.READY }
         });
-        brokenLinks++;
-      }
+        console.log('   ✅ Reconstrucción de Friends completada.');
+    } else {
+        console.log('   ❌ No se encontró un registro de Serie para "Friends". Crea la serie primero.');
     }
   }
-  if (brokenLinks > 0) console.log(`   ⚠️ Se limpiaron ${brokenLinks} referencias rotas.`);
 
-  // 2. Buscamos videos completados que no tengan episodio asignado
+  // 2. Buscamos otros videos completados que no tengan episodio asignado
   const orphans = await prisma.videoFile.findMany({
     where: {
       status: ProcessingStatus.COMPLETED,
