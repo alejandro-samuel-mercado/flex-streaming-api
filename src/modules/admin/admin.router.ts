@@ -2,7 +2,7 @@ import { Router, RequestHandler, Response, NextFunction } from 'express';
 import { authenticate, requireRole, AuthenticatedRequest } from '../../shared/middleware/auth.middleware';
 import { ok } from '../../shared/utils/api-response';
 import { prisma } from '../../shared/config/prisma';
-import { videoQueue } from '../../services/queue.service';
+import { videoQueue, addVideoJob } from '../../services/queue.service';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
 import { ResellerService } from '../reseller/reseller.service';
@@ -343,17 +343,48 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
     } catch (err) { next(err); }
 }) as RequestHandler);
 
-// --- Retry all failed jobs ---
+// --- Retry failed or stuck pending jobs ---
 adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-        const failed = await prisma.videoFile.findMany({ where: { status: 'FAILED' } });
-        for (const v of failed) {
-            await prisma.videoFile.update({
-                where: { id: v.id },
-                data: { status: 'PENDING', errorMessage: null, processingJobId: null }
-            });
+        const toRetry = await prisma.videoFile.findMany({ 
+            where: { 
+                status: { in: ['FAILED', 'PENDING'] } 
+            } 
+        });
+        
+        let count = 0;
+        for (const v of toRetry) {
+            // Check if file exists before enqueuing
+            const fs = await import('fs');
+            if (fs.existsSync(v.originalPath)) {
+                const job = await addVideoJob({
+                    videoFileId: v.id,
+                    contentId: v.contentId || '',
+                    type: v.type,
+                    episodeId: v.episodeId || undefined,
+                    videoPath: v.originalPath,
+                });
+
+                await prisma.videoFile.update({
+                    where: { id: v.id },
+                    data: { 
+                        status: 'QUEUED', 
+                        errorMessage: null, 
+                        processingJobId: job.id 
+                    }
+                });
+                count++;
+            } else {
+                await prisma.videoFile.update({
+                    where: { id: v.id },
+                    data: { 
+                        status: 'FAILED', 
+                        errorMessage: 'Archivo original no encontrado en el disco.' 
+                    }
+                });
+            }
         }
-        ok(res, { message: `Reenviados ${failed.length} videos a la cola.` });
+        ok(res, { message: `Reenviados ${count} videos a la cola de procesamiento.` });
     } catch (err) { next(err); }
 }) as RequestHandler);
 
