@@ -114,9 +114,15 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
         const where: any = { deletedAt: null };
 
         if (role === 'END_USER') {
-            const adminId = req.user!.id;
-            const endUserWhere: any = { managedById: adminId, deletedAt: null };
-            if (search) endUserWhere.username = { contains: search, mode: 'insensitive' };
+            const endUserWhere: any = { deletedAt: null };
+            
+            if (search) {
+                endUserWhere.OR = [
+                    { username: { contains: search, mode: 'insensitive' } },
+                    { managedBy: { username: { contains: search, mode: 'insensitive' } } },
+                    { managedBy: { name: { contains: search, mode: 'insensitive' } } }
+                ];
+            }
 
             const [users, total] = await Promise.all([
                 prisma.endUserAccount.findMany({
@@ -126,7 +132,21 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
                     orderBy: { createdAt: 'desc' },
                     include: {
                         plan: true,
-                        managedBy: { select: { id: true, name: true, phone: true } },
+                        managedBy: { 
+                            select: { 
+                                id: true, 
+                                name: true, 
+                                username: true,
+                                phone: true,
+                                parent: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        username: true
+                                    }
+                                }
+                            } 
+                        },
                         _count: { select: { connectedDevices: true } },
                         connectedDevices: true,
                     },
