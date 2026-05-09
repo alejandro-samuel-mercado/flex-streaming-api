@@ -165,7 +165,8 @@ resellerRouter.patch('/vendors/:id', auth, superVendorPlus, (async (req, res, ne
     const data = z.object({
         name: z.string().min(1).optional(),
         username: z.string().min(3).optional(),
-        phone: z.string().optional()
+        phone: z.string().optional(),
+        password: z.string().min(6).optional()
     }).parse(req.body);
     const vendor = await ResellerService.updateVendor(req.params.id, authReq.user!.id, authReq.user!.role, data);
     ok(res, vendor);

@@ -474,42 +474,51 @@ export class ResellerService {
         name?: string;
         username?: string;
         phone?: string;
+        password?: string;
     }) {
         const vendor = await prisma.user.findUnique({ where: { id: vendorId } });
-        if (!vendor) throw new AppError(404, 'Vendor not found', 'NOT_FOUND');
+        if (!vendor) throw new AppError(404, 'Vendedor no encontrado', 'NOT_FOUND');
 
         if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
-            throw new AppError(403, 'You can only manage your own vendors', 'FORBIDDEN');
+            throw new AppError(403, 'No tienes permiso para gestionar este vendedor', 'FORBIDDEN');
         }
 
         if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
-            throw new AppError(403, 'Admins can only manage Super Resellers', 'FORBIDDEN');
+            throw new AppError(403, 'Solo puedes gestionar Super Resellers', 'FORBIDDEN');
         }
 
-        // Check uniqueness if username or phone changes
-        if (data.username || data.phone) {
+        // Check uniqueness
+        const orConditions = [];
+        if (data.username) orConditions.push({ username: data.username });
+        if (data.phone) orConditions.push({ phone: data.phone });
+
+        if (orConditions.length > 0) {
             const existing = await prisma.user.findFirst({
                 where: {
-                    OR: [
-                        data.username ? { username: data.username } : {},
-                        data.phone ? { phone: data.phone } : {},
-                    ],
+                    OR: orConditions,
                     NOT: { id: vendorId },
                     deletedAt: null
                 }
             });
             if (existing) {
-                throw new AppError(409, 'Phone or username already in use', 'ALREADY_EXISTS');
+                throw new AppError(409, 'El teléfono o usuario ya está en uso', 'ALREADY_EXISTS');
             }
+        }
+
+        const updateData: any = {
+            name: data.name,
+            username: data.username,
+            phone: data.phone
+        };
+
+        if (data.password && data.password.trim().length >= 6) {
+            updateData.passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+            await prisma.refreshToken.deleteMany({ where: { userId: vendorId } });
         }
 
         return prisma.user.update({
             where: { id: vendorId },
-            data: {
-                name: data.name,
-                username: data.username,
-                phone: data.phone
-            },
+            data: updateData,
             select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
         });
     }
