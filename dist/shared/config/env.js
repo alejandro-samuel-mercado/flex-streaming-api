@@ -39,7 +39,7 @@ const envSchema = zod_1.z.object({
     SUBTITLES_PATH: zod_1.z.string().default('./media/subtitles'),
     FFMPEG_PATH: zod_1.z.string().default('ffmpeg'),
     FFPROBE_PATH: zod_1.z.string().default('ffprobe'),
-    MAX_CONCURRENT_ENCODING: zod_1.z.coerce.number().default(2),
+    MAX_CONCURRENT_ENCODING: zod_1.z.coerce.number().default(1),
     // Media Scanner
     MEDIA_SCAN_DIRS: zod_1.z.string().optional().default(''),
 });

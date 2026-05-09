@@ -76,7 +76,7 @@ class CreditPackagesService {
                 if (fromUser.credits < pkg.baseCredits) {
                     throw new error_handler_1.AppError(400, `Insufficient credits. You have ${fromUser.credits}, need ${pkg.baseCredits}`, 'INSUFFICIENT_CREDITS');
                 }
-                fromUserName = fromUser.name || fromUser.email;
+                fromUserName = fromUser.name || fromUser.phone;
                 const senderBefore = fromUser.credits;
                 const senderAfter = senderBefore - pkg.baseCredits;
                 await tx.user.update({

@@ -7,7 +7,7 @@ import { UserRole } from '@prisma/client';
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
-    email: string;
+    phone: string;
     role: UserRole;
   };
 }
@@ -24,11 +24,11 @@ export function authenticate(req: AuthenticatedRequest, _res: Response, next: Ne
   try {
     const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as {
       sub: string;
-      email: string;
+      phone: string;
       role: UserRole;
     };
 
-    req.user = { id: payload.sub, email: payload.email, role: payload.role };
+    req.user = { id: payload.sub, phone: payload.phone, role: payload.role };
     next();
   } catch {
     next(new AppError(401, 'Invalid or expired token', 'INVALID_TOKEN'));
@@ -61,10 +61,10 @@ export function optionalAuth(req: AuthenticatedRequest, _res: Response, next: Ne
   try {
     const payload = jwt.verify(token, env.JWT_ACCESS_SECRET) as {
       sub: string;
-      email: string;
+      phone: string;
       role: UserRole;
     };
-    req.user = { id: payload.sub, email: payload.email, role: payload.role };
+    req.user = { id: payload.sub, phone: payload.phone, role: payload.role };
   } catch {
     // token inválido — continúa como invitado
   }

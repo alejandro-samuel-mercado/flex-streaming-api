@@ -10,7 +10,7 @@ import type { RegisterInput, LoginInput } from './auth.schemas';
 export declare function register(input: RegisterInput): Promise<{
     user: {
         id: string;
-        email: string;
+        phone: string;
         role: import(".prisma/client").$Enums.UserRole;
         name: string | null;
     };
@@ -20,7 +20,17 @@ export declare function register(input: RegisterInput): Promise<{
 export declare function login(input: LoginInput): Promise<{
     user: {
         id: string;
-        email: string;
+        phone: string;
+        name: string;
+        role: "END_USER";
+    };
+    accessToken: string;
+    refreshToken: string;
+} | {
+    user: {
+        id: string;
+        phone: string;
+        username: string | null;
         name: string | null;
         role: import(".prisma/client").$Enums.UserRole;
     };
@@ -32,7 +42,7 @@ export declare function refreshAccessToken(refreshToken: string): Promise<{
     refreshToken: string;
 }>;
 export declare function logout(refreshToken: string): Promise<void>;
-export declare function forgotPassword(email: string): Promise<void>;
+export declare function forgotPassword(phone: string): Promise<void>;
 export declare function resetPassword(token: string, newPassword: string): Promise<void>;
 export declare function findOrCreateGoogleUser(googleProfile: {
     id: string;
@@ -42,9 +52,10 @@ export declare function findOrCreateGoogleUser(googleProfile: {
 }): Promise<{
     user: {
         id: string;
-        email: string;
+        phone: string;
         role: import(".prisma/client").$Enums.UserRole;
         name: string | null;
+        username: string | null;
         googleId: string | null;
         appleId: string | null;
         passwordHash: string | null;

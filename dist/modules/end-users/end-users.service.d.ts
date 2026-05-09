@@ -13,6 +13,9 @@ export declare class EndUsersService {
         search?: string;
         status?: string;
         type?: string;
+        expiringInDays?: number;
+        managedByMeOnly?: boolean;
+        managedByOthersOnly?: boolean;
     }): Promise<{
         users: {
             connectedDevicesCount: number;
@@ -33,19 +36,26 @@ export declare class EndUsersService {
             maxDevices: number;
             managedBy: {
                 id: string;
-                email: string;
+                phone: string;
+                role: import(".prisma/client").$Enums.UserRole;
                 name: string | null;
+                username: string | null;
+                parent: {
+                    name: string | null;
+                    username: string | null;
+                } | null;
             };
         }[];
         total: number;
         page: number;
         totalPages: number;
     }>;
-    static create(managedById: string, data: {
+    static create(managedById: string, userRole: UserRole, data: {
         username: string;
         password: string;
         country?: string;
         notes?: string;
+        planId?: string;
     }): Promise<{
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
@@ -75,18 +85,24 @@ export declare class EndUsersService {
         } | null;
         managedBy: {
             id: string;
-            email: string;
+            phone: string;
+            role: import(".prisma/client").$Enums.UserRole;
             name: string | null;
+            username: string | null;
+            parent: {
+                name: string | null;
+                username: string | null;
+            } | null;
         };
         connectedDevices: {
             platform: string | null;
             id: string;
+            deviceName: string | null;
+            deviceType: import(".prisma/client").$Enums.DeviceType;
             isActive: boolean;
             createdAt: Date;
             endUserAccountId: string;
             deviceToken: string;
-            deviceType: import(".prisma/client").$Enums.DeviceType;
-            deviceName: string | null;
             osVersion: string | null;
             appVersion: string | null;
             browserName: string | null;
@@ -169,12 +185,12 @@ export declare class EndUsersService {
     static listDevices(accountId: string, userId: string, userRole: UserRole): Promise<{
         platform: string | null;
         id: string;
+        deviceName: string | null;
+        deviceType: import(".prisma/client").$Enums.DeviceType;
         isActive: boolean;
         createdAt: Date;
         endUserAccountId: string;
         deviceToken: string;
-        deviceType: import(".prisma/client").$Enums.DeviceType;
-        deviceName: string | null;
         osVersion: string | null;
         appVersion: string | null;
         browserName: string | null;
@@ -198,12 +214,17 @@ export declare class EndUsersService {
         };
     } & {
         id: string;
-        planId: string;
         endUserAccountId: string;
-        daysAdded: number;
+        planId: string;
         creditsCost: number;
+        daysAdded: number;
         appliedById: string;
         appliedAt: Date;
     })[]>;
+    /**
+     * Revokes all active sessions for an account (PostgreSQL + Redis).
+     * Also disconnects all active devices.
+     */
+    private static revokeAccess;
 }
 //# sourceMappingURL=end-users.service.d.ts.map

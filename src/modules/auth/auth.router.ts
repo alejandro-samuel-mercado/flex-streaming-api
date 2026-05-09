@@ -53,9 +53,9 @@ authRouter.post('/refresh', async (req: Request, res: Response, next: NextFuncti
 
 authRouter.post('/forgot-password', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email } = forgotPasswordSchema.parse(req.body);
-        await authService.forgotPassword(email);
-        ok(res, { message: 'If the email exists, a reset link was sent' });
+        const { phone } = forgotPasswordSchema.parse(req.body);
+        await authService.forgotPassword(phone);
+        ok(res, { message: 'If the phone exists, a reset link was sent' });
     } catch (err) {
         next(err);
     }
@@ -75,11 +75,53 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
     try {
         const authReq = req as AuthenticatedRequest;
         const { prisma } = await import('../../shared/config/prisma');
+        const userId = authReq.user!.id;
+
+        // Handle virtual end-user accounts (their JWT sub is VIRTUAL_<accountId>)
+        if (userId.startsWith('VIRTUAL_')) {
+            const accountId = userId.replace('VIRTUAL_', '');
+            const account = await prisma.endUserAccount.findUnique({
+                where: { id: accountId },
+                select: {
+                    id: true,
+                    username: true,
+                    status: true,
+                    type: true,
+                    planId: true,
+                    endDate: true,
+                    maxDevices: true,
+                    plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
+                    profiles: {
+                        select: { id: true, name: true, avatar: true, isKids: true, language: true },
+                        orderBy: { createdAt: 'asc' },
+                    },
+                },
+            });
+            if (!account) return next(new Error('Account not found'));
+            // Shape the response to match the regular user structure
+            return ok(res, {
+                id: `VIRTUAL_${account.id}`,
+                name: account.username,
+                email: null,
+                role: 'END_USER',
+                profiles: account.profiles,
+                endUserAccount: {
+                    id: account.id,
+                    status: account.status,
+                    type: account.type,
+                    planId: account.planId,
+                    endDate: account.endDate,
+                    maxDevices: account.maxDevices,
+                    plan: account.plan,
+                },
+            });
+        }
+
         const user = await prisma.user.findUnique({
-            where: { id: authReq.user!.id },
+            where: { id: userId },
             select: {
                 id: true,
-                email: true,
+                phone: true,
                 name: true,
                 role: true,
                 credits: true,
@@ -94,9 +136,10 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                         id: true,
                         status: true,
                         type: true,
+                        planId: true,
                         endDate: true,
                         maxDevices: true,
-                        plan: { select: { id: true, name: true, durationDays: true } }
+                        plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } }
                     }
                 }
             },

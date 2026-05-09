@@ -18,7 +18,8 @@ const auth = auth_middleware_1.authenticate;
 const adminOnly = (0, auth_middleware_1.requireRole)('ADMIN');
 const superVendorPlus = auth_middleware_1.requireSuperVendorOrAbove;
 const CreateVendorSchema = zod_1.z.object({
-    email: zod_1.z.string().email(),
+    phone: zod_1.z.string().min(8),
+    username: zod_1.z.string().min(3).max(50),
     name: zod_1.z.string().min(1).max(100),
     password: zod_1.z.string().min(6),
     credits: zod_1.z.number().int().min(0).optional(),
@@ -126,6 +127,31 @@ exports.resellerRouter.post('/vendors/:id/plan', auth, superVendorPlus, (async (
         const authReq = req;
         const { planId } = zod_1.z.object({ planId: zod_1.z.string() }).parse(req.body);
         const result = await reseller_service_1.ResellerService.assignPlanToVendor(req.params.id, authReq.user.id, authReq.user.role, planId);
+        (0, api_response_1.ok)(res, result);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// GET /api/reseller/transactions — Get own credit history
+exports.resellerRouter.get('/transactions', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('VENDOR', 'SUPER_VENDOR', 'ADMIN'), (async (req, res, next) => {
+    try {
+        const authReq = req;
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const result = await reseller_service_1.ResellerService.getCreditHistory(authReq.user.id, authReq.user.id, authReq.user.role, page, limit);
+        (0, api_response_1.ok)(res, result);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// PATCH /api/reseller/vendors/:id/password — Reset vendor password
+exports.resellerRouter.patch('/vendors/:id/password', auth, superVendorPlus, (async (req, res, next) => {
+    try {
+        const authReq = req;
+        const { password } = zod_1.z.object({ password: zod_1.z.string().min(6) }).parse(req.body);
+        const result = await reseller_service_1.ResellerService.resetVendorPassword(req.params.id, authReq.user.id, authReq.user.role, password);
         (0, api_response_1.ok)(res, result);
     }
     catch (err) {

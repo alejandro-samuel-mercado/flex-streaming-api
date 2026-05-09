@@ -21,9 +21,9 @@ const REFRESH_TOKEN_PREFIX = 'refresh:';
 const RESET_TOKEN_PREFIX = 'reset:';
 const RESET_TOKEN_TTL = 60 * 60; // 1 hour
 
-function generateTokens(userId: string, email: string, role: string) {
+function generateTokens(userId: string, phone: string, role: string) {
   const accessToken = jwt.sign(
-    { sub: userId, email, role },
+    { sub: userId, phone, role },
     env.JWT_ACCESS_SECRET,
     { expiresIn: env.JWT_ACCESS_EXPIRES_IN as any }
   );
@@ -34,9 +34,9 @@ function generateTokens(userId: string, email: string, role: string) {
 }
 
 export async function register(input: RegisterInput) {
-  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  const existing = await prisma.user.findUnique({ where: { phone: input.phone } });
   if (existing) {
-    throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+    throw new AppError(409, 'Phone already registered', 'PHONE_EXISTS');
   }
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
@@ -44,13 +44,13 @@ export async function register(input: RegisterInput) {
   const user = await prisma.user.create({
     data: {
       name: input.name,
-      email: input.email,
+      phone: input.phone,
       passwordHash,
     },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, phone: true, name: true, role: true },
   });
 
-  const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
+  const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60; // 30 days
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
@@ -67,12 +67,12 @@ export async function register(input: RegisterInput) {
 }
 
 export async function login(input: LoginInput) {
-  // 1. Try finding in normal User table (identifier as username OR email)
+  // 1. Try finding in normal User table (identifier as username OR phone)
   let user = await prisma.user.findFirst({
     where: {
       OR: [
         { username: input.username },
-        { email: input.username }
+        { phone: input.username }
       ],
       deletedAt: null
     }
@@ -181,13 +181,13 @@ export async function login(input: LoginInput) {
       // Ensure the endUser has a linked User record to support profiles, history, etc.
       if (!endUser.userId) {
         const clientEmail = `${endUser.username}@client.flex`;
-        // Check if user with this email already exists (edge case)
-        let linkedUser = await prisma.user.findUnique({ where: { email: clientEmail } });
+        // Check if user with this phone already exists (edge case)
+        let linkedUser = await prisma.user.findUnique({ where: { phone: clientEmail } });
         
         if (!linkedUser) {
           linkedUser = await prisma.user.create({
             data: {
-              email: clientEmail,
+              phone: clientEmail,
               name: endUser.username,
               role: 'END_USER',
               isActive: true,
@@ -236,7 +236,7 @@ export async function login(input: LoginInput) {
       });
 
       return {
-        user: { id: endUser.id, email: endUser.username, name: endUser.username, role: 'END_USER' as const },
+        user: { id: endUser.id, phone: endUser.username, name: endUser.username, role: 'END_USER' as const },
         accessToken,
         refreshToken,
       };
@@ -253,7 +253,7 @@ export async function login(input: LoginInput) {
     throw new AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
   }
 
-  const { accessToken, refreshToken } = generateTokens(user.id, user.username || user.email, user.role);
+  const { accessToken, refreshToken } = generateTokens(user.id, user.username || user.phone, user.role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
@@ -268,7 +268,7 @@ export async function login(input: LoginInput) {
 
   const safeUser = {
     id: user.id,
-    email: user.email,
+    phone: user.phone,
     username: user.username,
     name: user.name,
     role: user.role,
@@ -285,7 +285,7 @@ export async function refreshAccessToken(refreshToken: string) {
 
   let user;
   let role: string;
-  let email: string;
+  let phone: string;
 
   if (userId.startsWith('VIRTUAL_')) {
     const accountId = userId.replace('VIRTUAL_', '');
@@ -297,19 +297,19 @@ export async function refreshAccessToken(refreshToken: string) {
       throw new AppError(401, 'Account restricted or not found', 'INVALID_REFRESH_TOKEN');
     }
     user = { id: account.id };
-    email = account.username;
+    phone = account.username;
     role = 'END_USER';
   } else {
     const realUser = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, username: true, role: true, isActive: true },
+      select: { id: true, phone: true, username: true, role: true, isActive: true },
     });
 
     if (!realUser || !realUser.isActive) {
       throw new AppError(401, 'User not found or inactive', 'INVALID_REFRESH_TOKEN');
     }
     user = realUser;
-    email = realUser.email;
+    phone = realUser.phone;
     role = realUser.role;
   }
 
@@ -317,7 +317,7 @@ export async function refreshAccessToken(refreshToken: string) {
   await redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
 
-  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.username || email, role);
+  const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.username || phone, role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, refreshTtlSeconds, role === 'END_USER' ? `VIRTUAL_${user.id}` : user.id);
@@ -339,15 +339,15 @@ export async function logout(refreshToken: string): Promise<void> {
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
 }
 
-export async function forgotPassword(email: string): Promise<void> {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) return; // Silent — don't reveal if email exists
+export async function forgotPassword(phone: string): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { phone } });
+  if (!user) return; // Silent — don't reveal if phone exists
 
   const resetToken = uuidv4();
   await redis.setex(`${RESET_TOKEN_PREFIX}${resetToken}`, RESET_TOKEN_TTL, user.id);
 
-  // TODO: send email with resetToken link when SMTP is configured
-  console.log(`[Auth] Password reset token for ${email}: ${resetToken}`);
+  // TODO: send sms with resetToken link
+  console.log(`[Auth] Password reset token for ${phone}: ${resetToken}`);
 }
 
 export async function resetPassword(token: string, newPassword: string): Promise<void> {
@@ -370,7 +370,7 @@ export async function findOrCreateGoogleUser(googleProfile: {
   let user = await prisma.user.findUnique({ where: { googleId: googleProfile.id } });
 
   if (!user) {
-    user = await prisma.user.findUnique({ where: { email: googleProfile.email } });
+    user = await prisma.user.findUnique({ where: { phone: googleProfile.email } });
 
     if (user) {
       user = await prisma.user.update({
@@ -381,14 +381,14 @@ export async function findOrCreateGoogleUser(googleProfile: {
       user = await prisma.user.create({
         data: {
           googleId: googleProfile.id,
-          email: googleProfile.email,
+          phone: googleProfile.email,
           name: googleProfile.name,
         },
       });
     }
   }
 
-  const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
+  const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
 
   const refreshTtlSeconds = 30 * 24 * 60 * 60;
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);

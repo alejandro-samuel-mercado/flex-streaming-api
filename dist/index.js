@@ -84,6 +84,7 @@ const end_users_router_1 = require("./modules/end-users/end-users.router");
 const tmdb_router_1 = require("./modules/admin/tmdb.router");
 const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.router");
 const auto_scanner_worker_1 = require("./workers/auto-scanner.worker");
+const account_expiry_worker_1 = require("./workers/account-expiry.worker");
 const chunk_upload_service_1 = require("./services/chunk-upload.service");
 const app = (0, express_1.default)();
 exports.app = app;
@@ -125,7 +126,7 @@ app.use((0, compression_1.default)({
 app.use((0, morgan_1.default)(env_1.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use((0, cors_1.default)({
-    origin: env_1.env.FRONTEND_URL,
+    origin: true, // Dynamically allow any origin (required for credentials: true)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
@@ -227,8 +228,11 @@ async function bootstrap() {
         // Start auto-scanner worker
         auto_scanner_worker_1.AutoScannerWorker.start(io);
         console.log('🔍 Auto-scanner worker initialized');
+        // Start account expiry worker
+        account_expiry_worker_1.AccountExpiryWorker.start();
+        console.log('⏰ Account expiry worker initialized');
         httpServer.listen(env_1.env.BACKEND_PORT, () => {
-            console.log(`🚀 PeliPlus API running at http://localhost:${env_1.env.BACKEND_PORT}`);
+            console.log(`🚀 Nuba API running at http://localhost:${env_1.env.BACKEND_PORT}`);
         });
         // Periodic cleanup of abandoned chunk uploads (every 6 hours)
         setInterval(() => {

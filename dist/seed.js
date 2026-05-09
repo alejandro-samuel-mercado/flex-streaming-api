@@ -16,12 +16,14 @@ async function main() {
     await prisma.siteConfig.createMany({
         data: [
             { key: 'whatsapp_number', value: '+5491100000000' },
-            { key: 'faq_items', value: JSON.stringify([
-                    { question: '¿Cómo puedo suscribirme a FlexStreaming?', answer: 'Puedes elegir el plan que más te convenga en la sección de planes y contactarnos por WhatsApp. Te crearemos una cuenta y podrás empezar a disfrutar de todo el contenido.' },
+            {
+                key: 'faq_items', value: JSON.stringify([
+                    { question: '¿Cómo puedo suscribirme a Nuba?', answer: 'Puedes elegir el plan que más te convenga en la sección de planes y contactarnos por WhatsApp. Te crearemos una cuenta y podrás empezar a disfrutar de todo el contenido.' },
                     { question: '¿Qué métodos de pago aceptan?', answer: 'Aceptamos transferencias bancarias, Mercado Pago, PayPal y pagos en efectivo. Contáctanos por WhatsApp para más detalles.' },
                     { question: '¿Puedo ver contenido gratis?', answer: 'Sí, tenemos una selección de contenido gratuito disponible para todos. Solo necesitas crear una cuenta gratuita para empezar a disfrutarlo.' },
                     { question: '¿En cuántos dispositivos puedo ver?', answer: 'Depende del plan que elijas. El plan Básico permite 1 dispositivo, el Premium hasta 3 y el Familiar hasta 5 dispositivos simultáneos.' },
-                ]) }
+                ])
+            }
         ]
     });
     // Create Plans
@@ -108,7 +110,7 @@ async function main() {
     const bcrypt = require('bcrypt');
     const passwordHash = await bcrypt.hash('123456', 12);
     const admin = await prisma.user.upsert({
-        where: { email: 'admin@peliplus.com' },
+        where: { phone: '1111111111' },
         update: {
             passwordHash,
             role: 'ADMIN',
@@ -116,7 +118,7 @@ async function main() {
             credits: 0
         },
         create: {
-            email: 'admin@peliplus.com',
+            phone: '1111111111',
             name: 'Admin',
             passwordHash,
             role: 'ADMIN',
@@ -125,7 +127,7 @@ async function main() {
         }
     });
     const superVendor = await prisma.user.upsert({
-        where: { email: 'super@peliplus.com' },
+        where: { phone: '2222222222' },
         update: {
             passwordHash,
             role: 'SUPER_VENDOR',
@@ -134,7 +136,7 @@ async function main() {
             parentId: admin.id
         },
         create: {
-            email: 'super@peliplus.com',
+            phone: '2222222222',
             name: 'Super Vendedor',
             passwordHash,
             role: 'SUPER_VENDOR',
@@ -144,7 +146,7 @@ async function main() {
         }
     });
     await prisma.user.upsert({
-        where: { email: 'vendor@peliplus.com' },
+        where: { phone: '3333333333' },
         update: {
             passwordHash,
             role: 'VENDOR',
@@ -153,7 +155,7 @@ async function main() {
             parentId: superVendor.id
         },
         create: {
-            email: 'vendor@peliplus.com',
+            phone: '3333333333',
             name: 'Vendedor',
             passwordHash,
             role: 'VENDOR',
@@ -162,7 +164,7 @@ async function main() {
             parentId: superVendor.id
         }
     });
-    console.log('Database seeded successfully! Use admin@peliplus.com / 123456 to login.');
+    console.log('Database seeded successfully! Use 1111111111 / 123456 to login.');
 }
 main()
     .catch(e => {

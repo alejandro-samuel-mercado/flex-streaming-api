@@ -20,6 +20,14 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
     };
     job.log(`Starting HLS processing for contentId: ${contentId}`);
     try {
+        // ─── Initial Checks ───────────────────────────────────────────────
+        // Check if file exists and is readable by the process
+        try {
+            fs_1.default.accessSync(videoPath, fs_1.default.constants.R_OK);
+        }
+        catch (err) {
+            throw new Error(`Cannot read input file at ${videoPath}: ${err.message}. Check permissions.`);
+        }
         const existsInitial = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
         if (!existsInitial) {
             job.log('Job cancelled: VideoFile record no longer exists. Aborting early.');
@@ -70,7 +78,7 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
             job.log('Job cancelled after processing: VideoFile record no longer exists. Aborting.');
             return { cancelled: true };
         }
-        const masterPlaylistUrl = `/media/hls/${contentId}/master.m3u8`;
+        const masterPlaylistUrl = `/api/stream/hls/${videoFileId}/master.m3u8`;
         // Wait until Prisma is available correctly
         await prisma_1.prisma.videoFile.update({
             where: { id: videoFileId },
@@ -81,19 +89,11 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                 qualities: {
                     create: [
                         {
-                            resolution: '360p',
-                            width: 640,
-                            height: 360,
-                            bitrate: 800000,
-                            playlistUrl: `/media/hls/${contentId}/360p.m3u8`,
-                            codec: 'h264'
-                        },
-                        {
                             resolution: '720p',
                             width: 1280,
                             height: 720,
                             bitrate: 2500000,
-                            playlistUrl: `/media/hls/${contentId}/720p.m3u8`,
+                            playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
                             codec: 'h264'
                         },
                         {
@@ -101,7 +101,7 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                             width: 1920,
                             height: 1080,
                             bitrate: 5000000,
-                            playlistUrl: `/media/hls/${contentId}/1080p.m3u8`,
+                            playlistUrl: `/api/stream/hls/${videoFileId}/1080p.m3u8`,
                             codec: 'h264'
                         }
                     ]
@@ -138,39 +138,35 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
             job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
         }
         const jobType = job.data.type || 'MOVIE';
-        // ─── Determine content status: READY only if data is complete ─────
-        if (jobType === 'MOVIE') {
-            const content = await prisma_1.prisma.content.findUnique({
+        // ─── Determine content status: READY if video is done ─────
+        const content = await prisma_1.prisma.content.findUnique({
+            where: { id: contentId },
+            include: {
+                translations: true,
+                thumbnails: true,
+                genres: true
+            }
+        });
+        if (content) {
+            // If it's a movie or series/anime, it should be READY since video is done
+            await prisma_1.prisma.content.update({
                 where: { id: contentId },
-                include: {
-                    translations: true,
-                    thumbnails: true,
-                    genres: true
-                }
+                data: { status: 'READY' }
             });
-            if (content) {
-                const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);
-                const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
-                const hasGenres = content.genres.length > 0;
-                if (hasDescription && hasPoster && hasGenres) {
-                    // All data complete → READY
-                    await prisma_1.prisma.content.update({
-                        where: { id: contentId },
-                        data: { status: 'READY' }
-                    });
-                    job.log(`Content ${contentId} marked as READY (data complete)`);
-                }
-                else {
-                    // Missing data → stays PENDING
-                    const missing = [];
-                    if (!hasDescription)
-                        missing.push('sinopsis');
-                    if (!hasPoster)
-                        missing.push('poster');
-                    if (!hasGenres)
-                        missing.push('géneros');
-                    job.log(`Content ${contentId} stays PENDING — missing: ${missing.join(', ')}`);
-                }
+            job.log(`Content ${contentId} marked as READY (video processing complete)`);
+            // Log warnings about missing data but DON'T block the status
+            const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);
+            const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
+            const hasGenres = content.genres.length > 0;
+            if (!hasDescription || !hasPoster || !hasGenres) {
+                const missing = [];
+                if (!hasDescription)
+                    missing.push('sinopsis');
+                if (!hasPoster)
+                    missing.push('poster');
+                if (!hasGenres)
+                    missing.push('géneros');
+                job.log(`Warning: Content ${contentId} is READY but missing metadata: ${missing.join(', ')}`);
             }
         }
         else if (jobType === 'TRAILER') {
@@ -215,13 +211,21 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
         try {
             await prisma_1.prisma.videoFile.update({
                 where: { id: videoFileId },
-                data: { status: 'FAILED' }
+                data: {
+                    status: 'FAILED',
+                    errorMessage: error.message
+                }
             });
+            // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
+            await prisma_1.prisma.content.update({
+                where: { id: contentId },
+                data: { status: 'ERROR' }
+            }).catch(() => null); // Ignore if contentId was actually an episodeId or invalid
         }
         catch (dbErr) {
-            job.log(`Warning: could not set FAILED status: ${dbErr.message}`);
+            job.log(`Warning: could not set FAILED/ERROR status: ${dbErr.message}`);
         }
-        // 2. Delete partially-written HLS output to avoid corrupt segments on disk
+        // 3. Delete partially-written HLS output to avoid corrupt segments on disk
         try {
             if (fs_1.default.existsSync(outputFolder)) {
                 fs_1.default.rmSync(outputFolder, { recursive: true, force: true });

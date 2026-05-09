@@ -104,7 +104,7 @@ export class EndUsersService {
           endDate: true,
           maxDevices: true,
           createdAt: true,
-          managedBy: { select: { id: true, name: true, email: true } },
+          managedBy: { select: { id: true, name: true, phone: true, username: true, role: true, parent: { select: { name: true, username: true } } } },
           plan: { select: { id: true, name: true, durationDays: true } },
           _count: { select: { connectedDevices: { where: { isActive: true } } } },
         },
@@ -264,7 +264,7 @@ export class EndUsersService {
     const account = await prisma.endUserAccount.findUnique({
       where: { id: accountId },
       include: {
-        managedBy: { select: { id: true, name: true, email: true } },
+        managedBy: { select: { id: true, name: true, phone: true, username: true, role: true, parent: { select: { name: true, username: true } } } },
         plan: true,
         connectedDevices: { where: { isActive: true } },
       },

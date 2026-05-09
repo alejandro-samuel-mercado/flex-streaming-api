@@ -202,10 +202,16 @@ exports.uploadRouter.post('/image', (_req, _res, next) => {
         // Process with sharp (convert to webp and resize)
         const sharpInstance = (0, sharp_1.default)(file.buffer);
         if (type === 'POSTER') {
-            sharpInstance.resize(600, 900, { fit: 'cover', position: 'center' });
+            sharpInstance.resize(600, 900, {
+                fit: 'cover',
+                position: 'entropy' // Smart crop based on image content
+            });
         }
         else if (type === 'BACKDROP') {
-            sharpInstance.resize(1920, 1080, { fit: 'cover', position: 'center' });
+            sharpInstance.resize(1920, 1080, {
+                fit: 'cover',
+                position: 'entropy'
+            });
         }
         await sharpInstance.webp({ quality: 85 }).toFile(fullPath);
         const imageUrl = `/media/thumbnails/${contentId}/${filename}`;
@@ -334,6 +340,43 @@ exports.uploadRouter.delete('/video/:id', async (req, res, next) => {
             }
         }
         return res.json({ success: true, message: 'Video upload cancelled and deleted' });
+    }
+    catch (error) {
+        return next(error);
+    }
+});
+exports.uploadRouter.post('/video/:id/retry', async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const videoFile = await prisma_1.prisma.videoFile.findUnique({
+            where: { id }
+        });
+        if (!videoFile) {
+            return res.status(404).json({ success: false, error: 'Video file not found' });
+        }
+        if (videoFile.status !== 'FAILED') {
+            return res.status(400).json({ success: false, error: 'Solo se pueden reintentar videos fallidos' });
+        }
+        if (!fs_1.default.existsSync(videoFile.originalPath)) {
+            return res.status(400).json({ success: false, error: 'El archivo original ya no existe en el disco' });
+        }
+        const { addVideoJob } = await Promise.resolve().then(() => __importStar(require('../../services/queue.service')));
+        await prisma_1.prisma.videoFile.update({
+            where: { id },
+            data: { status: 'QUEUED', errorMessage: null }
+        });
+        const job = await addVideoJob({
+            videoFileId: videoFile.id,
+            contentId: videoFile.contentId || '',
+            type: videoFile.type,
+            episodeId: videoFile.episodeId || undefined,
+            videoPath: videoFile.originalPath,
+        });
+        await prisma_1.prisma.videoFile.update({
+            where: { id },
+            data: { processingJobId: job.id }
+        });
+        return res.json({ success: true, message: 'Video encolado para reintento', jobId: job.id });
     }
     catch (error) {
         return next(error);

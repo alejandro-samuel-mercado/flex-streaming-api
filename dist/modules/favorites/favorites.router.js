@@ -23,6 +23,21 @@ exports.favoritesRouter.get('/', (async (req, res, next) => {
         next(err);
     }
 }));
+exports.favoritesRouter.get('/check/:contentId', (async (req, res, next) => {
+    try {
+        const profileId = req.headers['x-profile-id'];
+        const { contentId } = req.params;
+        if (!profileId) {
+            res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+            return;
+        }
+        const favorite = await favorites_service_1.FavoritesService.checkFavorite(profileId, contentId);
+        (0, api_response_1.ok)(res, { isFavorited: favorite });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 exports.favoritesRouter.post('/toggle', (async (req, res, next) => {
     try {
         const profileId = req.headers['x-profile-id'];

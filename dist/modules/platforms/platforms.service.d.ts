@@ -12,10 +12,10 @@ export declare class PlatformsService {
         contents: ({
             translations: {
                 id: string;
+                description: string;
                 language: string;
                 title: string;
                 contentId: string;
-                description: string;
                 tagline: string | null;
             }[];
         } & {

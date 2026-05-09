@@ -80,9 +80,9 @@ exports.authRouter.post('/refresh', async (req, res, next) => {
 });
 exports.authRouter.post('/forgot-password', async (req, res, next) => {
     try {
-        const { email } = auth_schemas_1.forgotPasswordSchema.parse(req.body);
-        await authService.forgotPassword(email);
-        (0, api_response_1.ok)(res, { message: 'If the email exists, a reset link was sent' });
+        const { phone } = auth_schemas_1.forgotPasswordSchema.parse(req.body);
+        await authService.forgotPassword(phone);
+        (0, api_response_1.ok)(res, { message: 'If the phone exists, a reset link was sent' });
     }
     catch (err) {
         next(err);
@@ -106,7 +106,7 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
             where: { id: authReq.user.id },
             select: {
                 id: true,
-                email: true,
+                phone: true,
                 name: true,
                 role: true,
                 credits: true,
@@ -116,6 +116,16 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                     select: { id: true, name: true, avatar: true, isKids: true, language: true },
                     orderBy: { createdAt: 'asc' },
                 },
+                endUserAccount: {
+                    select: {
+                        id: true,
+                        status: true,
+                        type: true,
+                        endDate: true,
+                        maxDevices: true,
+                        plan: { select: { id: true, name: true, durationDays: true } }
+                    }
+                }
             },
         });
         (0, api_response_1.ok)(res, user);

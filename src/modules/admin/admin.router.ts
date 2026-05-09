@@ -126,7 +126,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
                     orderBy: { createdAt: 'desc' },
                     include: {
                         plan: true,
-                        managedBy: { select: { id: true, name: true, email: true } },
+                        managedBy: { select: { id: true, name: true, phone: true } },
                         _count: { select: { connectedDevices: true } },
                         connectedDevices: true,
                     },
@@ -145,7 +145,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
             ];
         }
 
@@ -156,7 +156,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
                 take: limit,
                 orderBy: { createdAt: 'desc' },
                 select: {
-                    id: true, email: true, username: true, name: true, role: true, isActive: true, createdAt: true, credits: true,
+                    id: true, phone: true, username: true, name: true, role: true, isActive: true, createdAt: true, credits: true,
                     _count: { select: { profiles: true, memberships: true, children: true, managedEndUsers: true } },
                 },
             }),
@@ -174,14 +174,14 @@ adminRouter.post('/users', (async (req: AuthenticatedRequest, res: Response, nex
         const schema = z.object({
             name: z.string().min(2),
             username: z.string().min(3).max(50),
-            email: z.string().email(),
+            phone: z.string().min(8),
             password: z.string().min(6),
             role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']),
         });
 
-        const { name, username, email, password, role } = schema.parse(req.body);
+        const { name, username, phone, password, role } = schema.parse(req.body);
 
-        const existing = await prisma.user.findUnique({ where: { email } });
+        const existing = await prisma.user.findUnique({ where: { phone } });
         if (existing) {
             return res.status(409).json({ success: false, error: 'Email already registered' });
         }
@@ -189,8 +189,8 @@ adminRouter.post('/users', (async (req: AuthenticatedRequest, res: Response, nex
         const passwordHash = await bcrypt.hash(password, 12);
 
         const user = await prisma.user.create({
-            data: { name, username, email, passwordHash, role },
-            select: { id: true, email: true, username: true, name: true, role: true, isActive: true },
+            data: { name, username, phone, passwordHash, role },
+            select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
         });
 
         return ok(res, user);
@@ -204,18 +204,18 @@ adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, 
         const schema = z.object({
             name: z.string().min(2).optional(),
             username: z.string().min(3).max(50).optional(),
-            email: z.string().email().optional(),
+            phone: z.string().min(8).optional(),
             password: z.string().min(6).optional(),
             role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']).optional(),
             isActive: z.boolean().optional(),
         });
 
-        const { name, username, email, password, role, isActive } = schema.parse(req.body);
+        const { name, username, phone, password, role, isActive } = schema.parse(req.body);
         const data: any = {};
 
         if (name) data.name = name;
         if (username) data.username = username;
-        if (email) data.email = email;
+        if (phone) data.phone = phone;
         if (role) data.role = role;
         if (isActive !== undefined) data.isActive = isActive;
         if (password) {
@@ -225,7 +225,7 @@ adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, 
         const user = await prisma.user.update({
             where: { id: req.params.id },
             data,
-            select: { id: true, email: true, username: true, name: true, role: true, isActive: true },
+            select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
         });
 
         return ok(res, user);

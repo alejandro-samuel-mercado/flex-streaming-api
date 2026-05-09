@@ -46,9 +46,9 @@ export declare class ContentService {
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
+                description: string;
                 language: string;
                 title: string;
-                description: string;
                 tagline: string | null;
             }[];
             videoFiles: {
@@ -103,10 +103,10 @@ export declare class ContentService {
         };
         translations: {
             id: string;
+            description: string;
             language: string;
             title: string;
             contentId: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: ({
@@ -158,17 +158,17 @@ export declare class ContentService {
         seasons: ({
             translations: {
                 id: string;
+                description: string | null;
                 language: string;
                 title: string;
-                description: string | null;
                 seasonId: string;
             }[];
             episodes: ({
                 translations: {
                     id: string;
+                    description: string | null;
                     language: string;
                     title: string;
-                    description: string | null;
                     episodeId: string;
                 }[];
                 videoFiles: ({
@@ -344,9 +344,9 @@ export declare class ContentService {
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
+            description: string;
             language: string;
             title: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: {
@@ -401,9 +401,9 @@ export declare class ContentService {
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
+            description: string;
             language: string;
             title: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: {
@@ -458,9 +458,9 @@ export declare class ContentService {
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
+            description: string;
             language: string;
             title: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: {
@@ -515,9 +515,9 @@ export declare class ContentService {
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
+            description: string;
             language: string;
             title: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: {
@@ -583,10 +583,10 @@ export declare class ContentService {
     static updateContent(id: string, data: Record<string, unknown>): Promise<{
         translations: {
             id: string;
+            description: string;
             language: string;
             title: string;
             contentId: string;
-            description: string;
             tagline: string | null;
         }[];
         videoFiles: ({

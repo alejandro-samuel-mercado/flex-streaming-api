@@ -15,7 +15,7 @@ const BCRYPT_ROUNDS = 12;
 
 export class ResellerService {
   static async createSuperVendor(adminId: string, data: {
-    email: string;
+    phone: string;
     username: string;
     name: string;
     password: string;
@@ -23,24 +23,24 @@ export class ResellerService {
     planId?: string;
   }) {
     const existing = await prisma.user.findFirst({ 
-      where: { OR: [{ email: data.email }, { username: data.username }] } 
+      where: { OR: [{ phone: data.phone }, { username: data.username }] } 
     });
     if (existing) {
-      throw new AppError(409, 'Email or username already registered', 'ALREADY_EXISTS');
+      throw new AppError(409, 'Phone or username already registered', 'ALREADY_EXISTS');
     }
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
     const initialCredits = data.credits ?? 0;
 
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { email: data.email } });
+      const existing = await tx.user.findUnique({ where: { phone: data.phone } });
       if (existing) {
-        throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+        throw new AppError(409, 'Phone already registered', 'PHONE_EXISTS');
       }
 
       const user = await tx.user.create({
         data: {
-          email: data.email,
+          phone: data.phone,
           username: data.username,
           name: data.name,
           passwordHash,
@@ -48,7 +48,7 @@ export class ResellerService {
           parentId: adminId,
           credits: initialCredits,
         },
-        select: { id: true, email: true, username: true, name: true, role: true, credits: true, createdAt: true },
+        select: { id: true, phone: true, username: true, name: true, role: true, credits: true, createdAt: true },
       });
       // ... (rest of the logic remains same, prisma will rollback on any error inside)
       if (initialCredits > 0) {
@@ -71,13 +71,13 @@ export class ResellerService {
 
       return user;
     }).catch(err => {
-      if (err.code === 'P2002') throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      if (err.code === 'P2002') throw new AppError(409, 'Phone already registered', 'PHONE_EXISTS');
       throw err;
     });
   }
 
   static async createVendor(creatorId: string, creatorRole: UserRole, data: {
-    email: string;
+    phone: string;
     username: string;
     name: string;
     password: string;
@@ -89,19 +89,19 @@ export class ResellerService {
     }
 
     const existing = await prisma.user.findFirst({ 
-      where: { OR: [{ email: data.email }, { username: data.username }] } 
+      where: { OR: [{ phone: data.phone }, { username: data.username }] } 
     });
     if (existing) {
-      throw new AppError(409, 'Email or username already registered', 'ALREADY_EXISTS');
+      throw new AppError(409, 'Phone or username already registered', 'ALREADY_EXISTS');
     }
 
     const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
     const initialCredits = data.credits ?? 0;
 
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.user.findUnique({ where: { email: data.email } });
+      const existing = await tx.user.findUnique({ where: { phone: data.phone } });
       if (existing) {
-        throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+        throw new AppError(409, 'Phone already registered', 'PHONE_EXISTS');
       }
 
       // If not admin, check credits inside transaction
@@ -122,7 +122,7 @@ export class ResellerService {
 
       const user = await tx.user.create({
         data: {
-          email: data.email,
+          phone: data.phone,
           username: data.username,
           name: data.name,
           passwordHash,
@@ -130,7 +130,7 @@ export class ResellerService {
           parentId: creatorId,
           credits: initialCredits,
         },
-        select: { id: true, email: true, username: true, name: true, role: true, credits: true, createdAt: true },
+        select: { id: true, phone: true, username: true, name: true, role: true, credits: true, createdAt: true },
       });
 
       if (initialCredits > 0) {
@@ -171,7 +171,7 @@ export class ResellerService {
 
       return user;
     }).catch(err => {
-      if (err.code === 'P2002') throw new AppError(409, 'Email already registered', 'EMAIL_EXISTS');
+      if (err.code === 'P2002') throw new AppError(409, 'Phone already registered', 'PHONE_EXISTS');
       throw err;
     });
   }
@@ -193,7 +193,7 @@ export class ResellerService {
       where,
       select: {
         id: true,
-        email: true,
+        phone: true,
         username: true,
         name: true,
         role: true,
@@ -201,7 +201,7 @@ export class ResellerService {
         isActive: true,
         createdAt: true,
         parentId: true,
-        parent: { select: { id: true, name: true, email: true, username: true } },
+        parent: { select: { id: true, name: true, phone: true, username: true } },
         _count: {
           select: {
             children: true,
@@ -220,7 +220,7 @@ export class ResellerService {
       where: { id: vendorId },
       select: {
         id: true,
-        email: true,
+        phone: true,
         username: true,
         name: true,
         role: true,
@@ -228,7 +228,7 @@ export class ResellerService {
         isActive: true,
         createdAt: true,
         parentId: true,
-        parent: { select: { id: true, name: true, email: true, username: true } },
+        parent: { select: { id: true, name: true, phone: true, username: true } },
         _count: {
           select: { children: true, managedEndUsers: true },
         },
@@ -263,7 +263,7 @@ export class ResellerService {
     return prisma.user.update({
       where: { id: vendorId },
       data: { isActive },
-      select: { id: true, email: true, username: true, name: true, role: true, isActive: true },
+      select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
     });
   }
 
@@ -321,7 +321,7 @@ export class ResellerService {
         if (fromUser.credits < amount) {
           throw new AppError(400, `Insufficient credits. You have ${fromUser.credits}, trying to send ${amount}`, 'INSUFFICIENT_CREDITS');
         }
-        fromUserName = fromUser.name || fromUser.email;
+        fromUserName = fromUser.name || fromUser.phone;
 
         const senderBefore = fromUser.credits;
         const senderAfter = senderBefore - amount;
@@ -338,7 +338,7 @@ export class ResellerService {
             amount: -amount,
             balanceBefore: senderBefore,
             balanceAfter: senderAfter,
-            description: `Credits transferred to "${toUser.name || toUser.email}"`,
+            description: `Credits transferred to "${toUser.name || toUser.phone}"`,
             relatedUserId: toUserId,
             createdById: fromUserId,
           },
@@ -425,7 +425,7 @@ export class ResellerService {
 
     if (!accountId) {
       // Create own end user account for the vendor
-      const username = `v_${vendor.username || vendor.email.split('@')[0]}_${Math.random().toString(36).substring(7)}`;
+      const username = `v_${vendor.username || vendor.phone}_${Math.random().toString(36).substring(7)}`;
       const password = 'password123';
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
@@ -466,7 +466,7 @@ export class ResellerService {
     return prisma.user.update({
       where: { id: vendorId },
       data: { passwordHash },
-      select: { id: true, email: true, username: true, name: true, role: true },
+      select: { id: true, phone: true, username: true, name: true, role: true },
     });
   }
 }

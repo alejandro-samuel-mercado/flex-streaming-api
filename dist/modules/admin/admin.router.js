@@ -44,6 +44,7 @@ const prisma_1 = require("../../shared/config/prisma");
 const queue_service_1 = require("../../services/queue.service");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const zod_1 = require("zod");
+const reseller_service_1 = require("../reseller/reseller.service");
 exports.adminRouter = (0, express_1.Router)();
 // All admin routes require ADMIN role
 exports.adminRouter.use(auth_middleware_1.authenticate);
@@ -72,16 +73,34 @@ exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
             prisma_1.prisma.videoFile.findMany({
                 orderBy: { updatedAt: 'desc' },
                 take: 5,
-                select: { id: true, type: true, status: true, updatedAt: true, content: { select: { translations: { select: { title: true }, take: 1 } } } }
+                select: {
+                    id: true,
+                    type: true,
+                    status: true,
+                    updatedAt: true,
+                    content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } },
+                    episode: { include: { season: { include: { content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } } } } } }
+                }
             })
         ]);
         // Map recentActivity into a generic notification / activity shape
-        const activityLogs = recentActivity.map(v => ({
-            name: v.content?.translations?.[0]?.title ? `${v.content.translations[0].title} (${v.type})` : `Archivo de video`,
-            status: v.status,
-            time: v.updatedAt.toISOString(),
-            type: 'VIDEO_PROCESSING'
-        }));
+        const activityLogs = recentActivity.map(v => {
+            let name = 'Archivo de video';
+            const content = v.content || v.episode?.season?.content;
+            if (content) {
+                const title = content.translations?.[0]?.title || content.slug;
+                name = `${title} (${v.type})`;
+                if (v.episode) {
+                    name = `${title} - T${v.episode.season.number}E${v.episode.number}`;
+                }
+            }
+            return {
+                name,
+                status: v.status,
+                time: v.updatedAt.toISOString(),
+                type: 'VIDEO_PROCESSING'
+            };
+        });
         (0, api_response_1.ok)(res, {
             kpis: {
                 totalUsers,
@@ -113,22 +132,24 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
         const search = req.query.search;
         const where = { deletedAt: null };
         if (role === 'END_USER') {
+            const adminId = req.user.id;
+            const endUserWhere = { managedById: adminId, deletedAt: null };
+            if (search)
+                endUserWhere.username = { contains: search, mode: 'insensitive' };
             const [users, total] = await Promise.all([
                 prisma_1.prisma.endUserAccount.findMany({
-                    where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
+                    where: endUserWhere,
                     skip: (page - 1) * limit,
                     take: limit,
                     orderBy: { createdAt: 'desc' },
                     include: {
                         plan: true,
-                        managedBy: { select: { id: true, name: true, email: true } },
+                        managedBy: { select: { id: true, name: true, phone: true } },
                         _count: { select: { connectedDevices: true } },
                         connectedDevices: true,
                     },
                 }),
-                prisma_1.prisma.endUserAccount.count({
-                    where: search ? { username: { contains: search, mode: 'insensitive' } } : {},
-                }),
+                prisma_1.prisma.endUserAccount.count({ where: endUserWhere }),
             ]);
             return (0, api_response_1.ok)(res, { users, total, page, limit });
         }
@@ -141,7 +162,7 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
         if (search) {
             where.OR = [
                 { name: { contains: search, mode: 'insensitive' } },
-                { email: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
             ];
         }
         const [users, total] = await Promise.all([
@@ -151,7 +172,7 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
                 take: limit,
                 orderBy: { createdAt: 'desc' },
                 select: {
-                    id: true, email: true, name: true, role: true, isActive: true, createdAt: true, credits: true,
+                    id: true, phone: true, username: true, name: true, role: true, isActive: true, createdAt: true, credits: true,
                     _count: { select: { profiles: true, memberships: true, children: true, managedEndUsers: true } },
                 },
             }),
@@ -167,19 +188,20 @@ exports.adminRouter.post('/users', (async (req, res, next) => {
     try {
         const schema = zod_1.z.object({
             name: zod_1.z.string().min(2),
-            email: zod_1.z.string().email(),
+            username: zod_1.z.string().min(3).max(50),
+            phone: zod_1.z.string().min(8),
             password: zod_1.z.string().min(6),
             role: zod_1.z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']),
         });
-        const { name, email, password, role } = schema.parse(req.body);
-        const existing = await prisma_1.prisma.user.findUnique({ where: { email } });
+        const { name, username, phone, password, role } = schema.parse(req.body);
+        const existing = await prisma_1.prisma.user.findUnique({ where: { phone } });
         if (existing) {
             return res.status(409).json({ success: false, error: 'Email already registered' });
         }
         const passwordHash = await bcrypt_1.default.hash(password, 12);
         const user = await prisma_1.prisma.user.create({
-            data: { name, email, passwordHash, role },
-            select: { id: true, email: true, name: true, role: true, isActive: true },
+            data: { name, username, phone, passwordHash, role },
+            select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
         });
         return (0, api_response_1.ok)(res, user);
     }
@@ -191,17 +213,20 @@ exports.adminRouter.put('/users/:id', (async (req, res, next) => {
     try {
         const schema = zod_1.z.object({
             name: zod_1.z.string().min(2).optional(),
-            email: zod_1.z.string().email().optional(),
+            username: zod_1.z.string().min(3).max(50).optional(),
+            phone: zod_1.z.string().min(8).optional(),
             password: zod_1.z.string().min(6).optional(),
             role: zod_1.z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']).optional(),
             isActive: zod_1.z.boolean().optional(),
         });
-        const { name, email, password, role, isActive } = schema.parse(req.body);
+        const { name, username, phone, password, role, isActive } = schema.parse(req.body);
         const data = {};
         if (name)
             data.name = name;
-        if (email)
-            data.email = email;
+        if (username)
+            data.username = username;
+        if (phone)
+            data.phone = phone;
         if (role)
             data.role = role;
         if (isActive !== undefined)
@@ -212,7 +237,7 @@ exports.adminRouter.put('/users/:id', (async (req, res, next) => {
         const user = await prisma_1.prisma.user.update({
             where: { id: req.params.id },
             data,
-            select: { id: true, email: true, name: true, role: true, isActive: true },
+            select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
         });
         return (0, api_response_1.ok)(res, user);
     }
@@ -227,7 +252,16 @@ exports.adminRouter.delete('/users/:id', (async (req, res, next) => {
         if (id === req.user?.id) {
             return res.status(400).json({ success: false, error: 'No puedes eliminar tu propia cuenta' });
         }
-        await prisma_1.prisma.user.delete({ where: { id } });
+        const userToDelete = await prisma_1.prisma.user.findUnique({ where: { id } });
+        if (!userToDelete) {
+            return res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        }
+        if (userToDelete.role === 'ADMIN') {
+            await prisma_1.prisma.user.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } });
+        }
+        else {
+            await reseller_service_1.ResellerService.deleteVendor(id, req.user.id, req.user.role);
+        }
         return (0, api_response_1.ok)(res, { success: true });
     }
     catch (err) {
@@ -265,30 +299,105 @@ exports.adminRouter.put('/settings', (async (req, res, next) => {
 // ─── Video Processing Status ─────────────────────────────────────────────────
 exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
     try {
-        const videos = await prisma_1.prisma.videoFile.findMany({
-            orderBy: { createdAt: 'desc' },
-            take: 50,
-            include: {
-                content: { select: { id: true, slug: true } },
-                qualities: { select: { resolution: true } },
-            },
-        });
+        // ─── Fetch All Active/Pending (No limit) + History (50 last) ───
+        const [activeVideos, historyVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
+            prisma_1.prisma.videoFile.findMany({
+                where: { status: { in: ['PROCESSING', 'PENDING', 'QUEUED'] } },
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+                    episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+                    qualities: { select: { resolution: true } },
+                },
+            }),
+            prisma_1.prisma.videoFile.findMany({
+                where: { status: { in: ['COMPLETED', 'FAILED'] } },
+                orderBy: { updatedAt: 'desc' },
+                take: 100,
+                include: {
+                    content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+                    episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+                    qualities: { select: { resolution: true } },
+                },
+            }),
+            prisma_1.prisma.videoFile.count({ where: { status: 'COMPLETED' } }),
+            prisma_1.prisma.videoFile.count({ where: { status: 'FAILED' } }),
+            prisma_1.prisma.videoFile.count({ where: { status: 'PROCESSING' } }),
+            prisma_1.prisma.videoFile.count({ where: { status: { in: ['PENDING', 'QUEUED'] } } })
+        ]);
+        const videos = [...activeVideos, ...historyVideos];
+        const stats = {
+            totalCompleted,
+            totalFailed,
+            totalProcessing,
+            totalQueued
+        };
         // ─── Fetch real-time progress from BullMQ for active jobs ───
         const videosWithProgress = await Promise.all(videos.map(async (v) => {
+            const resVideo = { ...v };
+            if (!resVideo.content && resVideo.episode?.season?.content) {
+                resVideo.content = resVideo.episode.season.content;
+            }
             if (v.status === 'PROCESSING' && v.processingJobId) {
                 try {
                     const job = await queue_service_1.videoQueue.getJob(v.processingJobId);
                     if (job) {
-                        return { ...v, progress: job.progress };
+                        return { ...resVideo, progress: job.progress };
                     }
                 }
                 catch (e) {
                     console.warn(`[AdminRouter] Could not fetch progress for job ${v.processingJobId}`);
                 }
             }
-            return v;
+            return resVideo;
         }));
-        (0, api_response_1.ok)(res, videosWithProgress);
+        (0, api_response_1.ok)(res, { videos: videosWithProgress, stats });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// --- Retry failed or stuck pending jobs ---
+exports.adminRouter.post('/videos/retry-failed', (async (_req, res, next) => {
+    try {
+        const toRetry = await prisma_1.prisma.videoFile.findMany({
+            where: {
+                status: { in: ['FAILED', 'PENDING'] }
+            }
+        });
+        let count = 0;
+        for (const v of toRetry) {
+            // Check if file exists before enqueuing
+            const fs = await Promise.resolve().then(() => __importStar(require('fs')));
+            if (fs.existsSync(v.originalPath)) {
+                const job = await (0, queue_service_1.addVideoJob)({
+                    videoFileId: v.id,
+                    contentId: v.contentId || '',
+                    type: v.type,
+                    episodeId: v.episodeId || undefined,
+                    videoPath: v.originalPath,
+                });
+                await prisma_1.prisma.videoFile.update({
+                    where: { id: v.id },
+                    data: {
+                        status: 'QUEUED',
+                        errorMessage: null,
+                        processingJobId: job.id
+                    }
+                });
+                count++;
+            }
+            else {
+                await prisma_1.prisma.videoFile.update({
+                    where: { id: v.id },
+                    data: {
+                        status: 'FAILED',
+                        errorMessage: 'Archivo original no encontrado en el disco.'
+                    }
+                });
+            }
+        }
+        (0, api_response_1.ok)(res, { message: `Reenviados ${count} videos a la cola de procesamiento.` });
     }
     catch (err) {
         next(err);

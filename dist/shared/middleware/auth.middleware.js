@@ -20,7 +20,7 @@ function authenticate(req, _res, next) {
     }
     try {
         const payload = jsonwebtoken_1.default.verify(token, env_1.env.JWT_ACCESS_SECRET);
-        req.user = { id: payload.sub, email: payload.email, role: payload.role };
+        req.user = { id: payload.sub, phone: payload.phone, role: payload.role };
         next();
     }
     catch {
@@ -49,7 +49,7 @@ function optionalAuth(req, _res, next) {
     }
     try {
         const payload = jsonwebtoken_1.default.verify(token, env_1.env.JWT_ACCESS_SECRET);
-        req.user = { id: payload.sub, email: payload.email, role: payload.role };
+        req.user = { id: payload.sub, phone: payload.phone, role: payload.role };
     }
     catch {
         // token inválido — continúa como invitado

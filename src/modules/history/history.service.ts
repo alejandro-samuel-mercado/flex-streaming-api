@@ -108,7 +108,7 @@ export class HistoryService {
             select: {
               id: true,
               name: true,
-              user: { select: { email: true, name: true, role: true } }
+              user: { select: { phone: true, name: true, role: true } }
             }
           },
           content: {

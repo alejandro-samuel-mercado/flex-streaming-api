@@ -123,7 +123,7 @@ async function main() {
     const passwordHash = await bcrypt.hash('123456', 12);
 
     const admin = await prisma.user.upsert({
-        where: { email: 'admin@peliplus.com' },
+        where: { phone: '1111111111' },
         update: {
             passwordHash,
             role: 'ADMIN',
@@ -131,7 +131,7 @@ async function main() {
             credits: 0
         },
         create: {
-            email: 'admin@peliplus.com',
+            phone: '1111111111',
             name: 'Admin',
             passwordHash,
             role: 'ADMIN',
@@ -141,7 +141,7 @@ async function main() {
     });
 
     const superVendor = await prisma.user.upsert({
-        where: { email: 'super@peliplus.com' },
+        where: { phone: '2222222222' },
         update: {
             passwordHash,
             role: 'SUPER_VENDOR',
@@ -150,7 +150,7 @@ async function main() {
             parentId: admin.id
         },
         create: {
-            email: 'super@peliplus.com',
+            phone: '2222222222',
             name: 'Super Vendedor',
             passwordHash,
             role: 'SUPER_VENDOR',
@@ -161,7 +161,7 @@ async function main() {
     });
 
     await prisma.user.upsert({
-        where: { email: 'vendor@peliplus.com' },
+        where: { phone: '3333333333' },
         update: {
             passwordHash,
             role: 'VENDOR',
@@ -170,7 +170,7 @@ async function main() {
             parentId: superVendor.id
         },
         create: {
-            email: 'vendor@peliplus.com',
+            phone: '3333333333',
             name: 'Vendedor',
             passwordHash,
             role: 'VENDOR',
@@ -180,7 +180,7 @@ async function main() {
         }
     });
 
-    console.log('Database seeded successfully! Use admin@peliplus.com / 123456 to login.');
+    console.log('Database seeded successfully! Use 1111111111 / 123456 to login.');
 }
 
 main()

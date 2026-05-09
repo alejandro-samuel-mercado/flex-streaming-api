@@ -9,13 +9,13 @@ exports.streamingRouter = (0, express_1.Router)();
 // ─── Request streaming access (signed URL) ───────────────────────────────────
 exports.streamingRouter.post('/request-access', auth_middleware_1.authenticate, (async (req, res, next) => {
     try {
-        const { contentId, episodeId: _episodeId } = req.body;
+        const { contentId, episodeId } = req.body;
         if (!contentId) {
             res.status(400).json({ success: false, error: 'contentId is required' });
             return;
         }
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-        const access = await streaming_service_1.StreamingService.requestAccess(req.user.id, contentId, ip);
+        const access = await streaming_service_1.StreamingService.requestAccess(req.user.id, contentId, ip, episodeId);
         (0, api_response_1.ok)(res, access);
     }
     catch (err) {
@@ -23,7 +23,7 @@ exports.streamingRouter.post('/request-access', auth_middleware_1.authenticate, 
     }
 }));
 // ─── Serve HLS segments (token-validated) ────────────────────────────────────
-exports.streamingRouter.get('/hls/:videoFileId/*', ((req, res, next) => {
+exports.streamingRouter.get('/hls/:videoFileId/*', (async (req, res, next) => {
     try {
         const token = req.query.token;
         if (!token) {
@@ -33,7 +33,7 @@ exports.streamingRouter.get('/hls/:videoFileId/*', ((req, res, next) => {
         const videoFileId = req.params.videoFileId;
         const filePath = req.params[0]; // Everything after videoFileId/
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-        const result = streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip);
+        const result = await streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip);
         if (result.stream) {
             res.writeHead(result.status, result.headers);
             result.stream.pipe(res);

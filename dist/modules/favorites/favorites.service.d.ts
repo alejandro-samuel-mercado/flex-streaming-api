@@ -2,6 +2,7 @@ export declare class FavoritesService {
     static toggleFavorite(profileId: string, contentId: string): Promise<{
         favorited: boolean;
     }>;
+    static checkFavorite(profileId: string, contentId: string): Promise<boolean>;
     static getProfileFavorites(profileId: string, page?: number, limit?: number): Promise<{
         total: number;
         pages: number;
@@ -12,9 +13,9 @@ export declare class FavoritesService {
             releaseYear: number | null;
             rating: number | null;
             translations: {
+                description: string;
                 language: string;
                 title: string;
-                description: string;
             }[];
             thumbnails: {
                 type: import(".prisma/client").$Enums.ThumbnailType;

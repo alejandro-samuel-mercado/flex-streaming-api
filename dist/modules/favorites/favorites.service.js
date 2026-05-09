@@ -27,6 +27,12 @@ class FavoritesService {
             return { favorited: true };
         }
     }
+    static async checkFavorite(profileId, contentId) {
+        const favorite = await prisma_1.prisma.favorite.findUnique({
+            where: { profileId_contentId: { profileId, contentId } },
+        });
+        return !!favorite;
+    }
     static async getProfileFavorites(profileId, page = 1, limit = 20) {
         const skip = (page - 1) * limit;
         const [total, favorites] = await Promise.all([

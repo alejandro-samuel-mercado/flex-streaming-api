@@ -58,6 +58,7 @@ export declare class HistoryService {
             type: import(".prisma/client").$Enums.ContentType;
             id: string;
             slug: string;
+            tmdbId: string | null;
             duration: number | null;
             translations: {
                 language: string;
@@ -90,7 +91,7 @@ export declare class HistoryService {
         data: ({
             profile: {
                 user: {
-                    email: string;
+                    phone: string;
                     role: import(".prisma/client").$Enums.UserRole;
                     name: string | null;
                 };

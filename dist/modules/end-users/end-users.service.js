@@ -15,9 +15,9 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const prisma_1 = require("../../shared/config/prisma");
 const error_handler_1 = require("../../shared/middleware/error-handler");
 const BCRYPT_ROUNDS = 12;
-async function canAccessAccount(managedById, userId, userRole, isWrite = false) {
+async function canAccessAccount(managedById, userId, userRole, _isWrite = false) {
     if (userRole === 'ADMIN') {
-        return !isWrite; // Admin can read but not write
+        return true; // Admin has full access (read + write)
     }
     if (managedById === userId)
         return true;
@@ -38,14 +38,25 @@ class EndUsersService {
         const where = {
             deletedAt: null,
         };
-        if (userRole === 'SUPER_VENDOR') {
-            // SUPER_VENDOR sees accounts managed by themselves and their child vendors
+        if (userRole === 'ADMIN') {
+            // Admin only sees accounts they directly created
+            where.managedById = userId;
+        }
+        else if (userRole === 'SUPER_VENDOR') {
             const childVendorIds = await prisma_1.prisma.user.findMany({
                 where: { parentId: userId, role: 'VENDOR', deletedAt: null },
                 select: { id: true },
             });
-            const managerIds = [userId, ...childVendorIds.map(v => v.id)];
-            where.managedById = { in: managerIds };
+            const childIds = childVendorIds.map(v => v.id);
+            if (query.managedByMeOnly) {
+                where.managedById = userId;
+            }
+            else if (query.managedByOthersOnly) {
+                where.managedById = { in: childIds };
+            }
+            else {
+                where.managedById = { in: [userId, ...childIds] };
+            }
         }
         else if (userRole === 'VENDOR') {
             where.managedById = userId;
@@ -58,6 +69,15 @@ class EndUsersService {
         }
         if (query.type) {
             where.type = query.type;
+        }
+        if (query.expiringInDays !== undefined) {
+            const now = new Date();
+            const futureDate = new Date(now.getTime() + query.expiringInDays * 24 * 60 * 60 * 1000);
+            where.endDate = {
+                gte: now,
+                lte: futureDate,
+            };
+            where.status = 'ACTIVE';
         }
         const [accounts, total] = await Promise.all([
             prisma_1.prisma.endUserAccount.findMany({
@@ -72,7 +92,7 @@ class EndUsersService {
                     endDate: true,
                     maxDevices: true,
                     createdAt: true,
-                    managedBy: { select: { id: true, name: true, email: true } },
+                    managedBy: { select: { id: true, name: true, phone: true, username: true, role: true, parent: { select: { name: true, username: true } } } },
                     plan: { select: { id: true, name: true, durationDays: true } },
                     _count: { select: { connectedDevices: { where: { isActive: true } } } },
                 },
@@ -94,7 +114,7 @@ class EndUsersService {
             totalPages: Math.ceil(total / limit),
         };
     }
-    static async create(managedById, data) {
+    static async create(managedById, userRole, data) {
         const existing = await prisma_1.prisma.endUserAccount.findUnique({
             where: { username: data.username },
         });
@@ -102,7 +122,90 @@ class EndUsersService {
             throw new error_handler_1.AppError(409, 'Username already exists', 'USERNAME_EXISTS');
         }
         const passwordHash = await bcrypt_1.default.hash(data.password, BCRYPT_ROUNDS);
-        return prisma_1.prisma.endUserAccount.create({
+        // If a planId is provided, create account + apply plan atomically
+        if (data.planId) {
+            const plan = await prisma_1.prisma.subscriptionPlan.findUnique({ where: { id: data.planId } });
+            if (!plan || !plan.isActive) {
+                throw new error_handler_1.AppError(404, 'Plan not found or inactive', 'PLAN_NOT_FOUND');
+            }
+            // Restricción: No se puede asignar demo si ya tiene contenido activo o ya es una demo
+            if (plan.isDemo) {
+                // En creación de cuenta, el 'existing' ya se comprobó arriba (username exists), 
+                // así que aquí siempre es una cuenta nueva, por lo que la demo es válida.
+            }
+            const creditsCost = plan.isDemo ? 0 : plan.creditCost;
+            // Check credits for non-admin users
+            if (creditsCost > 0 && userRole !== 'ADMIN') {
+                const caller = await prisma_1.prisma.user.findUnique({ where: { id: managedById } });
+                if (!caller || caller.credits < creditsCost) {
+                    throw new error_handler_1.AppError(400, `Insufficient credits. You have ${caller?.credits ?? 0}, need ${creditsCost}`, 'INSUFFICIENT_CREDITS');
+                }
+            }
+            return prisma_1.prisma.$transaction(async (tx) => {
+                // Create the account
+                const account = await tx.endUserAccount.create({
+                    data: {
+                        username: data.username,
+                        password: data.password,
+                        passwordHash,
+                        managedById,
+                        country: data.country,
+                        notes: data.notes,
+                        planId: plan.id,
+                        type: plan.isDemo ? 'DEMO' : 'FORMAL',
+                        status: plan.isDemo ? 'DEMO' : 'INACTIVE',
+                        startDate: plan.isDemo ? new Date() : null,
+                        endDate: plan.isDemo ? new Date(Date.now() + (plan.demoHours ?? 24) * 60 * 60 * 1000) : null,
+                        maxDevices: plan.maxDevices,
+                    },
+                });
+                // Deduct credits for non-admin
+                if (creditsCost > 0 && userRole !== 'ADMIN') {
+                    const caller = await tx.user.findUnique({ where: { id: managedById } });
+                    const callerBefore = caller.credits;
+                    const callerAfter = callerBefore - creditsCost;
+                    await tx.user.update({
+                        where: { id: managedById },
+                        data: { credits: callerAfter },
+                    });
+                    await tx.creditTransaction.create({
+                        data: {
+                            userId: managedById,
+                            type: 'PLAN_ACTIVATION',
+                            amount: -creditsCost,
+                            balanceBefore: callerBefore,
+                            balanceAfter: callerAfter,
+                            description: `Plan "${plan.name}" applied to new account "${data.username}"`,
+                            relatedUserId: account.id,
+                            planId: plan.id,
+                            createdById: managedById,
+                        },
+                    });
+                }
+                // Record plan history
+                await tx.endUserPlanHistory.create({
+                    data: {
+                        endUserAccountId: account.id,
+                        planId: plan.id,
+                        daysAdded: plan.isDemo ? 0 : plan.durationDays + (plan.bonusDays ?? 0),
+                        creditsCost,
+                        appliedById: managedById,
+                    },
+                });
+                return {
+                    id: account.id,
+                    username: account.username,
+                    password: account.password,
+                    status: account.status,
+                    type: account.type,
+                    planName: plan.name,
+                    creditsCost,
+                    createdAt: account.createdAt,
+                };
+            });
+        }
+        // No plan: simple creation
+        const account = await prisma_1.prisma.endUserAccount.create({
             data: {
                 username: data.username,
                 password: data.password,
@@ -120,12 +223,13 @@ class EndUsersService {
                 createdAt: true,
             },
         });
+        return account;
     }
     static async getById(accountId, userId, userRole) {
         const account = await prisma_1.prisma.endUserAccount.findUnique({
             where: { id: accountId },
             include: {
-                managedBy: { select: { id: true, name: true, email: true } },
+                managedBy: { select: { id: true, name: true, phone: true, username: true, role: true, parent: { select: { name: true, username: true } } } },
                 plan: true,
                 connectedDevices: { where: { isActive: true } },
             },
@@ -150,6 +254,8 @@ class EndUsersService {
             throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');
         }
         const passwordHash = await bcrypt_1.default.hash(newPassword, BCRYPT_ROUNDS);
+        // Security: Disconnect devices and revoke tokens when password changes
+        await this.revokeAccess(accountId, account.userId);
         return prisma_1.prisma.endUserAccount.update({
             where: { id: accountId },
             data: { password: newPassword, passwordHash },
@@ -170,15 +276,8 @@ class EndUsersService {
         if (account.status === 'ACTIVE' && userRole === 'ADMIN' && !forceDelete) {
             throw new error_handler_1.AppError(400, 'Account is active. Set forceDelete=true to confirm.', 'CONFIRM_FORCE_DELETE');
         }
-        await prisma_1.prisma.deviceSession.updateMany({
-            where: { endUserAccountId: accountId },
-            data: { isActive: false },
-        });
-        if (account.userId) {
-            await prisma_1.prisma.refreshToken.deleteMany({
-                where: { userId: account.userId },
-            });
-        }
+        // Security: Ensure we disconnect devices and revoke all tokens
+        await this.revokeAccess(accountId, account.userId);
         return prisma_1.prisma.endUserAccount.update({
             where: { id: accountId },
             data: { deletedAt: new Date(), status: 'INACTIVE' },
@@ -203,6 +302,14 @@ class EndUsersService {
         let newStartDate = account.startDate;
         let creditsCost = 0;
         if (plan.isDemo) {
+            // 1. Si ya tiene una demo activa
+            if (account.type === 'DEMO' && account.status === 'DEMO' && account.endDate && account.endDate > now) {
+                throw new error_handler_1.AppError(400, 'El usuario ya tiene una demo activa.', 'DEMO_ALREADY_ACTIVE');
+            }
+            // 2. Si tiene un plan formal activo
+            if (account.type === 'FORMAL' && account.endDate && account.endDate > now) {
+                throw new error_handler_1.AppError(400, 'No se puede asignar una demo a un usuario con un plan activo.', 'FORMAL_PLAN_ACTIVE');
+            }
             const hoursMs = (plan.demoHours ?? 24) * 60 * 60 * 1000;
             newEndDate = new Date(now.getTime() + hoursMs);
             newType = 'DEMO';
@@ -220,7 +327,8 @@ class EndUsersService {
             }
             const currentEndDate = account.endDate;
             const base = currentEndDate && currentEndDate > now ? currentEndDate : now;
-            newEndDate = new Date(base.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+            const totalDays = plan.durationDays + (plan.bonusDays ?? 0);
+            newEndDate = new Date(base.getTime() + totalDays * 24 * 60 * 60 * 1000);
             newType = 'FORMAL';
             if (account.status === 'INACTIVE') {
                 // Newly created account: do not activate yet. Lifetime begins on first login.
@@ -296,6 +404,8 @@ class EndUsersService {
         let newStatus;
         if (account.status === 'ACTIVE') {
             newStatus = 'PAUSED';
+            // Security: Kick the user out when pausing
+            await this.revokeAccess(accountId, account.userId);
         }
         else if (account.status === 'PAUSED') {
             newStatus = 'ACTIVE';
@@ -374,6 +484,36 @@ class EndUsersService {
             },
             orderBy: { appliedAt: 'desc' },
         });
+    }
+    /**
+     * Revokes all active sessions for an account (PostgreSQL + Redis).
+     * Also disconnects all active devices.
+     */
+    static async revokeAccess(accountId, userId) {
+        const REFRESH_TOKEN_PREFIX = 'refresh:';
+        // 1. Disconnect all active devices
+        await prisma_1.prisma.deviceSession.updateMany({
+            where: { endUserAccountId: accountId, isActive: true },
+            data: { isActive: false },
+        });
+        // 2. Revoke tokens for the linked real user (if any)
+        if (userId) {
+            const tokens = await prisma_1.prisma.refreshToken.findMany({ where: { userId }, select: { token: true } });
+            for (const t of tokens) {
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { redis } = require('../../shared/config/redis');
+                await redis.del(`${REFRESH_TOKEN_PREFIX}${t.token}`);
+            }
+            await prisma_1.prisma.refreshToken.deleteMany({ where: { userId } });
+        }
+        // 3. Revoke tokens for virtual user accounts (reseller clients)
+        const virtualTokens = await prisma_1.prisma.refreshToken.findMany({ where: { endUserAccountId: accountId }, select: { token: true } });
+        for (const t of virtualTokens) {
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            const { redis } = require('../../shared/config/redis');
+            await redis.del(`${REFRESH_TOKEN_PREFIX}${t.token}`);
+        }
+        await prisma_1.prisma.refreshToken.deleteMany({ where: { endUserAccountId: accountId } });
     }
 }
 exports.EndUsersService = EndUsersService;

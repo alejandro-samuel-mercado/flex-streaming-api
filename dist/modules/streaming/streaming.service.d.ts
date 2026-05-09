@@ -4,7 +4,7 @@ export declare class StreamingService {
      * Generates a signed streaming token for a content item.
      * Uses HMAC signed URLs instead of JWT for better security.
      */
-    static requestAccess(_userId: string, contentId: string, ip: string): Promise<{
+    static requestAccess(_userId: string, contentId: string, ip: string, episodeId?: string): Promise<{
         token: string;
         expiresIn: number;
         videoFileId: string;
@@ -31,11 +31,11 @@ export declare class StreamingService {
     /**
      * Serve HLS segments with token validation.
      */
-    static serveSegment(videoFileId: string, filePath: string, token: string, ip: string): {
+    static serveSegment(videoFileId: string, filePath: string, token: string, ip: string): Promise<{
         status: number;
         headers: Record<string, string>;
         stream: fs.ReadStream | null;
-    };
+    }>;
     /**
      * Byte-range streaming for direct video files (fallback / dev mode).
      */

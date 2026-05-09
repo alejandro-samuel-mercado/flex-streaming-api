@@ -1,33 +1,42 @@
 import { z } from 'zod';
 export declare const registerSchema: z.ZodObject<{
     name: z.ZodString;
-    email: z.ZodString;
+    phone: z.ZodString;
     password: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    email: string;
+    phone: string;
     name: string;
     password: string;
 }, {
-    email: string;
+    phone: string;
     name: string;
     password: string;
 }>;
 export declare const loginSchema: z.ZodObject<{
     username: z.ZodString;
     password: z.ZodString;
+    deviceId: z.ZodOptional<z.ZodString>;
+    deviceName: z.ZodOptional<z.ZodString>;
+    deviceType: z.ZodOptional<z.ZodEnum<["TV", "MOBILE", "WEB"]>>;
 }, "strip", z.ZodTypeAny, {
     password: string;
     username: string;
+    deviceId?: string | undefined;
+    deviceName?: string | undefined;
+    deviceType?: "TV" | "MOBILE" | "WEB" | undefined;
 }, {
     password: string;
     username: string;
+    deviceId?: string | undefined;
+    deviceName?: string | undefined;
+    deviceType?: "TV" | "MOBILE" | "WEB" | undefined;
 }>;
 export declare const forgotPasswordSchema: z.ZodObject<{
-    email: z.ZodString;
+    phone: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    email: string;
+    phone: string;
 }, {
-    email: string;
+    phone: string;
 }>;
 export declare const resetPasswordSchema: z.ZodObject<{
     token: z.ZodString;

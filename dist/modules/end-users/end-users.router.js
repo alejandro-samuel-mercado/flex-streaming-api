@@ -20,6 +20,7 @@ const CreateEndUserSchema = zod_1.z.object({
     password: zod_1.z.string().min(4).max(50),
     country: zod_1.z.string().optional(),
     notes: zod_1.z.string().optional(),
+    planId: zod_1.z.string().optional(),
 });
 const ChangePasswordSchema = zod_1.z.object({
     password: zod_1.z.string().min(4).max(50),
@@ -37,6 +38,9 @@ exports.endUsersRouter.get('/', auth, vendorPlus, (async (req, res, next) => {
             search: req.query.search,
             status: req.query.status,
             type: req.query.type,
+            expiringInDays: req.query.expiringInDays ? parseInt(req.query.expiringInDays) : undefined,
+            managedByMeOnly: req.query.managedByMeOnly === 'true',
+            managedByOthersOnly: req.query.managedByOthersOnly === 'true',
         });
         (0, api_response_1.ok)(res, result);
     }
@@ -44,12 +48,12 @@ exports.endUsersRouter.get('/', auth, vendorPlus, (async (req, res, next) => {
         next(err);
     }
 }));
-// POST /api/end-users — Create end user account
+// POST /api/end-users — Create end user account (optionally with plan)
 exports.endUsersRouter.post('/', auth, vendorPlus, (async (req, res, next) => {
     try {
         const authReq = req;
         const data = CreateEndUserSchema.parse(req.body);
-        const account = await end_users_service_1.EndUsersService.create(authReq.user.id, data);
+        const account = await end_users_service_1.EndUsersService.create(authReq.user.id, authReq.user.role, data);
         (0, api_response_1.created)(res, account);
     }
     catch (err) {

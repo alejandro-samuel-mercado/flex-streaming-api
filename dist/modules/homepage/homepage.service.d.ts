@@ -31,9 +31,9 @@ export declare class HomepageService {
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
+                description: string;
                 language: string;
                 title: string;
-                description: string;
                 tagline: string | null;
             }[];
             genres: ({
@@ -82,9 +82,9 @@ export declare class HomepageService {
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
+                description: string;
                 language: string;
                 title: string;
-                description: string;
                 tagline: string | null;
             }[];
             genres: ({
@@ -133,9 +133,9 @@ export declare class HomepageService {
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
+                description: string;
                 language: string;
                 title: string;
-                description: string;
                 tagline: string | null;
             }[];
             genres: ({
