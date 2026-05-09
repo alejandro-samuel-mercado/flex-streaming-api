@@ -174,7 +174,7 @@ adminRouter.post('/users', (async (req: AuthenticatedRequest, res: Response, nex
         const schema = z.object({
             name: z.string().min(2),
             username: z.string().min(3).max(50),
-            phone: z.string().min(8),
+            phone: z.string(),
             password: z.string().min(6),
             role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']),
         });
@@ -204,7 +204,7 @@ adminRouter.put('/users/:id', (async (req: AuthenticatedRequest, res: Response, 
         const schema = z.object({
             name: z.string().min(2).optional(),
             username: z.string().min(3).max(50).optional(),
-            phone: z.string().min(8).optional(),
+            phone: z.string().optional(),
             password: z.string().min(6).optional(),
             role: z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']).optional(),
             isActive: z.boolean().optional(),

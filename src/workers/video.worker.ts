@@ -263,6 +263,9 @@ export const videoWorker = new Worker(
   {
     connection,
     concurrency: env.MAX_CONCURRENT_ENCODING,
+    lockDuration: 5 * 60 * 1000,      // 5 minutes — FFmpeg jobs are long-running
+    stalledInterval: 60 * 1000,        // Check for stalled jobs every 60s (default is 30s)
+    maxStalledCount: 3,                // Allow up to 3 stall checks before marking as failed
   }
 );
 

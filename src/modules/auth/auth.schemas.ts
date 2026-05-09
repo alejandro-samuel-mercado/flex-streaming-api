@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const registerSchema = z.object({
   name: z.string().min(2).max(100),
-  phone: z.string().min(8),
+  phone: z.string(),
   password: z.string().min(8).max(72),
 });
 
@@ -15,7 +15,7 @@ export const loginSchema = z.object({
 });
 
 export const forgotPasswordSchema = z.object({
-  phone: z.string().min(8),
+  phone: z.string(),
 });
 
 export const resetPasswordSchema = z.object({

@@ -98,13 +98,13 @@ export class MediaScannerService {
 
     if (moviePath && fs.existsSync(moviePath)) {
       const movieFiles: ScannedFile[] = [];
-      this._scanMoviesRecursive(moviePath, movieFiles, importedPaths, 0, 2);
+      await this._scanMoviesRecursive(moviePath, movieFiles, importedPaths, 0, 2);
       allFiles.push(...movieFiles);
     }
 
     if (seriesPath && fs.existsSync(seriesPath)) {
       const seriesFiles: ScannedFile[] = [];
-      this._scanSeriesRecursive(seriesPath, seriesFiles, importedPaths, '', 0, 6);
+      await this._scanSeriesRecursive(seriesPath, seriesFiles, importedPaths, '', 0, 6);
       allFiles.push(...seriesFiles);
     }
 
@@ -123,9 +123,9 @@ export class MediaScannerService {
 
     const files: ScannedFile[] = [];
     if (contentType === 'SERIES') {
-      this._scanSeriesRecursive(dirPath, files, importedPaths, '', 0, 6);
+      await this._scanSeriesRecursive(dirPath, files, importedPaths, '', 0, 6);
     } else {
-      this._scanMoviesRecursive(dirPath, files, importedPaths, 0, maxDepth);
+      await this._scanMoviesRecursive(dirPath, files, importedPaths, 0, maxDepth);
     }
     files.sort((a, b) => a.fileName.localeCompare(b.fileName));
     return files;
@@ -133,24 +133,28 @@ export class MediaScannerService {
 
   // ── Private scanners ──────────────────────────────────────────────────────
 
-  private static _scanMoviesRecursive(
+  private static async _scanMoviesRecursive(
     dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
     currentDepth: number, maxDepth: number
-  ): void {
+  ): Promise<void> {
     if (currentDepth > maxDepth) return;
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
+    try { entries = await fs.promises.readdir(dirPath, { withFileTypes: true }); }
     catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return; }
 
+    let count = 0;
     for (const entry of entries) {
+      // Yield event loop every 50 files to prevent blocking BullMQ locks
+      if (++count % 50 === 0) await new Promise(resolve => setImmediate(resolve));
+
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
-        this._scanMoviesRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
+        await this._scanMoviesRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
         if (VIDEO_EXTENSIONS.has(ext)) {
           try {
-            const stat = fs.statSync(fullPath);
+            const stat = await fs.promises.stat(fullPath);
             results.push({
               fileName: entry.name,
               cleanName: this.cleanFileName(entry.name),
@@ -172,26 +176,29 @@ export class MediaScannerService {
    * Expected structure: /series/{tmdbId}_{name}/temporada N/{tmdbId}_S{s}E{e}/index.m3u8
    * The filePath stored is the episode folder path (used as the unique key).
    */
-  private static _scanSeriesRecursive(
+  private static async _scanSeriesRecursive(
     dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
     seriesFolderName: string, currentDepth: number, maxDepth: number
-  ): void {
+  ): Promise<void> {
     if (currentDepth > maxDepth) return;
     let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); }
+    try { entries = await fs.promises.readdir(dirPath, { withFileTypes: true }); }
     catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return; }
 
+    let count = 0;
     for (const entry of entries) {
+      if (++count % 50 === 0) await new Promise(resolve => setImmediate(resolve));
+
       if (!entry.isDirectory()) continue;
       const fullPath = path.join(dirPath, entry.name);
 
       // Detect if this directory is an episode folder (contains index.m3u8 or video.m3u8)
-      const m3u8Path = this._findM3u8(fullPath);
+      const m3u8Path = await this._findM3u8(fullPath);
       if (m3u8Path) {
         // This is an episode folder
         const seInfo = parseSeasonEpisode(entry.name);
         const tmdbSeriesId = parseTmdbId(seriesFolderName || entry.name);
-        const stat = fs.statSync(fullPath);
+        const stat = await fs.promises.stat(fullPath);
 
         // key used to detect if already imported: episode folder path
         const key = fullPath;
@@ -215,15 +222,15 @@ export class MediaScannerService {
       } else {
         // Not an episode — go deeper, passing the series folder name at depth 0
         const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
-        this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
+        await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
       }
     }
   }
 
   /** Find index.m3u8 or video.m3u8 directly inside a folder. */
-  private static _findM3u8(dirPath: string): string | null {
+  private static async _findM3u8(dirPath: string): Promise<string | null> {
     try {
-      const entries = fs.readdirSync(dirPath);
+      const entries = await fs.promises.readdir(dirPath);
       for (const name of entries) {
         if (name === 'index.m3u8' || name === 'video.m3u8') {
           return path.join(dirPath, name);
@@ -358,7 +365,13 @@ export class MediaScannerService {
       }
     });
 
-    console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId}`);
+    // Ensure the series is marked as READY so it appears in the frontend
+    await prisma.content.updateMany({
+      where: { id: contentId, status: 'PENDING' },
+      data: { status: 'READY' }
+    });
+
+    console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId} (Marked READY)`);
 
     return { filePath: episodeFolderPath, fileName: folderName, success: true, contentId, tmdbMatch };
   }
