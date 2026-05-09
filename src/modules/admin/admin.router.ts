@@ -295,9 +295,9 @@ adminRouter.put('/settings', (async (req: AuthenticatedRequest, res: Response, n
 adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         // ─── Fetch All Active/Pending (No limit) + History (50 last) ───
-        const [activeVideos, historyVideos] = await Promise.all([
+        const [activeVideos, historyVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
             prisma.videoFile.findMany({
-                where: { status: { in: ['PROCESSING', 'PENDING'] } },
+                where: { status: { in: ['PROCESSING', 'PENDING', 'QUEUED'] } },
                 orderBy: { createdAt: 'desc' },
                 include: {
                     content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
@@ -308,16 +308,26 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
             prisma.videoFile.findMany({
                 where: { status: { in: ['COMPLETED', 'FAILED'] } },
                 orderBy: { updatedAt: 'desc' },
-                take: 100, // Increased as requested
+                take: 100, 
                 include: {
                     content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
                     episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
                     qualities: { select: { resolution: true } },
                 },
-            })
+            }),
+            prisma.videoFile.count({ where: { status: 'COMPLETED' } }),
+            prisma.videoFile.count({ where: { status: 'FAILED' } }),
+            prisma.videoFile.count({ where: { status: 'PROCESSING' } }),
+            prisma.videoFile.count({ where: { status: { in: ['PENDING', 'QUEUED'] } } })
         ]);
 
         const videos = [...activeVideos, ...historyVideos];
+        const stats = {
+            totalCompleted,
+            totalFailed,
+            totalProcessing,
+            totalQueued
+        };
 
         // ─── Fetch real-time progress from BullMQ for active jobs ───
         const videosWithProgress = await Promise.all(videos.map(async (v: any) => {
@@ -339,7 +349,7 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
             return resVideo;
         }));
 
-        ok(res, videosWithProgress);
+        ok(res, { videos: videosWithProgress, stats });
     } catch (err) { next(err); }
 }) as RequestHandler);
 
