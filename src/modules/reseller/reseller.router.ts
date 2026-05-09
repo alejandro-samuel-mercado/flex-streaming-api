@@ -157,3 +157,18 @@ resellerRouter.patch('/vendors/:id/password', auth, superVendorPlus, (async (req
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+// PATCH /vendors/:id — Update vendor info
+resellerRouter.patch('/vendors/:id', auth, superVendorPlus, (async (req, res, next) => {
+  try {
+    const authReq = req as unknown as AuthenticatedRequest;
+    const data = z.object({
+        name: z.string().min(1).optional(),
+        username: z.string().min(3).optional(),
+        phone: z.string().optional()
+    }).parse(req.body);
+    const vendor = await ResellerService.updateVendor(req.params.id, authReq.user!.id, authReq.user!.role, data);
+    ok(res, vendor);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+

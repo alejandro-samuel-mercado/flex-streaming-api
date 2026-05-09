@@ -88,9 +88,9 @@ mediaScannerRouter.post('/import', (async (req: AuthenticatedRequest, res: Respo
       return;
     }
 
-    // Limit batch size to prevent abuse
-    if (files.length > 100) {
-      res.status(400).json({ success: false, error: 'Máximo 100 archivos por lote' });
+    // Limit batch size to prevent abuse (increased for library restoration)
+    if (files.length > 5000) {
+      res.status(400).json({ success: false, error: 'Máximo 5000 archivos por lote' });
       return;
     }
 
