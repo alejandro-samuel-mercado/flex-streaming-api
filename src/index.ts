@@ -47,6 +47,8 @@ import { creditPackagesRouter } from './modules/credit-packages/credit-packages.
 import { endUsersRouter } from './modules/end-users/end-users.router';
 import { tmdbRouter } from './modules/admin/tmdb.router';
 import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router';
+import { backupRouter } from './modules/backup/backup.router';
+import { startAutoBackupScheduler } from './modules/backup/backup.service';
 import { AutoScannerWorker } from './workers/auto-scanner.worker';
 import { AccountExpiryWorker } from './workers/account-expiry.worker';
 import { ChunkUploadService } from './services/chunk-upload.service';
@@ -167,6 +169,7 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/admin/tmdb', tmdbRouter);
 app.use('/api/admin/media-scanner', mediaScannerRouter);
+app.use('/api/admin/backup', backupRouter);
 app.use('/api/upload', uploadLimiter, authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, uploadRouter);
 app.use('/api/platforms', platformsRouter);
 app.use('/api/plans', plansRouter);
@@ -216,6 +219,12 @@ async function bootstrap() {
     // Start account expiry worker
     AccountExpiryWorker.start();
     console.log('⏰ Account expiry worker initialized');
+
+    // Start auto-backup scheduler (reads config from DB)
+    startAutoBackupScheduler().catch(err =>
+      console.warn('[Backup] Scheduler startup skipped:', err?.message)
+    );
+    console.log('💾 Backup scheduler initialized');
 
     httpServer.listen(env.BACKEND_PORT, () => {
       console.log(`🚀 Nuba API running at http://localhost:${env.BACKEND_PORT}`);
