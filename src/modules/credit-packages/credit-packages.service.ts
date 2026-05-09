@@ -154,6 +154,6 @@ export class CreditPackagesService {
         creditsGiven: totalCreditsToGive,
         receiverBalance: receiverAfter,
       };
-    });
+    }, { timeout: 15000 });
   }
 }
