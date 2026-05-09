@@ -91,20 +91,17 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     endDate: true,
                     maxDevices: true,
                     plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
-                    profiles: {
-                        select: { id: true, name: true, avatar: true, isKids: true, language: true },
-                        orderBy: { createdAt: 'asc' },
-                    },
                 },
             });
             if (!account) return next(new Error('Account not found'));
             // Shape the response to match the regular user structure
+            // End-users don't have profiles (they access content directly)
             return ok(res, {
                 id: `VIRTUAL_${account.id}`,
                 name: account.username,
                 email: null,
                 role: 'END_USER',
-                profiles: account.profiles,
+                profiles: [],
                 endUserAccount: {
                     id: account.id,
                     status: account.status,
@@ -112,7 +109,7 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     planId: account.planId,
                     endDate: account.endDate,
                     maxDevices: account.maxDevices,
-                    plan: account.plan,
+                    plan: account.plan ?? null,
                 },
             });
         }
