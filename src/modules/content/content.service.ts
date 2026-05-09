@@ -143,7 +143,21 @@ export class ContentService {
             prisma.content.count({ where }),
         ]);
 
-        return { data, total, page, limit };
+        // Attach episode count for series to show in the admin list
+        const dataWithCounts = await Promise.all(data.map(async (item) => {
+            if (item.type === 'SERIES' || item.type === 'ANIME') {
+                const count = await prisma.episode.count({
+                    where: { 
+                        season: { contentId: item.id },
+                        videoFiles: { some: { status: 'COMPLETED' } }
+                    }
+                });
+                return { ...item, episodeCount: count };
+            }
+            return item;
+        }));
+
+        return { data: dataWithCounts, total, page, limit };
     }
 
     static async getContentById(idOrSlug: string, lang: string = 'es') {
