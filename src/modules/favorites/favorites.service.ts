@@ -16,14 +16,22 @@ export class FavoritesService {
       where: { profileId_contentId: { profileId, contentId } },
     });
 
-    if (existing) {
-      await prisma.favorite.delete({
-        where: { profileId_contentId: { profileId, contentId } },
-      });
-      return { favorited: false };
-    } else {
-      await prisma.favorite.create({ data: { profileId, contentId } });
-      return { favorited: true };
+    try {
+      if (existing) {
+        await prisma.favorite.delete({
+          where: { profileId_contentId: { profileId, contentId } },
+        });
+        return { favorited: false };
+      } else {
+        await prisma.favorite.create({ data: { profileId, contentId } });
+        return { favorited: true };
+      }
+    } catch (error: any) {
+      if (error.code === 'P2003') {
+        console.warn(`[FavoritesService] P2003: Profile ${profileId} or Content ${contentId} not found.`);
+        return { favorited: false, error: 'invalid_reference' };
+      }
+      throw error;
     }
   }
 
@@ -68,10 +76,18 @@ export class FavoritesService {
 
     if (newIds.length === 0) return { synced: 0 };
 
-    await prisma.favorite.createMany({
-      data: newIds.map(contentId => ({ profileId, contentId })),
-      skipDuplicates: true,
-    });
+    try {
+      await prisma.favorite.createMany({
+        data: newIds.map(contentId => ({ profileId, contentId })),
+        skipDuplicates: true,
+      });
+    } catch (error: any) {
+      if (error.code === 'P2003') {
+        console.warn(`[FavoritesService] P2003 during sync for Profile ${profileId}`);
+        return { synced: 0, error: 'invalid_reference' };
+      }
+      throw error;
+    }
 
     return { synced: newIds.length };
   }
