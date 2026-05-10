@@ -42,15 +42,28 @@ historyRouter.get('/:contentId', (async (req: AuthenticatedRequest, res, next) =
     const episodeId = req.query.episodeId as string | undefined;
     
     const { prisma } = await import('../../shared/config/prisma');
-    const result = await prisma.watchHistory.findUnique({
-      where: {
-        profileId_contentId_episodeId: {
+    let result;
+    if (episodeId) {
+      result = await prisma.watchHistory.findUnique({
+        where: {
+          profileId_contentId_episodeId: {
+            profileId,
+            contentId: req.params.contentId,
+            episodeId,
+          }
+        }
+      });
+    } else {
+      result = await prisma.watchHistory.findFirst({
+        where: {
           profileId,
           contentId: req.params.contentId,
-          episodeId: episodeId || '',
+        },
+        orderBy: {
+          updatedAt: 'desc'
         }
-      }
-    });
+      });
+    }
     
     ok(res, result);
   } catch (err) { next(err); }
