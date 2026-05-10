@@ -360,14 +360,20 @@ async function upsertMany<T>(
 ): Promise<{ upserted: number; errors: number }> {
   let upserted = 0;
   let errors = 0;
-  for (const item of items) {
-    try {
-      await upsertFn(item);
-      upserted++;
-    } catch (err: any) {
-      console.warn(`[Backup] Upsert error:`, err?.message);
-      errors++;
-    }
+
+  // Optimized with parallel chunks to avoid timeouts
+  const chunkSize = 15;
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    await Promise.all(chunk.map(async (item) => {
+      try {
+        await upsertFn(item);
+        upserted++;
+      } catch (err: any) {
+        console.warn(`[Backup] Upsert error:`, err?.message);
+        errors++;
+      }
+    }));
   }
   return { upserted, errors };
 }
