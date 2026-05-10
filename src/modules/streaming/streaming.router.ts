@@ -17,7 +17,13 @@ streamingRouter.post('/request-access', authenticate as RequestHandler, (async (
     const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
     const access = await StreamingService.requestAccess(req.user!.id, contentId, ip, episodeId);
     ok(res, access);
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err.message.includes('No video stream') || err.message.includes('not found')) {
+      res.status(400).json({ success: false, error: err.message });
+      return;
+    }
+    next(err);
+  }
 }) as RequestHandler);
 
 // ─── Serve HLS segments (token-validated) ────────────────────────────────────

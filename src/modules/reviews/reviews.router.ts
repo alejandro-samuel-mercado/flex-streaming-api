@@ -90,7 +90,13 @@ reviewsRouter.post('/', authenticate as RequestHandler, (async (req: Authenticat
     }
 
     created(res, review);
-  } catch (err) { next(err); }
+  } catch (err: any) { 
+    if (err.code === 'P2003') {
+      res.status(400).json({ success: false, error: 'El perfil seleccionado no es válido o ha sido eliminado.' });
+      return;
+    }
+    next(err); 
+  }
 }) as RequestHandler);
 
 // Delete own review

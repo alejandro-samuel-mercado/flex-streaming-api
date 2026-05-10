@@ -7,10 +7,14 @@ export class HistoryService {
     try {
       return await prisma.watchHistory.upsert({
         where: {
-          profileId_contentId_episodeId: { profileId, contentId, episodeId: episodeId || '' },
+          profileId_contentId_episodeId: { 
+            profileId, 
+            contentId: contentId || '', 
+            episodeId: episodeId || '' 
+          },
         },
         update: { progress, duration, completed, watchedAt: new Date() },
-        create: { profileId, contentId, episodeId: episodeId || null, progress, duration, completed },
+        create: { profileId, contentId, episodeId: episodeId || '', progress, duration, completed },
       });
     } catch (err: any) {
       // If profileId doesn't exist, ignore or log. Avoid crashing with P2003

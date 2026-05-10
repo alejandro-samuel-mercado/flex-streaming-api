@@ -271,6 +271,7 @@ model Content {
   reviews         Review[]
   watchHistory    WatchHistory[]
   favorites       Favorite[]
+  likes           Like[]
   myList          MyList[]
   recommendations RecommendationItem[]
   actors          ContentActor[]
@@ -577,6 +578,17 @@ model Thumbnail {
 }
 
 // ─── USER ACTIVITY ───────────────────────────────────────────────────────────
+
+model Like {
+  id        String   @id @default(cuid())
+  profileId String
+  contentId String
+  createdAt DateTime @default(now())
+
+  content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, contentId])
+}
 
 model WatchHistory {
   id        String   @id @default(cuid())
