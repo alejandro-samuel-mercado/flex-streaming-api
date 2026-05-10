@@ -4,13 +4,22 @@ export class HistoryService {
   static async updateWatchProgress(profileId: string, contentId: string, progress: number, duration?: number, episodeId?: string) {
     const completed = duration ? progress >= duration * 0.9 : false;
 
-    return prisma.watchHistory.upsert({
-      where: {
-        profileId_contentId_episodeId: { profileId, contentId, episodeId: episodeId || '' },
-      },
-      update: { progress, duration, completed, watchedAt: new Date() },
-      create: { profileId, contentId, episodeId: episodeId || null, progress, duration, completed },
-    });
+    try {
+      return await prisma.watchHistory.upsert({
+        where: {
+          profileId_contentId_episodeId: { profileId, contentId, episodeId: episodeId || '' },
+        },
+        update: { progress, duration, completed, watchedAt: new Date() },
+        create: { profileId, contentId, episodeId: episodeId || null, progress, duration, completed },
+      });
+    } catch (err: any) {
+      // If profileId doesn't exist, ignore or log. Avoid crashing with P2003
+      if (err.code === 'P2003') {
+        console.warn(`[HistoryService] Invalid profileId ${profileId} for watch progress. Ignoring.`);
+        return null;
+      }
+      throw err;
+    }
   }
 
   static async getProfileHistory(profileId: string, page = 1, limit = 20) {
