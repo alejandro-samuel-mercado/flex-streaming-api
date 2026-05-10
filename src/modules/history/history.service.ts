@@ -27,37 +27,58 @@ export class HistoryService {
   }
 
   static async getProfileHistory(profileId: string, page = 1, limit = 20) {
-    const skip = (page - 1) * limit;
-    const [total, history] = await Promise.all([
-      prisma.watchHistory.count({ where: { profileId } }),
-      prisma.watchHistory.findMany({
-        where: { profileId },
-        include: {
-          content: {
-            select: {
-              id: true,
-              type: true,
-              slug: true,
-              duration: true,
-              translations: { select: { language: true, title: true } },
-              thumbnails: { where: { type: 'POSTER' }, take: 1 },
-            },
-          },
-          episode: {
-            select: {
-              id: true,
-              number: true,
-              translations: { select: { language: true, title: true } },
-            },
+    // Fetch a larger batch to allow for in-memory deduplication
+    // as Prisma doesn't easily support "group by" with complex includes
+    const history = await prisma.watchHistory.findMany({
+      where: { profileId },
+      include: {
+        content: {
+          select: {
+            id: true,
+            type: true,
+            slug: true,
+            duration: true,
+            tmdbId: true,
+            translations: { select: { language: true, title: true } },
+            thumbnails: { where: { type: 'POSTER' }, take: 1 },
           },
         },
-        orderBy: { updatedAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-    ]);
+        episode: {
+          select: {
+            id: true,
+            number: true,
+            translations: { select: { language: true, title: true } },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 200, // Fetch enough to cover duplicates
+    });
 
-    return { total, pages: Math.ceil(total / limit), data: history };
+    const uniqueHistory: typeof history = [];
+    const seenIds = new Set<string>();
+
+    for (const item of history) {
+      if (!item.content) continue;
+      
+      // Group by content ID or TMDB ID
+      const contentKey = (item.content.tmdbId ? `tmdb_${item.content.tmdbId}` : item.contentId) as string;
+
+      if (!seenIds.has(contentKey)) {
+        seenIds.add(contentKey);
+        uniqueHistory.push(item);
+      }
+    }
+
+    // Paginate results in memory
+    const skip = (page - 1) * limit;
+    const paginated = uniqueHistory.slice(skip, skip + limit);
+
+    return { 
+      total: uniqueHistory.length, 
+      pages: Math.ceil(uniqueHistory.length / limit), 
+      data: paginated 
+    };
   }
 
   static async getContinueWatching(profileId: string, limit = 10) {
