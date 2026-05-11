@@ -27,6 +27,10 @@ export class FavoritesService {
         return { favorited: true };
       }
     } catch (error: any) {
+      if (error.code === 'P2025') {
+        // Record was already deleted by another request, just return success
+        return { favorited: false };
+      }
       if (error.code === 'P2003') {
         console.warn(`[FavoritesService] P2003: Profile ${profileId} or Content ${contentId} not found.`);
         return { favorited: false, error: 'invalid_reference' };
