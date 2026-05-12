@@ -43,6 +43,7 @@ export class HomepageService {
     const [
       trending,
       recent,
+      estrenos,
       freeContent,
       platforms,
       genres,
@@ -61,6 +62,13 @@ export class HomepageService {
       prisma.content.findMany({
         where: activeContentWhere,
         orderBy: { createdAt: 'desc' },
+        take: 15,
+        select: CONTENT_LIST_SELECT,
+      }),
+      // Estrenos / releases (sorted by releaseYear)
+      prisma.content.findMany({
+        where: activeContentWhere,
+        orderBy: { releaseYear: 'desc' },
         take: 15,
         select: CONTENT_LIST_SELECT,
       }),
@@ -187,6 +195,7 @@ export class HomepageService {
       featured,
       trending,
       recent,
+      estrenos,
       freeContent,
       platforms,
       genres,
