@@ -177,14 +177,18 @@ uploadRouter.post('/image', (_req, _res, next) => {
     const sharpInstance = sharp(file.buffer);
     
     if (type === 'POSTER') {
+      // Use 'contain' to preserve the full poster without any cropping.
+      // Posters are designed to be seen in their entirety - never crop them.
       sharpInstance.resize(600, 900, { 
-        fit: 'cover', 
-        position: 'entropy' // Smart crop based on image content
+        fit: 'contain',
+        background: { r: 3, g: 6, b: 18, alpha: 1 } // Dark background for letterboxing if needed
       });
     } else if (type === 'BACKDROP') {
+      // For backdrops, use 'cover' with 'top' position to preserve the cinematic upper area
+      // (where the main subject/title card usually is), avoiding cropping into random bottom areas.
       sharpInstance.resize(1920, 1080, { 
         fit: 'cover', 
-        position: 'entropy' 
+        position: 'top'
       });
     }
 
