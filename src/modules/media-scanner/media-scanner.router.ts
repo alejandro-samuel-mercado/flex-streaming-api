@@ -9,6 +9,22 @@ export const mediaScannerRouter = Router();
 mediaScannerRouter.use(authenticate as RequestHandler);
 mediaScannerRouter.use(requireRole('ADMIN') as RequestHandler);
 
+// ─── In-memory scan state (single admin operation at a time) ─────────────────
+interface ScanState {
+  status: 'idle' | 'scanning' | 'done' | 'error';
+  moviePath?: string;
+  seriesPath?: string;
+  startedAt?: string;
+  files?: any[];
+  importedFiles?: any[];
+  total?: number;
+  newCount?: number;
+  importedCount?: number;
+  error?: string;
+}
+
+let currentScan: ScanState = { status: 'idle' };
+
 /**
  * GET /api/admin/media-scanner/directories
  * Returns suggested directories from environment variable
@@ -27,6 +43,10 @@ mediaScannerRouter.get('/directories', (async (_req: AuthenticatedRequest, res: 
  * Supports two modes:
  *   - Dual folder: ?moviePath=/path/movies&seriesPath=/path/series
  *   - Legacy single: ?path=/some/path  (treated as movies)
+ *
+ * The scan runs asynchronously. This endpoint starts the scan and returns
+ * immediately with { status: 'scanning' }. The frontend can poll
+ * GET /api/admin/media-scanner/scan-result to get the results when ready.
  */
 mediaScannerRouter.get('/scan', (async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -38,20 +58,69 @@ mediaScannerRouter.get('/scan', (async (req: AuthenticatedRequest, res: Response
       return;
     }
 
-    const files = await MediaScannerService.scanDirectories(
-      moviePath || undefined,
-      seriesPath || undefined
-    );
+    // If a scan is already running, return its status
+    if (currentScan.status === 'scanning') {
+      ok(res, { status: 'scanning', startedAt: currentScan.startedAt, moviePath: currentScan.moviePath, seriesPath: currentScan.seriesPath });
+      return;
+    }
 
-    const newFiles = files.filter(f => !f.alreadyImported);
-    const importedFiles = files.filter(f => f.alreadyImported);
+    // Start async scan
+    currentScan = {
+      status: 'scanning',
+      moviePath: moviePath || undefined,
+      seriesPath: seriesPath || undefined,
+      startedAt: new Date().toISOString()
+    };
 
-    ok(res, {
-      total: files.length,
-      newCount: newFiles.length,
-      importedCount: importedFiles.length,
-      files: newFiles,
-      importedFiles
+    console.log(`📂 [MediaScanner] Async scan started — movies: "${moviePath || 'N/A'}", series: "${seriesPath || 'N/A'}"`);
+
+    // Return immediately — scan runs in the background
+    ok(res, { status: 'scanning', startedAt: currentScan.startedAt });
+
+    // Execute scan in background (after response is sent)
+    setImmediate(async () => {
+      try {
+        const files = await MediaScannerService.scanDirectories(
+          moviePath || undefined,
+          seriesPath || undefined
+        );
+
+        const newFiles = files.filter(f => !f.alreadyImported);
+        const importedFiles = files.filter(f => f.alreadyImported);
+
+        currentScan = {
+          status: 'done',
+          moviePath: moviePath || undefined,
+          seriesPath: seriesPath || undefined,
+          startedAt: currentScan.startedAt,
+          total: files.length,
+          newCount: newFiles.length,
+          importedCount: importedFiles.length,
+          files: newFiles,
+          importedFiles
+        };
+
+        console.log(`📂 [MediaScanner] Scan complete: ${files.length} total, ${newFiles.length} new, ${importedFiles.length} imported`);
+
+        // Emit via Socket.IO if available
+        try {
+          const { io } = await import('../../index');
+          io?.emit('scan-complete', {
+            total: files.length,
+            newCount: newFiles.length,
+            importedCount: importedFiles.length
+          });
+        } catch { /* socket may not be available */ }
+      } catch (err: any) {
+        console.error(`❌ [MediaScanner] Scan error:`, err.message);
+        currentScan = {
+          status: 'error',
+          error: err.message,
+          moviePath: moviePath || undefined,
+          seriesPath: seriesPath || undefined,
+          startedAt: currentScan.startedAt
+        };
+      }
     });
   } catch (err: any) {
     if (err.message?.includes('no encontrado') || err.message?.includes('no es un directorio')) {
@@ -60,6 +129,39 @@ mediaScannerRouter.get('/scan', (async (req: AuthenticatedRequest, res: Response
     }
     next(err);
   }
+}) as RequestHandler);
+
+/**
+ * GET /api/admin/media-scanner/scan-result
+ * Returns the result of the last async scan. Poll this after starting a scan.
+ */
+mediaScannerRouter.get('/scan-result', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    if (currentScan.status === 'idle') {
+      ok(res, { status: 'idle', message: 'No se ha iniciado ningún escaneo' });
+      return;
+    }
+
+    if (currentScan.status === 'scanning') {
+      ok(res, { status: 'scanning', startedAt: currentScan.startedAt, moviePath: currentScan.moviePath, seriesPath: currentScan.seriesPath });
+      return;
+    }
+
+    if (currentScan.status === 'error') {
+      ok(res, { status: 'error', error: currentScan.error, startedAt: currentScan.startedAt });
+      return;
+    }
+
+    // status === 'done'
+    ok(res, {
+      status: 'done',
+      total: currentScan.total,
+      newCount: currentScan.newCount,
+      importedCount: currentScan.importedCount,
+      files: currentScan.files,
+      importedFiles: currentScan.importedFiles
+    });
+  } catch (err) { next(err); }
 }) as RequestHandler);
 
 /**

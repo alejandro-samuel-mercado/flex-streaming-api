@@ -89,23 +89,42 @@ export class MediaScannerService {
 
   /**
    * Scan both a movies folder (raw video files) and a series folder (already-HLS episodes).
+   * Optimized: scans disk first (no DB), then batch-checks imported status in chunks.
    */
   static async scanDirectories(moviePath?: string, seriesPath?: string): Promise<ScannedFile[]> {
-    const existingVideos = await prisma.videoFile.findMany({ select: { originalPath: true } });
-    const importedPaths = new Set(existingVideos.map(v => v.originalPath));
-
+    // Phase 1: Scan filesystem without DB — fast, just read directories
+    const emptySet = new Set<string>(); // Temporarily mark nothing as imported
     const allFiles: ScannedFile[] = [];
 
     if (moviePath && fs.existsSync(moviePath)) {
       const movieFiles: ScannedFile[] = [];
-      await this._scanMoviesRecursive(moviePath, movieFiles, importedPaths, 0, 2);
+      await this._scanMoviesRecursive(moviePath, movieFiles, emptySet, 0, 2);
       allFiles.push(...movieFiles);
     }
 
     if (seriesPath && fs.existsSync(seriesPath)) {
       const seriesFiles: ScannedFile[] = [];
-      await this._scanSeriesRecursive(seriesPath, seriesFiles, importedPaths, '', 0, 6);
+      await this._scanSeriesRecursive(seriesPath, seriesFiles, emptySet, '', 0, 6);
       allFiles.push(...seriesFiles);
+    }
+
+    // Phase 2: Batch-check which paths are already imported (chunks of 200)
+    const CHUNK = 200;
+    const importedPaths = new Set<string>();
+    for (let i = 0; i < allFiles.length; i += CHUNK) {
+      const chunk = allFiles.slice(i, i + CHUNK).map(f => f.filePath);
+      const found = await prisma.videoFile.findMany({
+        where: { originalPath: { in: chunk } },
+        select: { originalPath: true }
+      });
+      for (const v of found) importedPaths.add(v.originalPath);
+      // Yield event loop between chunks
+      if (i + CHUNK < allFiles.length) await new Promise(r => setImmediate(r));
+    }
+
+    // Phase 3: Mark imported status
+    for (const f of allFiles) {
+      f.alreadyImported = importedPaths.has(f.filePath);
     }
 
     allFiles.sort((a, b) => a.fileName.localeCompare(b.fileName));
