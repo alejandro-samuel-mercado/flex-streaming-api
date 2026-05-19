@@ -360,6 +360,24 @@ export class TMDBService {
   }
 
   /**
+   * Get details of a TV episode from TMDB
+   */
+  static async getEpisodeDetails(tvId: string | number, seasonNumber: number, episodeNumber: number, lang: string = 'es-ES') {
+    try {
+      const response = await axios.get(`${this.baseURL}/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}`, {
+        params: {
+          api_key: env.TMDB_API_KEY,
+          language: lang,
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`TMDB Episode Details Error (tvId: ${tvId}, S${seasonNumber}E${episodeNumber}):`, error);
+      return null;
+    }
+  }
+
+  /**
    * Fuzzy similarity score between two normalized strings.
    * Uses word-stem overlap so "guerrera" ≈ "guerreras" and "guerras" ≈ "guerreras".
    * Returns a value between 0 (no match) and 1 (perfect match).

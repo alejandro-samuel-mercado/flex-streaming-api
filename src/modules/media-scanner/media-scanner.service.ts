@@ -337,7 +337,6 @@ export class MediaScannerService {
       }
     });
 
-    // Find or create the Episode
     const episodeRecord = await prisma.episode.upsert({
       where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
       update: {},
@@ -346,6 +345,13 @@ export class MediaScannerService {
         number: episode.episodeNumber,
       }
     });
+
+    await this._syncEpisodeMetadata(
+      episodeRecord.id,
+      episode.tmdbSeriesId,
+      episode.season,
+      episode.episodeNumber
+    );
 
     // Create VideoFile as COMPLETED (no processing needed)
     const videoFile = await prisma.videoFile.create({
@@ -557,13 +563,19 @@ export class MediaScannerService {
         create: { contentId, number: seInfo.season }
       });
 
-      // 3. Find or Create Episode
       const episode = await prisma.episode.upsert({
         where: { seasonId_number: { seasonId: season.id, number: seInfo.episode } },
         update: {},
         create: { seasonId: season.id, number: seInfo.episode }
       });
       episodeId = episode.id;
+
+      const parentContent = await prisma.content.findUnique({
+        where: { id: contentId },
+        select: { tmdbId: true }
+      });
+      const tmdbSeriesId = parentContent?.tmdbId ? parseInt(parentContent.tmdbId, 10) : null;
+      await this._syncEpisodeMetadata(episode.id, tmdbSeriesId, seInfo.season, seInfo.episode);
     }
 
     const videoFile = await prisma.videoFile.create({
@@ -632,6 +644,79 @@ export class MediaScannerService {
       if (director) ids.push(director.id);
     }
     return ids;
+  }
+
+  private static async _syncEpisodeMetadata(
+    episodeId: string,
+    tmdbSeriesId: number | null,
+    seasonNumber: number,
+    episodeNumber: number
+  ): Promise<void> {
+    try {
+      let episodeTitle = `Episodio ${episodeNumber}`;
+      let episodeOverview = '';
+      let stillPath: string | null = null;
+      let duration: number | null = null;
+
+      if (tmdbSeriesId) {
+        const epDetails = await TMDBService.getEpisodeDetails(tmdbSeriesId, seasonNumber, episodeNumber);
+        if (epDetails) {
+          episodeTitle = epDetails.name || episodeTitle;
+          episodeOverview = epDetails.overview || '';
+          stillPath = epDetails.still_path || null;
+          duration = epDetails.runtime ? epDetails.runtime * 60 : null;
+        }
+      }
+
+      const existingTrans = await prisma.episodeTranslation.findUnique({
+        where: { episodeId_language: { episodeId, language: 'es' } }
+      });
+
+      if (!existingTrans) {
+        await prisma.episodeTranslation.create({
+          data: {
+            episodeId,
+            language: 'es',
+            title: episodeTitle,
+            description: episodeOverview
+          }
+        });
+      }
+
+      if (duration) {
+        await prisma.episode.update({
+          where: { id: episodeId },
+          data: { duration }
+        });
+      }
+
+      if (stillPath) {
+        const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', 'episodes', episodeId);
+        if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
+
+        const localStillPath = path.join(mediaFolder, 'still.jpg');
+        const virtualStillUrl = `/media/thumbnails/episodes/${episodeId}/still.jpg`;
+
+        const existingThumb = await prisma.thumbnail.findFirst({
+          where: { episodeId, type: 'STILL' }
+        });
+
+        if (!existingThumb) {
+          await TMDBService.downloadImage(stillPath, localStillPath);
+          await prisma.thumbnail.create({
+            data: {
+              episodeId,
+              type: 'STILL',
+              url: virtualStillUrl,
+              width: 1280,
+              height: 720
+            }
+          });
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[MediaScanner] Failed to sync episode metadata: ${err.message}`);
+    }
   }
 
   static async batchImport(
