@@ -85,3 +85,16 @@ historyRouter.post('/progress', (async (req: AuthenticatedRequest, res, next) =>
     ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+historyRouter.delete('/:contentId', (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const profileId = req.headers['x-profile-id'] as string;
+    if (!profileId) {
+      res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+      return;
+    }
+    const { contentId } = req.params;
+    await HistoryService.deleteProfileHistory(profileId, contentId);
+    ok(res, { success: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);
