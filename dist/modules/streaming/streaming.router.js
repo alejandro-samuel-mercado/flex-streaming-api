@@ -19,19 +19,35 @@ exports.streamingRouter.post('/request-access', auth_middleware_1.authenticate, 
         (0, api_response_1.ok)(res, access);
     }
     catch (err) {
+        if (err.message.includes('No video stream') || err.message.includes('not found')) {
+            res.status(400).json({ success: false, error: err.message });
+            return;
+        }
         next(err);
     }
 }));
 // ─── Serve HLS segments (token-validated) ────────────────────────────────────
+// Supports both ?token=XXX and /hls/:videoFileId/:token/* path formats for mobile compatibility
 exports.streamingRouter.get('/hls/:videoFileId/*', (async (req, res, next) => {
     try {
-        const token = req.query.token;
+        const videoFileId = req.params.videoFileId;
+        let filePath = req.params[0]; // Everything after videoFileId/
+        let token = req.query.token;
+        // Mobile path-token support: /hls/videoFileId/TOKEN/playlist.m3u8
+        // If token is not in query, check if the first segment of the path is a token
+        if (!token && filePath.includes('/')) {
+            const parts = filePath.split('/');
+            // Tokens are usually long strings, filenames are like master.m3u8 or segment_1.ts
+            // We assume the first part is a token if it doesn't look like a standard HLS filename
+            if (parts[0].length > 20) {
+                token = parts.shift();
+                filePath = parts.join('/');
+            }
+        }
         if (!token) {
             res.status(401).send('Missing access token');
             return;
         }
-        const videoFileId = req.params.videoFileId;
-        const filePath = req.params[0]; // Everything after videoFileId/
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
         const result = await streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip);
         if (result.stream) {

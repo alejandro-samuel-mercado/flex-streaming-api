@@ -18,7 +18,7 @@ const auth = auth_middleware_1.authenticate;
 const adminOnly = (0, auth_middleware_1.requireRole)('ADMIN');
 const superVendorPlus = auth_middleware_1.requireSuperVendorOrAbove;
 const CreateVendorSchema = zod_1.z.object({
-    phone: zod_1.z.string().min(8),
+    phone: zod_1.z.string(),
     username: zod_1.z.string().min(3).max(50),
     name: zod_1.z.string().min(1).max(100),
     password: zod_1.z.string().min(6),
@@ -153,6 +153,23 @@ exports.resellerRouter.patch('/vendors/:id/password', auth, superVendorPlus, (as
         const { password } = zod_1.z.object({ password: zod_1.z.string().min(6) }).parse(req.body);
         const result = await reseller_service_1.ResellerService.resetVendorPassword(req.params.id, authReq.user.id, authReq.user.role, password);
         (0, api_response_1.ok)(res, result);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// PATCH /vendors/:id — Update vendor info
+exports.resellerRouter.patch('/vendors/:id', auth, superVendorPlus, (async (req, res, next) => {
+    try {
+        const authReq = req;
+        const data = zod_1.z.object({
+            name: zod_1.z.string().min(1).optional(),
+            username: zod_1.z.string().min(3).optional(),
+            phone: zod_1.z.string().optional(),
+            password: zod_1.z.string().min(6).optional()
+        }).parse(req.body);
+        const vendor = await reseller_service_1.ResellerService.updateVendor(req.params.id, authReq.user.id, authReq.user.role, data);
+        (0, api_response_1.ok)(res, vendor);
     }
     catch (err) {
         next(err);

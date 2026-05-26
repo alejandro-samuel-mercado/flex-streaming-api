@@ -16,7 +16,13 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
     const { videoFileId, contentId, videoPath } = job.data;
     const outputFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'hls', contentId);
     const onProgress = async (percent) => {
-        await job.updateProgress(percent);
+        try {
+            await job.updateProgress(percent);
+        }
+        catch (err) {
+            // Prevent worker crash if job is deleted from Redis while FFmpeg is still running
+            console.warn(`[VideoWorker] Progress update failed for job ${job.id}: ${err.message}`);
+        }
     };
     job.log(`Starting HLS processing for contentId: ${contentId}`);
     try {
@@ -46,9 +52,23 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
             data: { status: 'PROCESSING' }
         });
         await onProgress(5);
-        const thumbnailFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', contentId);
-        const thumbnailResult = await ffmpeg_service_1.FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
-        job.log(`Thumbnail generated at ${thumbnailResult.path}`);
+        // Check if this content/episode already has an official high-quality poster (e.g. from TMDB)
+        const hasPoster = await prisma_1.prisma.thumbnail.findFirst({
+            where: {
+                OR: [
+                    { contentId: existsInitial.contentId || undefined, type: 'POSTER' },
+                    { episodeId: existsInitial.episodeId || undefined, type: 'POSTER' }
+                ]
+            }
+        });
+        if (!hasPoster) {
+            const thumbnailFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', contentId);
+            const thumbnailResult = await ffmpeg_service_1.FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
+            job.log(`Thumbnail generated at ${thumbnailResult.path}`);
+        }
+        else {
+            job.log('High-quality poster already exists. Skipping video thumbnail extraction to avoid overwriting.');
+        }
         await onProgress(10);
         // ─── Extract embedded subtitles (MKV, MP4, etc.) ──────────────────
         const subtitlesFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'subtitles', contentId);
@@ -176,30 +196,34 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                 data: { trailerUrl: masterPlaylistUrl }
             });
         }
-        // Update the content poster if needed
-        const existingPoster = await prisma_1.prisma.thumbnail.findFirst({
-            where: {
-                contentId: contentId,
-                type: 'POSTER'
-            }
-        });
-        const posterUrl = `/media/thumbnails/${contentId}/poster.jpg`;
-        if (existingPoster) {
-            await prisma_1.prisma.thumbnail.update({
-                where: { id: existingPoster.id },
-                data: { url: posterUrl }
-            });
-        }
-        else {
-            await prisma_1.prisma.thumbnail.create({
-                data: {
-                    contentId: contentId,
-                    type: 'POSTER',
-                    url: posterUrl,
-                    width: 1280,
-                    height: 720
+        // Update the content poster only if we actually need to/generated it
+        if (!hasPoster) {
+            const posterUrl = `/media/thumbnails/${contentId}/poster.jpg`;
+            const existingPoster = await prisma_1.prisma.thumbnail.findFirst({
+                where: {
+                    contentId: existsInitial.contentId || undefined,
+                    episodeId: existsInitial.episodeId || undefined,
+                    type: 'POSTER'
                 }
             });
+            if (existingPoster) {
+                await prisma_1.prisma.thumbnail.update({
+                    where: { id: existingPoster.id },
+                    data: { url: posterUrl }
+                });
+            }
+            else {
+                await prisma_1.prisma.thumbnail.create({
+                    data: {
+                        contentId: existsInitial.contentId || null,
+                        episodeId: existsInitial.episodeId || null,
+                        type: 'POSTER',
+                        url: posterUrl,
+                        width: existsInitial.contentId ? 500 : 1280,
+                        height: existsInitial.contentId ? 750 : 720
+                    }
+                });
+            }
         }
         await onProgress(100);
         return { success: true, path: hlsResult.path };
@@ -240,6 +264,9 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
 }, {
     connection,
     concurrency: env_1.env.MAX_CONCURRENT_ENCODING,
+    lockDuration: 5 * 60 * 1000, // 5 minutes — FFmpeg jobs are long-running
+    stalledInterval: 60 * 1000, // Check for stalled jobs every 60s (default is 30s)
+    maxStalledCount: 3, // Allow up to 3 stall checks before marking as failed
 });
 exports.videoWorker.on('completed', (job) => {
     console.log(`Job ${job.id} has completed!`);

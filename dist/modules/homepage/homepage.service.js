@@ -37,7 +37,7 @@ class HomepageService {
         const bannerStrategy = config['home_banner_strategy'] || 'MANUAL';
         const bannerLimit = parseInt(config['home_banner_limit']) || 8;
         // 2. Fetch all other sections in parallel
-        const [trending, recent, freeContent, platforms, genres, contentTypes, plans, faqItems,] = await Promise.all([
+        const [trending, recent, estrenos, freeContent, platforms, genres, contentTypes, plans, faqItems,] = await Promise.all([
             // Trending content
             prisma_1.prisma.content.findMany({
                 where: activeContentWhere,
@@ -49,6 +49,13 @@ class HomepageService {
             prisma_1.prisma.content.findMany({
                 where: activeContentWhere,
                 orderBy: { createdAt: 'desc' },
+                take: 15,
+                select: CONTENT_LIST_SELECT,
+            }),
+            // Estrenos / releases (sorted by releaseYear)
+            prisma_1.prisma.content.findMany({
+                where: activeContentWhere,
+                orderBy: { releaseYear: 'desc' },
                 take: 15,
                 select: CONTENT_LIST_SELECT,
             }),
@@ -177,6 +184,7 @@ class HomepageService {
             featured,
             trending,
             recent,
+            estrenos,
             freeContent,
             platforms,
             genres,

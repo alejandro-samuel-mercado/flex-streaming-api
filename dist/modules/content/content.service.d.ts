@@ -20,7 +20,7 @@ export declare class ContentService {
         lang: string;
         incomplete?: boolean;
     }): Promise<{
-        data: {
+        data: ({
             type: import(".prisma/client").$Enums.ContentType;
             status: import(".prisma/client").$Enums.ContentStatus;
             platform: {
@@ -77,7 +77,65 @@ export declare class ContentService {
                 height: number | null;
                 url: string;
             }[];
-        }[];
+        } | {
+            episodeCount: number;
+            type: import(".prisma/client").$Enums.ContentType;
+            status: import(".prisma/client").$Enums.ContentStatus;
+            platform: {
+                id: string;
+                name: string;
+                logoUrl: string | null;
+            } | null;
+            ageRating: {
+                code: string;
+                id: string;
+                label: string;
+            } | null;
+            id: string;
+            createdAt: Date;
+            country: string | null;
+            slug: string;
+            releaseYear: number | null;
+            originalTitle: string | null;
+            duration: number | null;
+            rating: number | null;
+            viewCount: bigint;
+            featured: boolean;
+            trailerUrl: string | null;
+            isFreeWithMembership: boolean;
+            translations: {
+                description: string;
+                language: string;
+                title: string;
+                tagline: string | null;
+            }[];
+            videoFiles: {
+                type: import(".prisma/client").$Enums.VideoFileType;
+                status: import(".prisma/client").$Enums.ProcessingStatus;
+                qualities: {
+                    resolution: string;
+                }[];
+            }[];
+            genres: ({
+                genre: {
+                    id: string;
+                    name: string;
+                    slug: string;
+                };
+            } & {
+                contentId: string;
+                genreId: string;
+            })[];
+            thumbnails: {
+                type: import(".prisma/client").$Enums.ThumbnailType;
+                id: string;
+                contentId: string | null;
+                episodeId: string | null;
+                width: number | null;
+                height: number | null;
+                url: string;
+            }[];
+        })[];
         total: number;
         page: number;
         limit: number;

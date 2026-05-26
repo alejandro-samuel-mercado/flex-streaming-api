@@ -9,7 +9,7 @@ export declare class HistoryService {
         progress: number;
         completed: boolean;
         watchedAt: Date;
-    }>;
+    } | null>;
     static getProfileHistory(profileId: string, page?: number, limit?: number): Promise<{
         total: number;
         pages: number;
@@ -18,6 +18,7 @@ export declare class HistoryService {
                 type: import(".prisma/client").$Enums.ContentType;
                 id: string;
                 slug: string;
+                tmdbId: string | null;
                 duration: number | null;
                 translations: {
                     language: string;

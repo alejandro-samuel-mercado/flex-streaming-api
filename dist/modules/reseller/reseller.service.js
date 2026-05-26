@@ -398,6 +398,49 @@ class ResellerService {
             select: { id: true, phone: true, username: true, name: true, role: true },
         });
     }
+    static async updateVendor(vendorId, requesterId, requesterRole, data) {
+        const vendor = await prisma_1.prisma.user.findUnique({ where: { id: vendorId } });
+        if (!vendor)
+            throw new error_handler_1.AppError(404, 'Vendedor no encontrado', 'NOT_FOUND');
+        if (requesterRole === 'SUPER_VENDOR' && vendor.parentId !== requesterId) {
+            throw new error_handler_1.AppError(403, 'No tienes permiso para gestionar este vendedor', 'FORBIDDEN');
+        }
+        if (requesterRole === 'ADMIN' && vendor.role !== 'SUPER_VENDOR') {
+            throw new error_handler_1.AppError(403, 'Solo puedes gestionar Super Resellers', 'FORBIDDEN');
+        }
+        // Check uniqueness
+        const orConditions = [];
+        if (data.username)
+            orConditions.push({ username: data.username });
+        if (data.phone)
+            orConditions.push({ phone: data.phone });
+        if (orConditions.length > 0) {
+            const existing = await prisma_1.prisma.user.findFirst({
+                where: {
+                    OR: orConditions,
+                    NOT: { id: vendorId },
+                    deletedAt: null
+                }
+            });
+            if (existing) {
+                throw new error_handler_1.AppError(409, 'El teléfono o usuario ya está en uso', 'ALREADY_EXISTS');
+            }
+        }
+        const updateData = {
+            name: data.name,
+            username: data.username,
+            phone: data.phone
+        };
+        if (data.password && data.password.trim().length >= 6) {
+            updateData.passwordHash = await bcrypt_1.default.hash(data.password, BCRYPT_ROUNDS);
+            await prisma_1.prisma.refreshToken.deleteMany({ where: { userId: vendorId } });
+        }
+        return prisma_1.prisma.user.update({
+            where: { id: vendorId },
+            data: updateData,
+            select: { id: true, phone: true, username: true, name: true, role: true, isActive: true },
+        });
+    }
 }
 exports.ResellerService = ResellerService;
 //# sourceMappingURL=reseller.service.js.map

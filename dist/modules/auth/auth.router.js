@@ -102,8 +102,46 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
     try {
         const authReq = req;
         const { prisma } = await Promise.resolve().then(() => __importStar(require('../../shared/config/prisma')));
+        const userId = authReq.user.id;
+        // Handle virtual end-user accounts (their JWT sub is VIRTUAL_<accountId>)
+        if (userId.startsWith('VIRTUAL_')) {
+            const accountId = userId.replace('VIRTUAL_', '');
+            const account = await prisma.endUserAccount.findUnique({
+                where: { id: accountId },
+                select: {
+                    id: true,
+                    username: true,
+                    status: true,
+                    type: true,
+                    planId: true,
+                    endDate: true,
+                    maxDevices: true,
+                    plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
+                },
+            });
+            if (!account)
+                return next(new Error('Account not found'));
+            // Shape the response to match the regular user structure
+            // End-users don't have profiles (they access content directly)
+            return (0, api_response_1.ok)(res, {
+                id: `VIRTUAL_${account.id}`,
+                name: account.username,
+                email: null,
+                role: 'END_USER',
+                profiles: [],
+                endUserAccount: {
+                    id: account.id,
+                    status: account.status,
+                    type: account.type,
+                    planId: account.planId,
+                    endDate: account.endDate,
+                    maxDevices: account.maxDevices,
+                    plan: account.plan ?? null,
+                },
+            });
+        }
         const user = await prisma.user.findUnique({
-            where: { id: authReq.user.id },
+            where: { id: userId },
             select: {
                 id: true,
                 phone: true,
@@ -121,9 +159,10 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                         id: true,
                         status: true,
                         type: true,
+                        planId: true,
                         endDate: true,
                         maxDevices: true,
-                        plan: { select: { id: true, name: true, durationDays: true } }
+                        plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } }
                     }
                 }
             },

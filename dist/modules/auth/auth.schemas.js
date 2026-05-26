@@ -4,7 +4,7 @@ exports.refreshTokenSchema = exports.resetPasswordSchema = exports.forgotPasswor
 const zod_1 = require("zod");
 exports.registerSchema = zod_1.z.object({
     name: zod_1.z.string().min(2).max(100),
-    phone: zod_1.z.string().min(8),
+    phone: zod_1.z.string(),
     password: zod_1.z.string().min(8).max(72),
 });
 exports.loginSchema = zod_1.z.object({
@@ -15,7 +15,7 @@ exports.loginSchema = zod_1.z.object({
     deviceType: zod_1.z.enum(['TV', 'MOBILE', 'WEB']).optional(),
 });
 exports.forgotPasswordSchema = zod_1.z.object({
-    phone: zod_1.z.string().min(8),
+    phone: zod_1.z.string(),
 });
 exports.resetPasswordSchema = zod_1.z.object({
     token: zod_1.z.string().min(1),

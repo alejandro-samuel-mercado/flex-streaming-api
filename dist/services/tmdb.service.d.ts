@@ -101,6 +101,10 @@ export declare class TMDBService {
      */
     static getFullDetails(id: string | number, type: 'movie' | 'tv', lang?: string): Promise<TMDBFullDetails>;
     /**
+     * Get details of a TV episode from TMDB
+     */
+    static getEpisodeDetails(tvId: string | number, seasonNumber: number, episodeNumber: number, lang?: string): Promise<any>;
+    /**
      * Fuzzy similarity score between two normalized strings.
      * Uses word-stem overlap so "guerrera" ≈ "guerreras" and "guerras" ≈ "guerreras".
      * Returns a value between 0 (no match) and 1 (perfect match).

@@ -124,7 +124,7 @@ class CreditPackagesService {
                 creditsGiven: totalCreditsToGive,
                 receiverBalance: receiverAfter,
             };
-        });
+        }, { timeout: 15000 });
     }
 }
 exports.CreditPackagesService = CreditPackagesService;

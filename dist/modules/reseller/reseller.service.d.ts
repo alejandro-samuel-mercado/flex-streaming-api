@@ -161,5 +161,18 @@ export declare class ResellerService {
         name: string | null;
         username: string | null;
     }>;
+    static updateVendor(vendorId: string, requesterId: string, requesterRole: UserRole, data: {
+        name?: string;
+        username?: string;
+        phone?: string;
+        password?: string;
+    }): Promise<{
+        id: string;
+        phone: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        name: string | null;
+        username: string | null;
+        isActive: boolean;
+    }>;
 }
 //# sourceMappingURL=reseller.service.d.ts.map

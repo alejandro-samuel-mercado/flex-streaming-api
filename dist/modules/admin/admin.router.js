@@ -132,10 +132,14 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
         const search = req.query.search;
         const where = { deletedAt: null };
         if (role === 'END_USER') {
-            const adminId = req.user.id;
-            const endUserWhere = { managedById: adminId, deletedAt: null };
-            if (search)
-                endUserWhere.username = { contains: search, mode: 'insensitive' };
+            const endUserWhere = { deletedAt: null };
+            if (search) {
+                endUserWhere.OR = [
+                    { username: { contains: search, mode: 'insensitive' } },
+                    { managedBy: { username: { contains: search, mode: 'insensitive' } } },
+                    { managedBy: { name: { contains: search, mode: 'insensitive' } } }
+                ];
+            }
             const [users, total] = await Promise.all([
                 prisma_1.prisma.endUserAccount.findMany({
                     where: endUserWhere,
@@ -144,7 +148,21 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
                     orderBy: { createdAt: 'desc' },
                     include: {
                         plan: true,
-                        managedBy: { select: { id: true, name: true, phone: true } },
+                        managedBy: {
+                            select: {
+                                id: true,
+                                name: true,
+                                username: true,
+                                phone: true,
+                                parent: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        username: true
+                                    }
+                                }
+                            }
+                        },
                         _count: { select: { connectedDevices: true } },
                         connectedDevices: true,
                     },
@@ -189,7 +207,7 @@ exports.adminRouter.post('/users', (async (req, res, next) => {
         const schema = zod_1.z.object({
             name: zod_1.z.string().min(2),
             username: zod_1.z.string().min(3).max(50),
-            phone: zod_1.z.string().min(8),
+            phone: zod_1.z.string(),
             password: zod_1.z.string().min(6),
             role: zod_1.z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']),
         });
@@ -214,7 +232,7 @@ exports.adminRouter.put('/users/:id', (async (req, res, next) => {
         const schema = zod_1.z.object({
             name: zod_1.z.string().min(2).optional(),
             username: zod_1.z.string().min(3).max(50).optional(),
-            phone: zod_1.z.string().min(8).optional(),
+            phone: zod_1.z.string().optional(),
             password: zod_1.z.string().min(6).optional(),
             role: zod_1.z.enum(['ADMIN', 'VENDOR', 'SUPER_VENDOR', 'MEMBER', 'REGISTERED']).optional(),
             isActive: zod_1.z.boolean().optional(),

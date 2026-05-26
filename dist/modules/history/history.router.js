@@ -79,15 +79,29 @@ exports.historyRouter.get('/:contentId', (async (req, res, next) => {
         }
         const episodeId = req.query.episodeId;
         const { prisma } = await Promise.resolve().then(() => __importStar(require('../../shared/config/prisma')));
-        const result = await prisma.watchHistory.findUnique({
-            where: {
-                profileId_contentId_episodeId: {
+        let result;
+        if (episodeId) {
+            result = await prisma.watchHistory.findUnique({
+                where: {
+                    profileId_contentId_episodeId: {
+                        profileId,
+                        contentId: req.params.contentId,
+                        episodeId,
+                    }
+                }
+            });
+        }
+        else {
+            result = await prisma.watchHistory.findFirst({
+                where: {
                     profileId,
                     contentId: req.params.contentId,
-                    episodeId: episodeId || '',
+                },
+                orderBy: {
+                    updatedAt: 'desc'
                 }
-            }
-        });
+            });
+        }
         (0, api_response_1.ok)(res, result);
     }
     catch (err) {

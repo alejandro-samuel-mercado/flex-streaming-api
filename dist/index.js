@@ -83,6 +83,9 @@ const credit_packages_router_1 = require("./modules/credit-packages/credit-packa
 const end_users_router_1 = require("./modules/end-users/end-users.router");
 const tmdb_router_1 = require("./modules/admin/tmdb.router");
 const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.router");
+const backup_router_1 = require("./modules/backup/backup.router");
+const likes_router_1 = require("./modules/likes/likes.router");
+const backup_service_1 = require("./modules/backup/backup.service");
 const auto_scanner_worker_1 = require("./workers/auto-scanner.worker");
 const account_expiry_worker_1 = require("./workers/account-expiry.worker");
 const chunk_upload_service_1 = require("./services/chunk-upload.service");
@@ -185,10 +188,12 @@ app.use('/api/search', apiLimiter, search_router_1.searchRouter);
 app.use('/api/stream', streamLimiter, streaming_router_1.streamingRouter);
 app.use('/api/favorites', favorites_router_1.favoritesRouter);
 app.use('/api/history', history_router_1.historyRouter);
+app.use('/api/likes', likes_router_1.likesRouter);
 app.use('/api/reviews', reviews_router_1.reviewsRouter);
 app.use('/api/admin', admin_router_1.adminRouter);
 app.use('/api/admin/tmdb', tmdb_router_1.tmdbRouter);
 app.use('/api/admin/media-scanner', media_scanner_router_1.mediaScannerRouter);
+app.use('/api/admin/backup', backup_router_1.backupRouter);
 app.use('/api/upload', uploadLimiter, auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), upload_router_1.uploadRouter);
 app.use('/api/platforms', platforms_router_1.platformsRouter);
 app.use('/api/plans', plans_router_1.plansRouter);
@@ -231,6 +236,9 @@ async function bootstrap() {
         // Start account expiry worker
         account_expiry_worker_1.AccountExpiryWorker.start();
         console.log('⏰ Account expiry worker initialized');
+        // Start auto-backup scheduler (reads config from DB)
+        (0, backup_service_1.startAutoBackupScheduler)().catch(err => console.warn('[Backup] Scheduler startup skipped:', err?.message));
+        console.log('💾 Backup scheduler initialized');
         httpServer.listen(env_1.env.BACKEND_PORT, () => {
             console.log(`🚀 Nuba API running at http://localhost:${env_1.env.BACKEND_PORT}`);
         });

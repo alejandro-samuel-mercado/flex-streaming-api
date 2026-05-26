@@ -1,6 +1,10 @@
 export declare class FavoritesService {
     static toggleFavorite(profileId: string, contentId: string): Promise<{
         favorited: boolean;
+        error?: undefined;
+    } | {
+        favorited: boolean;
+        error: string;
     }>;
     static checkFavorite(profileId: string, contentId: string): Promise<boolean>;
     static getProfileFavorites(profileId: string, page?: number, limit?: number): Promise<{
@@ -30,6 +34,10 @@ export declare class FavoritesService {
     }>;
     static syncFavorites(profileId: string, contentIds: string[]): Promise<{
         synced: number;
+        error?: undefined;
+    } | {
+        synced: number;
+        error: string;
     }>;
 }
 //# sourceMappingURL=favorites.service.d.ts.map

@@ -90,6 +90,10 @@ exports.reviewsRouter.post('/', auth_middleware_1.authenticate, (async (req, res
         (0, api_response_1.created)(res, review);
     }
     catch (err) {
+        if (err.code === 'P2003') {
+            res.status(400).json({ success: false, error: 'El perfil seleccionado no es válido o ha sido eliminado.' });
+            return;
+        }
         next(err);
     }
 }));
