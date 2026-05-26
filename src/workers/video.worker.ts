@@ -16,7 +16,12 @@ export const videoWorker = new Worker(
     const outputFolder = path.join(env.MEDIA_PATH, 'hls', contentId);
 
     const onProgress = async (percent: number) => {
-      await job.updateProgress(percent);
+      try {
+        await job.updateProgress(percent);
+      } catch (err: any) {
+        // Prevent worker crash if job is deleted from Redis while FFmpeg is still running
+        console.warn(`[VideoWorker] Progress update failed for job ${job.id}: ${err.message}`);
+      }
     };
 
     job.log(`Starting HLS processing for contentId: ${contentId}`);
