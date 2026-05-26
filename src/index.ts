@@ -95,7 +95,7 @@ app.use(compression({
 }));
 
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev', {
-  skip: (req, res) => {
+  skip: (req, _res) => {
     const url = req.url || '';
     // Skip logging for the video status polling endpoint to prevent log spam
     if (url.includes('/api/admin/videos/status')) return true;
