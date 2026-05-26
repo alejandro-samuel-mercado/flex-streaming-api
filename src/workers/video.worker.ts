@@ -121,14 +121,6 @@ export const videoWorker = new Worker(
           qualities: {
             create: [
               {
-                resolution: '720p',
-                width: 1280,
-                height: 720,
-                bitrate: 2500000,
-                playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
-                codec: 'h264'
-              },
-              {
                 resolution: '1080p',
                 width: 1920,
                 height: 1080,
@@ -240,6 +232,16 @@ export const videoWorker = new Worker(
             }
           });
         }
+      }
+
+      // ─── Delete original file to save space ───────────────────────────────
+      try {
+        if (fs.existsSync(videoPath)) {
+          fs.unlinkSync(videoPath);
+          job.log(`Original video file deleted to save space: ${videoPath}`);
+        }
+      } catch (delErr: any) {
+        job.log(`Warning: Failed to delete original video file: ${delErr.message}`);
       }
 
       await onProgress(100);

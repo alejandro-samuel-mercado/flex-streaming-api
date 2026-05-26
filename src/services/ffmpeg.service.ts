@@ -46,7 +46,6 @@ export class FFmpegService {
 
         const playlistPath = path.join(resolvedOutputFolder, 'master.m3u8');
         const profiles = [
-            { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3750k', bufsize: '5000k', bandwidth: 4200000 },
             { name: '1080p', resolution: '1920:1080', bitrate: '5000k', maxrate: '7500k', bufsize: '10000k', bandwidth: 8400000 }
         ];
 
