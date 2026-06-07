@@ -95,6 +95,9 @@ export class FFmpegService {
             await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
+                let lastTimemark = '';
+                let lastTimemarkAt = Date.now();
+                let timemarkWatchdog: NodeJS.Timeout;
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .renice(15)
@@ -104,15 +107,34 @@ export class FFmpegService {
                         '-nostdin'
                     ]);
 
+                const cleanup = () => {
+                    clearTimeout(stallTimeout);
+                    clearTimeout(hardTimeout);
+                    clearInterval(timemarkWatchdog);
+                };
+
                 const resetStallTimeout = () => {
                     if (stallTimeout) clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
+                        cleanup();
                         cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] El proceso se atascó (20 min sin avanzar). Cancelado automáticamente.`));
+                        reject(new Error(`[Timeout] El proceso se atascó (20 min sin actividad). Cancelado automáticamente.`));
                     }, 20 * 60 * 1000);
                 };
 
+                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
+                // (FFmpeg puede seguir emitiendo eventos pero sin progresar realmente)
+                timemarkWatchdog = setInterval(() => {
+                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
+                        console.warn(`[FFmpeg] ⚠️ Watchdog: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
+                        cleanup();
+                        cmd.kill('SIGKILL');
+                        reject(new Error(`[Timeout] FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                    }
+                }, 60 * 1000);
+
                 hardTimeout = setTimeout(() => {
+                    cleanup();
                     cmd.kill('SIGKILL');
                     reject(new Error(`[Timeout] El proceso excedió el tiempo máximo permitido (4 horas). Cancelado automáticamente.`));
                 }, 4 * 60 * 60 * 1000);
@@ -153,21 +175,24 @@ export class FFmpegService {
                     .on('start', () => resetStallTimeout())
                     .on('progress', (progress) => {
                         resetStallTimeout();
+                        // Actualizar timemark para el watchdog
+                        if (progress.timemark && progress.timemark !== lastTimemark) {
+                            lastTimemark = progress.timemark;
+                            lastTimemarkAt = Date.now();
+                        }
                         if (progress.percent) {
                             taskProgress[taskIndex] = progress.percent;
                             reportProgress();
                         }
                     })
                     .on('end', () => {
-                        clearTimeout(stallTimeout);
-                        clearTimeout(hardTimeout);
+                        cleanup();
                         taskProgress[taskIndex] = 100;
                         reportProgress();
                         resolve(true);
                     })
                     .on('error', (err, _stdout, stderr) => {
-                        clearTimeout(stallTimeout);
-                        clearTimeout(hardTimeout);
+                        cleanup();
                         const errorMessage = `FFmpeg Error [${profile.name}]: ${err.message}${stderr ? `\nSTDERR: ${stderr}` : ''}`;
                         console.error(errorMessage);
                         reject(new Error(errorMessage));
@@ -188,6 +213,9 @@ export class FFmpegService {
             await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
                 let hardTimeout: NodeJS.Timeout;
+                let lastTimemark = '';
+                let lastTimemarkAt = Date.now();
+                let timemarkWatchdog: NodeJS.Timeout;
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .renice(15)
@@ -197,26 +225,44 @@ export class FFmpegService {
                         '-nostdin'
                     ]);
 
+                const cleanup = () => {
+                    clearTimeout(stallTimeout);
+                    clearTimeout(hardTimeout);
+                    clearInterval(timemarkWatchdog);
+                };
+
                 const resetStallTimeout = () => {
                     if (stallTimeout) clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
+                        cleanup();
                         cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] La extracción de audio se atascó (20 min sin avanzar).`));
+                        reject(new Error(`[Timeout] La extracción de audio se atascó (20 min sin actividad).`));
                     }, 20 * 60 * 1000);
                 };
 
+                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
+                timemarkWatchdog = setInterval(() => {
+                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
+                        console.warn(`[FFmpeg] ⚠️ Watchdog audio: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
+                        cleanup();
+                        cmd.kill('SIGKILL');
+                        reject(new Error(`[Timeout] Audio FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                    }
+                }, 60 * 1000);
+
                 hardTimeout = setTimeout(() => {
+                    cleanup();
                     cmd.kill('SIGKILL');
                     reject(new Error(`[Timeout] La extracción de audio excedió las 4 horas permitidas.`));
                 }, 4 * 60 * 60 * 1000);
 
                 cmd
                     .outputOptions([
-                        '-vn',                    // No video
-                        '-map', `0:a:${i}`,       // Select specific audio stream
-                        '-c:a', 'aac',            // AAC encoding
-                        '-b:a', '192k',           // 192kbps target
-                        '-ac', '2',               // Stereo downmix for compatibility
+                        '-vn',
+                        '-map', `0:a:${i}`,
+                        '-c:a', 'aac',
+                        '-b:a', '192k',
+                        '-ac', '2',
                         '-hls_time', '6',
                         '-hls_playlist_type', 'vod',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, `audio_${lang}_%03d.ts`)
@@ -225,14 +271,18 @@ export class FFmpegService {
                     .on('start', () => resetStallTimeout())
                     .on('progress', (progress) => {
                         resetStallTimeout();
+                        // Actualizar timemark para el watchdog
+                        if (progress.timemark && progress.timemark !== lastTimemark) {
+                            lastTimemark = progress.timemark;
+                            lastTimemarkAt = Date.now();
+                        }
                         if (progress.percent) {
                             taskProgress[taskIndex] = progress.percent;
                             reportProgress();
                         }
                     })
                     .on('end', () => {
-                        clearTimeout(stallTimeout);
-                        clearTimeout(hardTimeout);
+                        cleanup();
                         audioTracks.push({
                             index: i,
                             language: lang,
@@ -245,8 +295,7 @@ export class FFmpegService {
                         resolve(true);
                     })
                     .on('error', (err) => {
-                        clearTimeout(stallTimeout);
-                        clearTimeout(hardTimeout);
+                        cleanup();
                         console.error(`Error during FFmpeg audio ${lang}: ${err.message}`);
                         reject(err);
                     })
