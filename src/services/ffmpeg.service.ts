@@ -100,7 +100,7 @@ export class FFmpegService {
                 let timemarkWatchdog: NodeJS.Timeout;
 
                 const cmd = ffmpeg(resolvedInputPath)
-                    .renice(15)
+                    .renice(5)
                     .inputOptions([
                         '-analyzeduration', '100M',
                         '-probesize', '100M',
@@ -218,7 +218,7 @@ export class FFmpegService {
                 let timemarkWatchdog: NodeJS.Timeout;
 
                 const cmd = ffmpeg(resolvedInputPath)
-                    .renice(15)
+                    .renice(5)
                     .inputOptions([
                         '-analyzeduration', '100M',
                         '-probesize', '100M',
@@ -347,7 +347,7 @@ export class FFmpegService {
             }
 
             let timeout: NodeJS.Timeout;
-            const cmd = ffmpeg(inputPath).renice(10);
+            const cmd = ffmpeg(inputPath).renice(5);
 
             timeout = setTimeout(() => {
                 cmd.kill('SIGKILL');
@@ -423,7 +423,7 @@ export class FFmpegService {
             try {
                 await new Promise<void>((resolve, reject) => {
                     let timeout: NodeJS.Timeout;
-                    const cmd = ffmpeg(resolvedInput).renice(10);
+                    const cmd = ffmpeg(resolvedInput).renice(5);
 
                     timeout = setTimeout(() => {
                         cmd.kill('SIGKILL');
