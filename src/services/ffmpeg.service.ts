@@ -119,7 +119,7 @@ export class FFmpegService {
 
                 const opts: string[] = [
                     '-preset', 'veryfast',
-                    '-threads', '1',
+                    '-threads', '2',
                     '-profile:v', 'main',
                     '-level', '4.0',
                     '-vf', `scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
