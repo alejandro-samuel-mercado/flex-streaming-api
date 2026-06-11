@@ -29,6 +29,8 @@ const BCRYPT_ROUNDS = 12;
 const REFRESH_TOKEN_PREFIX = 'refresh:';
 const RESET_TOKEN_PREFIX = 'reset:';
 const RESET_TOKEN_TTL = 60 * 60; // 1 hour
+// 180 días — sesión persistente por meses
+const REFRESH_TOKEN_TTL_SECONDS = 180 * 24 * 60 * 60;
 function generateTokens(userId, phone, role) {
     const accessToken = jsonwebtoken_1.default.sign({ sub: userId, phone, role }, env_1.env.JWT_ACCESS_SECRET, { expiresIn: env_1.env.JWT_ACCESS_EXPIRES_IN });
     const refreshToken = (0, uuid_1.v4)();
@@ -49,13 +51,12 @@ async function register(input) {
         select: { id: true, phone: true, name: true, role: true },
     });
     const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
-    const refreshTtlSeconds = 30 * 24 * 60 * 60; // 30 days
-    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
+    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, user.id);
     await prisma_1.prisma.refreshToken.create({
         data: {
             token: refreshToken,
             userId: user.id,
-            expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
         },
     });
     return { user, accessToken, refreshToken };
@@ -200,15 +201,16 @@ async function login(input) {
                 }
             }
             // Return a virtual user object for the token
+            // JWT sub = real User.id (not endUserAccount.id) so /auth/me can look up the User
             const { accessToken, refreshToken } = generateTokens(endUser.userId, endUser.username, 'END_USER');
-            const refreshTtlSeconds = 30 * 24 * 60 * 60;
-            await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, endUser.userId);
+            // Redis key stores VIRTUAL_<endUserAccount.id> so refresh can identify the account
+            await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, `VIRTUAL_${endUser.id}`);
             await prisma_1.prisma.refreshToken.create({
                 data: {
                     token: refreshToken,
-                    userId: endUser.userId,
-                    endUserAccountId: endUser.id,
-                    expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+                    userId: endUser.userId, // real User.id for FK constraint
+                    endUserAccountId: endUser.id, // endUserAccount.id for account association
+                    expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
                 },
             });
             return {
@@ -227,13 +229,12 @@ async function login(input) {
         throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     }
     const { accessToken, refreshToken } = generateTokens(user.id, user.username || user.phone, user.role);
-    const refreshTtlSeconds = 30 * 24 * 60 * 60;
-    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
+    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, user.id);
     await prisma_1.prisma.refreshToken.create({
         data: {
             token: refreshToken,
             userId: user.id,
-            expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
         },
     });
     const safeUser = {
@@ -246,50 +247,64 @@ async function login(input) {
     return { user: safeUser, accessToken, refreshToken };
 }
 async function refreshAccessToken(refreshToken) {
-    const userId = await redis_1.redis.get(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
-    if (!userId) {
+    // Redis stores the "owner" of this refresh token.
+    // For END_USERs: "VIRTUAL_<endUserAccount.id>"
+    // For normal users: "<User.id>"
+    const storedValue = await redis_1.redis.get(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
+    if (!storedValue) {
         throw new error_handler_1.AppError(401, 'Invalid or expired refresh token', 'INVALID_REFRESH_TOKEN');
     }
-    let user;
-    let role;
+    let jwtSubject; // the `sub` claim for the new accessToken
     let phone;
-    if (userId.startsWith('VIRTUAL_')) {
-        const accountId = userId.replace('VIRTUAL_', '');
+    let role;
+    let dbUserId = null; // real User.id for Prisma FK
+    let dbEndUserAccountId = null; // EndUserAccount.id for Prisma FK
+    if (storedValue.startsWith('VIRTUAL_')) {
+        // END_USER path — storedValue = "VIRTUAL_<endUserAccount.id>"
+        const accountId = storedValue.replace('VIRTUAL_', '');
         const account = await prisma_1.prisma.endUserAccount.findUnique({
             where: { id: accountId },
-            select: { id: true, username: true, status: true },
+            select: { id: true, username: true, status: true, userId: true },
         });
         if (!account || account.status === 'EXPIRED' || account.status === 'PAUSED') {
             throw new error_handler_1.AppError(401, 'Account restricted or not found', 'INVALID_REFRESH_TOKEN');
         }
-        user = { id: account.id };
+        // JWT sub must be the real User.id so /auth/me can resolve the User record
+        jwtSubject = account.userId ?? accountId;
         phone = account.username;
         role = 'END_USER';
+        dbUserId = account.userId ?? null;
+        dbEndUserAccountId = account.id;
     }
     else {
+        // Normal user path — storedValue = "<User.id>"
         const realUser = await prisma_1.prisma.user.findUnique({
-            where: { id: userId },
+            where: { id: storedValue },
             select: { id: true, phone: true, username: true, role: true, isActive: true },
         });
         if (!realUser || !realUser.isActive) {
             throw new error_handler_1.AppError(401, 'User not found or inactive', 'INVALID_REFRESH_TOKEN');
         }
-        user = realUser;
-        phone = realUser.phone;
+        jwtSubject = realUser.id;
+        phone = realUser.username || realUser.phone;
         role = realUser.role;
+        dbUserId = realUser.id;
     }
-    // Rotate refresh token
+    // Rotate refresh token — invalidate old one
     await redis_1.redis.del(`${REFRESH_TOKEN_PREFIX}${refreshToken}`);
     await prisma_1.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(user.id, user.username || phone, role);
-    const refreshTtlSeconds = 30 * 24 * 60 * 60;
-    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, refreshTtlSeconds, role === 'END_USER' ? `VIRTUAL_${user.id}` : user.id);
+    // Generate new token pair
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(jwtSubject, phone, role);
+    // Store new refresh token in Redis with 180-day TTL
+    const redisValue = dbEndUserAccountId ? `VIRTUAL_${dbEndUserAccountId}` : jwtSubject;
+    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${newRefreshToken}`, REFRESH_TOKEN_TTL_SECONDS, redisValue);
+    // Store in DB with correct FK references
     await prisma_1.prisma.refreshToken.create({
         data: {
             token: newRefreshToken,
-            userId: role === 'END_USER' ? null : user.id,
-            endUserAccountId: role === 'END_USER' ? user.id : null,
-            expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+            userId: dbUserId,
+            endUserAccountId: dbEndUserAccountId,
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
         },
     });
     return { accessToken, refreshToken: newRefreshToken };
@@ -337,13 +352,12 @@ async function findOrCreateGoogleUser(googleProfile) {
         }
     }
     const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
-    const refreshTtlSeconds = 30 * 24 * 60 * 60;
-    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, refreshTtlSeconds, user.id);
+    await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, user.id);
     await prisma_1.prisma.refreshToken.create({
         data: {
             token: refreshToken,
             userId: user.id,
-            expiresAt: new Date(Date.now() + refreshTtlSeconds * 1000),
+            expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
         },
     });
     return { user, accessToken, refreshToken };

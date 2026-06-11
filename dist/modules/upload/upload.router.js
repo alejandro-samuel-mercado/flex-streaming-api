@@ -333,8 +333,8 @@ exports.uploadRouter.delete('/video/:id', async (req, res, next) => {
             const { removeVideoJob } = await Promise.resolve().then(() => __importStar(require('../../services/queue.service')));
             await removeVideoJob(videoFile.processingJobId);
         }
-        // 3. Delete the record
-        await prisma_1.prisma.videoFile.delete({ where: { id } });
+        // 3. Delete the record (use deleteMany to avoid P2025 if already deleted by a concurrent request)
+        await prisma_1.prisma.videoFile.deleteMany({ where: { id } });
         // 4. Delete the physical file ONLY if it was uploaded to our temp directory (not if auto-scanned from elsewhere)
         if (videoFile.originalPath && fs_1.default.existsSync(videoFile.originalPath)) {
             const absolutePath = path_1.default.resolve(videoFile.originalPath);

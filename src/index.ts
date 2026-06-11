@@ -7,7 +7,7 @@
 
 // BigInt serialization fix for JSON
 (BigInt.prototype as any).toJSON = function () {
-  return this.toString();
+    return this.toString();
 };
 
 import express, { RequestHandler } from 'express';
@@ -58,22 +58,27 @@ const app = express();
 
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: env.FRONTEND_URL,
-    credentials: true,
-  }
+    cors: {
+        origin: env.FRONTEND_URL,
+        credentials: true,
+    }
 });
 
 // Import worker and events to start them
 import { videoQueueEvents } from './services/queue.service';
-import './workers/video.worker';
+if (env.ENABLE_WORKER) {
+  require('./workers/video.worker');
+  console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
+} else {
+  console.log('[Worker] Video processing worker DISABLED on this node');
+}
 
 // Listen to BullMQ queue progress and emit to clients
 videoQueueEvents.on('progress', ({ jobId, data }) => {
-  io.emit('video-progress', { jobId, progress: data });
+    io.emit('video-progress', { jobId, progress: data });
 });
 videoQueueEvents.on('completed', ({ jobId }) => {
-  io.emit('video-status', { jobId, status: 'READY' });
+    io.emit('video-status', { jobId, status: 'READY' });
 });
 
 // ─── Security & Utilities ────────────────────────────────────────────────────
@@ -86,28 +91,28 @@ app.set('trust proxy', 1);
 // Compression — explicitly skip already-compressed media files
 // .ts (HLS segments) and .mp4 are H.264/AAC encoded; gzipping them wastes CPU and can make them larger
 app.use(compression({
-  filter: (req, res) => {
-    const url = req.url || '';
-    // Skip compression for media segments
-    if (/\.(ts|mp4|webm|mkv|avi|mov)$/i.test(url)) return false;
-    return compression.filter(req, res);
-  }
+    filter: (req, res) => {
+        const url = req.url || '';
+        // Skip compression for media segments
+        if (/\.(ts|mp4|webm|mkv|avi|mov)$/i.test(url)) return false;
+        return compression.filter(req, res);
+    }
 }));
 
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev', {
-  skip: (req, _res) => {
-    const url = req.url || '';
-    // Skip logging for the video status polling endpoint to prevent log spam
-    if (url.includes('/api/admin/videos/status')) return true;
-    return false;
-  }
+    skip: (req, _res) => {
+        const url = req.url || '';
+        // Skip logging for the video status polling endpoint to prevent log spam
+        if (url.includes('/api/admin/videos/status')) return true;
+        return false;
+    }
 }));
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use(cors({
-  origin: true, // Dynamically allow any origin (required for credentials: true)
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    origin: true, // Dynamically allow any origin (required for credentials: true)
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }));
 
 // ─── Body Parsers ─────────────────────────────────────────────────────────────
@@ -130,36 +135,36 @@ app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))
 
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 50,
-  message: { success: false, error: 'Too many auth requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs: 15 * 60 * 1000,
+    max: 50,
+    message: { success: false, error: 'Too many auth requests' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 const streamLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 500,            // HLS: each .ts segment = 1 request. 6s segments → ~10 req/min at normal playback,
-                       // but ABR + prefetch + multiple quality checks can spike. 500/min is safe.
-  message: { success: false, error: 'Too many stream requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs: 60 * 1000,
+    max: 500,            // HLS: each .ts segment = 1 request. 6s segments → ~10 req/min at normal playback,
+    // but ABR + prefetch + multiple quality checks can spike. 500/min is safe.
+    message: { success: false, error: 'Too many stream requests' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 const uploadLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: { success: false, error: 'Too many uploads' },
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs: 60 * 1000,
+    max: 100,
+    message: { success: false, error: 'Too many uploads' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 200,
-  message: { success: false, error: 'Too many requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
+    windowMs: 60 * 1000,
+    max: 200,
+    message: { success: false, error: 'Too many requests' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -190,7 +195,7 @@ app.use('/api/end-users', apiLimiter, endUsersRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
-  res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
+    res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // ─── Error Handler (must be last) ─────────────────────────────────────────────
@@ -200,56 +205,56 @@ import fs from 'fs';
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function bootstrap() {
-  try {
-    // Ensure directories exist
-    const dirs = [
-      env.UPLOAD_DIR,
-      env.MEDIA_PATH,
-      env.UPLOADS_PATH,
-      env.HLS_PATH,
-      env.THUMBNAILS_PATH,
-      env.SUBTITLES_PATH
-    ];
-    dirs.forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log(`📁 Created directory: ${dir}`);
-      }
-    });
+    try {
+        // Ensure directories exist
+        const dirs = [
+            env.UPLOAD_DIR,
+            env.MEDIA_PATH,
+            env.UPLOADS_PATH,
+            env.HLS_PATH,
+            env.THUMBNAILS_PATH,
+            env.SUBTITLES_PATH
+        ];
+        dirs.forEach(dir => {
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+                console.log(`📁 Created directory: ${dir}`);
+            }
+        });
 
-    await redis.connect();
-    await prisma.$connect();
-    console.log('✅ Database connected');
+        await redis.connect();
+        await prisma.$connect();
+        console.log('✅ Database connected');
 
-    // Start auto-scanner worker
-    AutoScannerWorker.start(io);
-    console.log('🔍 Auto-scanner worker initialized');
+        // Start auto-scanner worker
+        AutoScannerWorker.start(io);
+        console.log('🔍 Auto-scanner worker initialized');
 
-    // Start account expiry worker
-    AccountExpiryWorker.start();
-    console.log('⏰ Account expiry worker initialized');
+        // Start account expiry worker
+        AccountExpiryWorker.start();
+        console.log('⏰ Account expiry worker initialized');
 
-    // Start auto-backup scheduler (reads config from DB)
-    startAutoBackupScheduler().catch(err =>
-      console.warn('[Backup] Scheduler startup skipped:', err?.message)
-    );
-    console.log('💾 Backup scheduler initialized');
+        // Start auto-backup scheduler (reads config from DB)
+        startAutoBackupScheduler().catch(err =>
+            console.warn('[Backup] Scheduler startup skipped:', err?.message)
+        );
+        console.log('💾 Backup scheduler initialized');
 
-    httpServer.listen(env.BACKEND_PORT, () => {
-      console.log(`🚀 Nuba API running at http://localhost:${env.BACKEND_PORT}`);
-    });
+        httpServer.listen(env.BACKEND_PORT, () => {
+            console.log(`🚀 Nuba API running at http://localhost:${env.BACKEND_PORT}`);
+        });
 
-    // Periodic cleanup of abandoned chunk uploads (every 6 hours)
-    setInterval(() => {
-      const cleaned = ChunkUploadService.cleanupStaleChunks();
-      if (cleaned > 0) console.log(`🧹 Cleaned ${cleaned} stale chunk upload(s)`);
-    }, 6 * 60 * 60 * 1000);
-    // Run once at startup too
-    ChunkUploadService.cleanupStaleChunks();
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
-    process.exit(1);
-  }
+        // Periodic cleanup of abandoned chunk uploads (every 6 hours)
+        setInterval(() => {
+            const cleaned = ChunkUploadService.cleanupStaleChunks();
+            if (cleaned > 0) console.log(`🧹 Cleaned ${cleaned} stale chunk upload(s)`);
+        }, 6 * 60 * 60 * 1000);
+        // Run once at startup too
+        ChunkUploadService.cleanupStaleChunks();
+    } catch (error) {
+        console.error('❌ Failed to start server:', error);
+        process.exit(1);
+    }
 }
 
 bootstrap();
@@ -257,18 +262,18 @@ bootstrap();
 export { app, httpServer, io };
 // ─── Graceful Shutdown ────────────────────────────────────────────────────────
 const gracefulShutdown = async () => {
-  console.log('🛑 [Server] Shutting down gracefully...');
-  try {
-    const { videoQueue, videoQueueEvents } = await import('./services/queue.service');
-    await videoQueue.close();
-    await videoQueueEvents.close();
-    await prisma.$disconnect();
-    console.log('✅ [Server] Connections closed. Exiting.');
-    process.exit(0);
-  } catch (err) {
-    console.error('❌ [Server] Error during shutdown:', err);
-    process.exit(1);
-  }
+    console.log('🛑 [Server] Shutting down gracefully...');
+    try {
+        const { videoQueue, videoQueueEvents } = await import('./services/queue.service');
+        await videoQueue.close();
+        await videoQueueEvents.close();
+        await prisma.$disconnect();
+        console.log('✅ [Server] Connections closed. Exiting.');
+        process.exit(0);
+    } catch (err) {
+        console.error('❌ [Server] Error during shutdown:', err);
+        process.exit(1);
+    }
 };
 
 process.on('SIGINT', gracefulShutdown);

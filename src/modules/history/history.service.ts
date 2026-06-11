@@ -169,4 +169,13 @@ export class HistoryService {
 
     return { total, pages: Math.ceil(total / limit), data: history };
   }
+
+  static async deleteProfileHistory(profileId: string, contentId: string) {
+    return await prisma.watchHistory.deleteMany({
+      where: {
+        profileId,
+        contentId,
+      },
+    });
+  }
 }

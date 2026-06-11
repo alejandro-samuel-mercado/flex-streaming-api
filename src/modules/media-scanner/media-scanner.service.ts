@@ -592,7 +592,7 @@ export class MediaScannerService {
     const job = await addVideoJob({ 
       videoFileId: videoFile.id, 
       contentId: contentType === 'SERIES' && episodeId ? episodeId : contentId, 
-      type: contentType, 
+      type: videoFile.type, // Must be 'MOVIE' or 'EPISODE' to match WORKER_MODE filter
       videoPath: filePath 
     });
 

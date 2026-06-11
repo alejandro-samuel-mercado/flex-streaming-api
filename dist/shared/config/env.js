@@ -15,7 +15,7 @@ const envSchema = zod_1.z.object({
     JWT_ACCESS_SECRET: zod_1.z.string().min(32),
     JWT_REFRESH_SECRET: zod_1.z.string().min(32),
     JWT_ACCESS_EXPIRES_IN: zod_1.z.string().default('15m'),
-    JWT_REFRESH_EXPIRES_IN: zod_1.z.string().default('30d'),
+    JWT_REFRESH_EXPIRES_IN: zod_1.z.string().default('180d'),
     GOOGLE_CLIENT_ID: zod_1.z.string().optional(),
     GOOGLE_CLIENT_SECRET: zod_1.z.string().optional(),
     SMTP_HOST: zod_1.z.string().optional(),

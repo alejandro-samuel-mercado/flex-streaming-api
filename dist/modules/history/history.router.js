@@ -127,4 +127,19 @@ exports.historyRouter.post('/progress', (async (req, res, next) => {
         next(err);
     }
 }));
+exports.historyRouter.delete('/:contentId', (async (req, res, next) => {
+    try {
+        const profileId = req.headers['x-profile-id'];
+        if (!profileId) {
+            res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+            return;
+        }
+        const { contentId } = req.params;
+        await history_service_1.HistoryService.deleteProfileHistory(profileId, contentId);
+        (0, api_response_1.ok)(res, { success: true });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 //# sourceMappingURL=history.router.js.map

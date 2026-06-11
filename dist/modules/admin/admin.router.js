@@ -322,6 +322,7 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
             prisma_1.prisma.videoFile.findMany({
                 where: { status: { in: ['PROCESSING', 'PENDING', 'QUEUED'] } },
                 orderBy: { createdAt: 'desc' },
+                take: 100,
                 include: {
                     content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
                     episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },

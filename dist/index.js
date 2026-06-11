@@ -126,7 +126,15 @@ app.use((0, compression_1.default)({
         return compression_1.default.filter(req, res);
     }
 }));
-app.use((0, morgan_1.default)(env_1.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+app.use((0, morgan_1.default)(env_1.env.NODE_ENV === 'production' ? 'combined' : 'dev', {
+    skip: (req, _res) => {
+        const url = req.url || '';
+        // Skip logging for the video status polling endpoint to prevent log spam
+        if (url.includes('/api/admin/videos/status'))
+            return true;
+        return false;
+    }
+}));
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use((0, cors_1.default)({
     origin: true, // Dynamically allow any origin (required for credentials: true)

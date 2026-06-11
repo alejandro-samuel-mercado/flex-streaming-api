@@ -38,6 +38,12 @@ const envSchema = z.object({
     FFPROBE_PATH: z.string().default('ffprobe'),
     MAX_CONCURRENT_ENCODING: z.coerce.number().default(1),
 
+    // Distributed Architecture
+    ENABLE_WORKER: z.coerce.boolean().default(true),
+    WORKER_MODE: z.enum(['ALL', 'MOVIES', 'SERIES']).default('ALL'),
+    STORAGE_NODE_SERIES_URL: z.string().optional(),
+    STORAGE_NODE_MOVIES_URL: z.string().optional(),
+
     // Media Scanner
     MEDIA_SCAN_DIRS: z.string().optional().default(''),
 });

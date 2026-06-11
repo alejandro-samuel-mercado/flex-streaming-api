@@ -109,14 +109,6 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                 qualities: {
                     create: [
                         {
-                            resolution: '720p',
-                            width: 1280,
-                            height: 720,
-                            bitrate: 2500000,
-                            playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
-                            codec: 'h264'
-                        },
-                        {
                             resolution: '1080p',
                             width: 1920,
                             height: 1080,
@@ -225,6 +217,16 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                 });
             }
         }
+        // ─── Delete original file to save space ───────────────────────────────
+        try {
+            if (fs_1.default.existsSync(videoPath)) {
+                fs_1.default.unlinkSync(videoPath);
+                job.log(`Original video file deleted to save space: ${videoPath}`);
+            }
+        }
+        catch (delErr) {
+            job.log(`Warning: Failed to delete original video file: ${delErr.message}`);
+        }
         await onProgress(100);
         return { success: true, path: hlsResult.path };
     }
@@ -264,9 +266,9 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
 }, {
     connection,
     concurrency: env_1.env.MAX_CONCURRENT_ENCODING,
-    lockDuration: 5 * 60 * 1000, // 5 minutes — FFmpeg jobs are long-running
-    stalledInterval: 60 * 1000, // Check for stalled jobs every 60s (default is 30s)
-    maxStalledCount: 3, // Allow up to 3 stall checks before marking as failed
+    lockDuration: 2 * 60 * 60 * 1000, // 2 hours — FFmpeg jobs are long-running (movies take hours)
+    stalledInterval: 60 * 1000, // Check for stalled jobs every 60s
+    maxStalledCount: 10, // Allow up to 10 stall checks (very forgiving for long encodes)
 });
 exports.videoWorker.on('completed', (job) => {
     console.log(`Job ${job.id} has completed!`);

@@ -335,20 +335,22 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
       });
 
       if (imdbConflict) {
-        res.status(409).json({
-          success: false,
-          error: `El ID de IMDB ${details.imdbId} ya está asignado a otro contenido: "${imdbConflict.title}" (ID: ${imdbConflict.id})`
+        // Instead of throwing an error, we "steal" the imdbId from the conflicting content
+        await prisma.content.update({
+          where: { id: imdbConflict.id },
+          data: { imdbId: null }
         });
-        return;
+        console.log(`[MediaScanner] Removed conflicting IMDB ID ${details.imdbId} from content ${imdbConflict.id}`);
       }
     }
 
     if (tmdbConflict) {
-      res.status(409).json({
-        success: false,
-        error: `El ID de TMDB ${details.tmdbId} ya está asignado a otro contenido: "${tmdbConflict.title}" (ID: ${tmdbConflict.id})`
+      // Instead of throwing an error, we "steal" the tmdbId from the conflicting content
+      await prisma.content.update({
+        where: { id: tmdbConflict.id },
+        data: { tmdbId: null }
       });
-      return;
+      console.log(`[MediaScanner] Removed conflicting TMDB ID ${details.tmdbId} from content ${tmdbConflict.id}`);
     }
 
     // Update content

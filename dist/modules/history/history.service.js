@@ -156,6 +156,14 @@ class HistoryService {
         ]);
         return { total, pages: Math.ceil(total / limit), data: history };
     }
+    static async deleteProfileHistory(profileId, contentId) {
+        return await prisma_1.prisma.watchHistory.deleteMany({
+            where: {
+                profileId,
+                contentId,
+            },
+        });
+    }
 }
 exports.HistoryService = HistoryService;
 //# sourceMappingURL=history.service.js.map

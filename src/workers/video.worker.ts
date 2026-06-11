@@ -26,6 +26,22 @@ export const videoWorker = new Worker(
 
     job.log(`Starting HLS processing for contentId: ${contentId}`);
 
+    // ─── Worker Mode Filter ────────────────────────────────────────────────
+    // When WORKER_MODE is set, this server only processes a specific type.
+    // Server 2 (SERIES): skips MOVIE jobs, lets them wait for Server 3.
+    // Server 3 (MOVIES): skips EPISODE jobs, lets them wait for Server 2.
+    const jobType = job.data.type || 'MOVIE';
+    if (env.WORKER_MODE === 'MOVIES' && jobType === 'EPISODE') {
+      job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only. Re-queuing.`);
+      await job.moveToDelayed(Date.now() + 30000); // Retry in 30s on another worker
+      return { skipped: true, reason: 'wrong_mode' };
+    }
+    if (env.WORKER_MODE === 'SERIES' && jobType === 'MOVIE') {
+      job.log(`[WorkerMode] Skipping MOVIE job — this node handles SERIES only. Re-queuing.`);
+      await job.moveToDelayed(Date.now() + 30000);
+      return { skipped: true, reason: 'wrong_mode' };
+    }
+
     try {
       // ─── Initial Checks ───────────────────────────────────────────────
       // Check if file exists and is readable by the process
@@ -124,8 +140,16 @@ export const videoWorker = new Worker(
                 resolution: '1080p',
                 width: 1920,
                 height: 1080,
-                bitrate: 5000000,
+                bitrate: 4500000,
                 playlistUrl: `/api/stream/hls/${videoFileId}/1080p.m3u8`,
+                codec: 'h264'
+              },
+              {
+                resolution: '720p',
+                width: 1280,
+                height: 720,
+                bitrate: 2500000,
+                playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
                 codec: 'h264'
               }
             ]

@@ -46,7 +46,6 @@ class FFmpegService {
         const audioTracks = [];
         const playlistPath = path_1.default.join(resolvedOutputFolder, 'master.m3u8');
         const profiles = [
-            { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3750k', bufsize: '5000k', bandwidth: 4200000 },
             { name: '1080p', resolution: '1920:1080', bitrate: '5000k', maxrate: '7500k', bufsize: '10000k', bandwidth: 8400000 }
         ];
         // Detect source framerate for proper GOP alignment — preserve exact fraction for max FPS fidelity
@@ -89,20 +88,42 @@ class FFmpegService {
             await new Promise((resolve, reject) => {
                 let stallTimeout;
                 let hardTimeout;
+                let lastTimemark = '';
+                let lastTimemarkAt = Date.now();
+                let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
+                    .renice(5)
                     .inputOptions([
                     '-analyzeduration', '100M',
-                    '-probesize', '100M'
+                    '-probesize', '100M',
+                    '-nostdin'
                 ]);
+                const cleanup = () => {
+                    clearTimeout(stallTimeout);
+                    clearTimeout(hardTimeout);
+                    clearInterval(timemarkWatchdog);
+                };
                 const resetStallTimeout = () => {
                     if (stallTimeout)
                         clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
+                        cleanup();
                         cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] El proceso se atascó (20 min sin avanzar). Cancelado automáticamente.`));
+                        reject(new Error(`[Timeout] El proceso se atascó (20 min sin actividad). Cancelado automáticamente.`));
                     }, 20 * 60 * 1000);
                 };
+                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
+                // (FFmpeg puede seguir emitiendo eventos pero sin progresar realmente)
+                timemarkWatchdog = setInterval(() => {
+                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
+                        console.warn(`[FFmpeg] ⚠️ Watchdog: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
+                        cleanup();
+                        cmd.kill('SIGKILL');
+                        reject(new Error(`[Timeout] FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                    }
+                }, 60 * 1000);
                 hardTimeout = setTimeout(() => {
+                    cleanup();
                     cmd.kill('SIGKILL');
                     reject(new Error(`[Timeout] El proceso excedió el tiempo máximo permitido (4 horas). Cancelado automáticamente.`));
                 }, 4 * 60 * 60 * 1000);
@@ -123,7 +144,7 @@ class FFmpegService {
                     '-maxrate', profile.maxrate,
                     '-bufsize', profile.bufsize,
                     '-max_muxing_queue_size', '1024',
-                    '-hls_time', '10',
+                    '-hls_time', '30',
                     '-hls_playlist_type', 'vod',
                     '-hls_flags', 'independent_segments',
                     '-hls_segment_type', 'mpegts',
@@ -141,21 +162,24 @@ class FFmpegService {
                     .on('start', () => resetStallTimeout())
                     .on('progress', (progress) => {
                     resetStallTimeout();
+                    // Actualizar timemark para el watchdog
+                    if (progress.timemark && progress.timemark !== lastTimemark) {
+                        lastTimemark = progress.timemark;
+                        lastTimemarkAt = Date.now();
+                    }
                     if (progress.percent) {
                         taskProgress[taskIndex] = progress.percent;
                         reportProgress();
                     }
                 })
                     .on('end', () => {
-                    clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
+                    cleanup();
                     taskProgress[taskIndex] = 100;
                     reportProgress();
                     resolve(true);
                 })
                     .on('error', (err, _stdout, stderr) => {
-                    clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
+                    cleanup();
                     const errorMessage = `FFmpeg Error [${profile.name}]: ${err.message}${stderr ? `\nSTDERR: ${stderr}` : ''}`;
                     console.error(errorMessage);
                     reject(new Error(errorMessage));
@@ -173,30 +197,51 @@ class FFmpegService {
             await new Promise((resolve, reject) => {
                 let stallTimeout;
                 let hardTimeout;
+                let lastTimemark = '';
+                let lastTimemarkAt = Date.now();
+                let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
+                    .renice(5)
                     .inputOptions([
                     '-analyzeduration', '100M',
-                    '-probesize', '100M'
+                    '-probesize', '100M',
+                    '-nostdin'
                 ]);
+                const cleanup = () => {
+                    clearTimeout(stallTimeout);
+                    clearTimeout(hardTimeout);
+                    clearInterval(timemarkWatchdog);
+                };
                 const resetStallTimeout = () => {
                     if (stallTimeout)
                         clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
+                        cleanup();
                         cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] La extracción de audio se atascó (20 min sin avanzar).`));
+                        reject(new Error(`[Timeout] La extracción de audio se atascó (20 min sin actividad).`));
                     }, 20 * 60 * 1000);
                 };
+                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
+                timemarkWatchdog = setInterval(() => {
+                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
+                        console.warn(`[FFmpeg] ⚠️ Watchdog audio: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
+                        cleanup();
+                        cmd.kill('SIGKILL');
+                        reject(new Error(`[Timeout] Audio FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                    }
+                }, 60 * 1000);
                 hardTimeout = setTimeout(() => {
+                    cleanup();
                     cmd.kill('SIGKILL');
                     reject(new Error(`[Timeout] La extracción de audio excedió las 4 horas permitidas.`));
                 }, 4 * 60 * 60 * 1000);
                 cmd
                     .outputOptions([
-                    '-vn', // No video
-                    '-map', `0:a:${i}`, // Select specific audio stream
-                    '-c:a', 'aac', // AAC encoding
-                    '-b:a', '192k', // 192kbps target
-                    '-ac', '2', // Stereo downmix for compatibility
+                    '-vn',
+                    '-map', `0:a:${i}`,
+                    '-c:a', 'aac',
+                    '-b:a', '192k',
+                    '-ac', '2',
                     '-hls_time', '6',
                     '-hls_playlist_type', 'vod',
                     '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `audio_${lang}_%03d.ts`)
@@ -205,14 +250,18 @@ class FFmpegService {
                     .on('start', () => resetStallTimeout())
                     .on('progress', (progress) => {
                     resetStallTimeout();
+                    // Actualizar timemark para el watchdog
+                    if (progress.timemark && progress.timemark !== lastTimemark) {
+                        lastTimemark = progress.timemark;
+                        lastTimemarkAt = Date.now();
+                    }
                     if (progress.percent) {
                         taskProgress[taskIndex] = progress.percent;
                         reportProgress();
                     }
                 })
                     .on('end', () => {
-                    clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
+                    cleanup();
                     audioTracks.push({
                         index: i,
                         language: lang,
@@ -225,8 +274,7 @@ class FFmpegService {
                     resolve(true);
                 })
                     .on('error', (err) => {
-                    clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
+                    cleanup();
                     console.error(`Error during FFmpeg audio ${lang}: ${err.message}`);
                     reject(err);
                 })
@@ -270,7 +318,7 @@ class FFmpegService {
                 fs_1.default.mkdirSync(outputFolder, { recursive: true });
             }
             let timeout;
-            const cmd = (0, fluent_ffmpeg_1.default)(inputPath);
+            const cmd = (0, fluent_ffmpeg_1.default)(inputPath).renice(5);
             timeout = setTimeout(() => {
                 cmd.kill('SIGKILL');
                 reject(new Error(`[Timeout] La extracción de portada se atascó o tardó más de 2 minutos.`));
@@ -331,7 +379,7 @@ class FFmpegService {
             try {
                 await new Promise((resolve, reject) => {
                     let timeout;
-                    const cmd = (0, fluent_ffmpeg_1.default)(resolvedInput);
+                    const cmd = (0, fluent_ffmpeg_1.default)(resolvedInput).renice(5);
                     timeout = setTimeout(() => {
                         cmd.kill('SIGKILL');
                         reject(new Error(`[Timeout] La extracción de subtítulos se atascó o tardó más de 5 minutos.`));
@@ -339,7 +387,8 @@ class FFmpegService {
                     cmd
                         .inputOptions([
                         '-analyzeduration', '100M',
-                        '-probesize', '100M'
+                        '-probesize', '100M',
+                        '-nostdin'
                     ])
                         .outputOptions([
                         `-map 0:s:${i}`,

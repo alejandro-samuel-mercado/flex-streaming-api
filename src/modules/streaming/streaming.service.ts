@@ -4,6 +4,32 @@ import { generateSignedUrl, verifySignedToken } from '../../services/token.servi
 import fs from 'fs';
 import path from 'path';
 
+// ─── In-memory cache for HLS segment serving ─────────────────────────────────
+// Eliminates DB queries on every .ts segment request.
+// TTL: 5 minutes (videos don't change paths after encoding)
+const VIDEO_FILE_CACHE = new Map<string, { data: any; expiresAt: number }>();
+const HLS_ROOT_CACHE   = new Map<string, { root: string; expiresAt: number }>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedVideoFile(id: string) {
+    const entry = VIDEO_FILE_CACHE.get(id);
+    if (entry && entry.expiresAt > Date.now()) return entry.data;
+    VIDEO_FILE_CACHE.delete(id);
+    return null;
+}
+function setCachedVideoFile(id: string, data: any) {
+    VIDEO_FILE_CACHE.set(id, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+function getCachedHlsRoot(id: string) {
+    const entry = HLS_ROOT_CACHE.get(id);
+    if (entry && entry.expiresAt > Date.now()) return entry.root;
+    HLS_ROOT_CACHE.delete(id);
+    return null;
+}
+function setCachedHlsRoot(id: string, root: string) {
+    HLS_ROOT_CACHE.set(id, { root, expiresAt: Date.now() + CACHE_TTL_MS });
+}
+
 export class StreamingService {
   /**
    * Generates a signed streaming token for a content item.
@@ -81,6 +107,15 @@ export class StreamingService {
     // Generate signed token (4 hours TTL)
     const token = generateSignedUrl(videoFile.id, ip, 14400);
 
+    // Determine which storage node holds this video
+    // EPISODE → STORAGE_NODE_SERIES_URL, MOVIE → STORAGE_NODE_MOVIES_URL
+    const isEpisode = !!episodeId || !!videoFile.episodeId;
+    const storageNodeUrl = isEpisode
+      ? env.STORAGE_NODE_SERIES_URL
+      : env.STORAGE_NODE_MOVIES_URL;
+    // Falls back to the current API server if no nodes are configured yet
+    const streamBaseUrl = storageNodeUrl || env.BACKEND_URL;
+
     // Record view
     await this.recordView(contentId);
 
@@ -89,6 +124,7 @@ export class StreamingService {
       expiresIn: 14400,
       videoFileId: videoFile.id,
       masterPlaylist: videoFile.masterPlaylist,
+      streamBaseUrl,
       qualities: videoFile.qualities.map((q) => ({
         resolution: q.resolution,
         width: q.width,
@@ -131,43 +167,60 @@ export class StreamingService {
       return { status: 403, headers: {}, stream: null };
     }
 
-    // ── Resolve base HLS directory ───────────────────────────────────────────
-    const videoFile = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
-    if (!videoFile) {
-        return { status: 404, headers: {}, stream: null };
-    }
+    // ── Resolve base HLS directory (cached to avoid repeated disk + DB lookups) ──
+    let hlsRoot = getCachedHlsRoot(videoFileId);
 
-    let hlsRoot = '';
-    
-    // 1. Try hlsPath from DB (the most reliable source)
-    if (videoFile.hlsPath) {
-        hlsRoot = path.isAbsolute(videoFile.hlsPath) 
-            ? videoFile.hlsPath 
-            : path.resolve(process.cwd(), videoFile.hlsPath);
-    } 
-    
-    // 2. Fallback: try the folder named after the videoFileId
-    if (!hlsRoot || !fs.existsSync(hlsRoot)) {
-        hlsRoot = path.resolve(env.HLS_PATH, videoFileId);
-    }
+    if (!hlsRoot) {
+        const videoFile = getCachedVideoFile(videoFileId) ||
+            await prisma.videoFile.findUnique({ where: { id: videoFileId } });
 
-    // 3. Try legacy behavior (contentId or episodeId) if still not found
-    if (!fs.existsSync(hlsRoot)) {
-        const folderId = videoFile.contentId || videoFile.episodeId;
-        if (folderId) {
-            hlsRoot = path.resolve(env.HLS_PATH, folderId);
+        if (!videoFile) {
+            return { status: 404, headers: {}, stream: null };
         }
-    }    
-            if (!fs.existsSync(hlsRoot) && videoFile.episodeId) {
-                // Last resort: find the parent content ID via episode -> season
-                const ep = await prisma.episode.findUnique({
-                    where: { id: videoFile.episodeId },
-                    include: { season: { select: { contentId: true } } }
-                });
-                if (ep?.season?.contentId) {
-                    hlsRoot = path.resolve(env.HLS_PATH, ep.season.contentId);
-                }
+        setCachedVideoFile(videoFileId, videoFile);
+
+        let resolvedRoot = '';
+
+        // 1. Try hlsPath from DB (the most reliable source)
+        if (videoFile.hlsPath) {
+            resolvedRoot = path.isAbsolute(videoFile.hlsPath)
+                ? videoFile.hlsPath
+                : path.resolve(process.cwd(), videoFile.hlsPath);
+        }
+
+        // 2. Fallback: folder named after the videoFileId
+        if (!resolvedRoot || !fs.existsSync(resolvedRoot)) {
+            resolvedRoot = path.resolve(env.HLS_PATH, videoFileId);
+        }
+
+        // 3. Try legacy behavior (contentId or episodeId)
+        if (!fs.existsSync(resolvedRoot)) {
+            const folderId = videoFile.contentId || videoFile.episodeId;
+            if (folderId) resolvedRoot = path.resolve(env.HLS_PATH, folderId);
+        }
+
+        // 4. Last resort: parent content via episode -> season
+        if (!fs.existsSync(resolvedRoot) && videoFile.episodeId) {
+            const ep = await prisma.episode.findUnique({
+                where: { id: videoFile.episodeId },
+                include: { season: { select: { contentId: true } } }
+            });
+            if (ep?.season?.contentId) {
+                resolvedRoot = path.resolve(env.HLS_PATH, ep.season.contentId);
             }
+        }
+
+        hlsRoot = resolvedRoot;
+        if (fs.existsSync(hlsRoot)) {
+            setCachedHlsRoot(videoFileId, hlsRoot);
+        }
+    }
+
+    // We also need videoFile for the master playlist fallback check
+    const videoFile = getCachedVideoFile(videoFileId) ||
+        await prisma.videoFile.findUnique({ where: { id: videoFileId } });
+    if (!videoFile) return { status: 404, headers: {}, stream: null };
+    setCachedVideoFile(videoFileId, videoFile);
     
     // Resolve the full path and verify it stays inside hlsRoot.
     let resolvedPath = path.resolve(hlsRoot, filePath);
@@ -213,9 +266,10 @@ export class StreamingService {
       headers: {
         'Content-Type': contentType,
         'Content-Length': stat.size.toString(),
-        // .ts segments are immutable (content-addressed by segment number)
-        // .m3u8 playlists should be re-fetched on ABR switches
-        'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache',
+        'Accept-Ranges': 'bytes',
+        // .ts segments are content-addressed and immutable — cache aggressively
+        // .m3u8 playlists must be re-fetched to support ABR quality switching
+        'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
       },
       stream: fs.createReadStream(resolvedPath),
     };

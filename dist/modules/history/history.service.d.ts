@@ -128,5 +128,6 @@ export declare class HistoryService {
             watchedAt: Date;
         })[];
     }>;
+    static deleteProfileHistory(profileId: string, contentId: string): Promise<import(".prisma/client").Prisma.BatchPayload>;
 }
 //# sourceMappingURL=history.service.d.ts.map
