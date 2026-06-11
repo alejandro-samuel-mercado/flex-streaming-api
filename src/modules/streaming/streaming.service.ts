@@ -259,19 +259,17 @@ export class StreamingService {
       ext === '.vtt'  ? 'text/vtt' :
       'application/octet-stream';
 
-    const stat = fs.statSync(resolvedPath);
+    const accelPath = `/internal_hls/${resolvedPath.replace(env.HLS_PATH, '').replace(/^\\//, '')}`;
 
     return {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Content-Length': stat.size.toString(),
         'Accept-Ranges': 'bytes',
-        // .ts segments are content-addressed and immutable — cache aggressively
-        // .m3u8 playlists must be re-fetched to support ABR quality switching
         'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
+        'X-Accel-Redirect': accelPath,
       },
-      stream: fs.createReadStream(resolvedPath),
+      stream: null,
     };
   }
 
