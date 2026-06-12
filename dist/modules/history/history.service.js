@@ -21,7 +21,8 @@ class HistoryService {
         catch (err) {
             // If profileId doesn't exist, ignore or log. Avoid crashing with P2003
             if (err.code === 'P2003') {
-                console.warn(`[HistoryService] Invalid profileId ${profileId} for watch progress. Ignoring.`);
+                // Silently ignore to avoid log spam from old clients
+                // console.warn(`[HistoryService] Invalid profileId ${profileId} for watch progress. Ignoring.`);
                 return null;
             }
             throw err;

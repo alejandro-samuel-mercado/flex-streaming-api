@@ -102,9 +102,17 @@ const io = new socket_io_1.Server(httpServer, {
 exports.io = io;
 // Import worker and events to start them
 const queue_service_1 = require("./services/queue.service");
+const fs_1 = __importDefault(require("fs"));
 if (env_1.env.ENABLE_WORKER) {
-    require('./workers/video.worker');
-    console.log(`[Worker] Video processing worker ENABLED (Mode: ${env_1.env.WORKER_MODE})`);
+    try {
+        // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
+        fs_1.default.accessSync(env_1.env.MEDIA_PATH, fs_1.default.constants.R_OK);
+        require('./workers/video.worker');
+        console.log(`[Worker] Video processing worker ENABLED (Mode: ${env_1.env.WORKER_MODE})`);
+    }
+    catch (err) {
+        console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env_1.env.MEDIA_PATH}) is not accessible on this node.`);
+    }
 }
 else {
     console.log('[Worker] Video processing worker DISABLED on this node');
@@ -246,7 +254,6 @@ app.get('/health', (_req, res) => {
 });
 // ─── Error Handler (must be last) ─────────────────────────────────────────────
 app.use(error_handler_1.errorHandler);
-const fs_1 = __importDefault(require("fs"));
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function bootstrap() {
     try {
