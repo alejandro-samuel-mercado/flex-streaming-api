@@ -131,7 +131,9 @@ app.use('/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH)));
 app.use('/api/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH))); // Alias
 
 app.use('/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH)));
+app.use('/media/subtitles', express.static(path.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback
 app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))); // Alias
+app.use('/api/media/subtitles', express.static(path.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback alias
 
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
