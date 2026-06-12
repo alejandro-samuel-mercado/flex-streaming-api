@@ -66,9 +66,17 @@ const io = new SocketIOServer(httpServer, {
 
 // Import worker and events to start them
 import { videoQueueEvents } from './services/queue.service';
+import fs from 'fs';
+
 if (env.ENABLE_WORKER) {
-  require('./workers/video.worker');
-  console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
+  try {
+    // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
+    fs.accessSync(env.MEDIA_PATH, fs.constants.R_OK);
+    require('./workers/video.worker');
+    console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
+  } catch (err) {
+    console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env.MEDIA_PATH}) is not accessible on this node.`);
+  }
 } else {
   console.log('[Worker] Video processing worker DISABLED on this node');
 }
