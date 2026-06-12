@@ -68,17 +68,30 @@ const io = new SocketIOServer(httpServer, {
 import { videoQueueEvents } from './services/queue.service';
 import fs from 'fs';
 
-if (env.ENABLE_WORKER) {
-    try {
-        // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
-        fs.accessSync(env.MEDIA_PATH, fs.constants.R_OK);
-        require('./workers/video.worker');
-        console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
-    } catch (err) {
-        console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env.MEDIA_PATH}) is not accessible on this node.`);
+// ─── Manual PM2 Cache Bypass ────────────────────────────────────────────────
+// If PM2 cached ENABLE_WORKER=true, but the physical .env file says false,
+// we forcefully disable it here to prevent Cerebro from stealing jobs.
+let isWorkerEnabled = env.ENABLE_WORKER;
+try {
+  if (fs.existsSync('.env')) {
+    const envFile = fs.readFileSync('.env', 'utf-8');
+    if (envFile.includes('ENABLE_WORKER=false') || envFile.includes('ENABLE_WORKER="false"')) {
+      isWorkerEnabled = false;
     }
+  }
+} catch (e) {}
+
+if (isWorkerEnabled) {
+  try {
+    // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
+    fs.accessSync(env.MEDIA_PATH, fs.constants.R_OK);
+    require('./workers/video.worker');
+    console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
+  } catch (err) {
+    console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env.MEDIA_PATH}) is not accessible on this node.`);
+  }
 } else {
-    console.log('[Worker] Video processing worker DISABLED on this node');
+  console.log('[Worker] Video processing worker DISABLED on this node (read from .env / process)');
 }
 
 // Listen to BullMQ queue progress and emit to clients
