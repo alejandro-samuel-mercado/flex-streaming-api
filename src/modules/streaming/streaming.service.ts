@@ -160,7 +160,7 @@ export class StreamingService {
         filePath: string,
         token: string,
         ip: string
-    ): Promise<{ status: number; headers: Record<string, string>; stream: fs.ReadStream | null }> {
+    ): Promise<{ status: number; headers: Record<string, string>; stream: NodeJS.ReadableStream | null }> {
         // Verify token
         if (!verifySignedToken(token, videoFileId, ip)) {
             console.error(`[Streaming] 403: Invalid or expired token for video ${videoFileId}. IP: ${ip}`);
@@ -259,17 +259,29 @@ export class StreamingService {
                     ext === '.vtt' ? 'text/vtt' :
                         'application/octet-stream';
 
-        const accelPath = `/internal_home/${resolvedPath.replace(/^\/home\//, '')}`;
+        let stream: NodeJS.ReadableStream | null = null;
+        let headers: Record<string, string> = {
+            'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
+        };
+
+        if (ext === '.m3u8') {
+            const content = fs.readFileSync(resolvedPath, 'utf8');
+            const modified = content.replace(
+                /^(.*\.(?:ts|m3u8|key|vtt|mp4|webm))$/gm,
+                `$1?token=${token}`
+            );
+            const { Readable } = require('stream');
+            stream = Readable.from([modified]);
+        } else {
+            stream = fs.createReadStream(resolvedPath);
+        }
 
         return {
             status: 200,
-            headers: {
-                'Content-Type': contentType,
-                'Accept-Ranges': 'bytes',
-                'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
-                'X-Accel-Redirect': accelPath,
-            },
-            stream: null,
+            headers,
+            stream,
         };
     }
 
