@@ -321,6 +321,20 @@ videoWorker.on('completed', (job) => {
   console.log(`Job ${job.id} has completed!`);
 });
 
-videoWorker.on('failed', (job, err) => {
+videoWorker.on('failed', async (job, err) => {
   console.error(`Job ${job?.id} has failed with ${err.message}`);
+  if (job?.data?.videoFileId) {
+    try {
+      await prisma.videoFile.update({
+        where: { id: job.data.videoFileId },
+        data: {
+          status: 'FAILED',
+          errorMessage: `Error en BullMQ (Stalled o Caído): ${err.message}`
+        }
+      });
+      console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
+    } catch (dbErr: any) {
+      console.error(`[VideoWorker] Failed to update database status on job failure: ${dbErr.message}`);
+    }
+  }
 });

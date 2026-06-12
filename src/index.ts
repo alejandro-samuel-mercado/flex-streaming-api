@@ -251,6 +251,28 @@ async function bootstrap() {
         }, 6 * 60 * 60 * 1000);
         // Run once at startup too
         ChunkUploadService.cleanupStaleChunks();
+
+        // Periodic cleanup of stuck video processes (every 6 hours)
+        setInterval(async () => {
+            try {
+                const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+                const stuck = await prisma.videoFile.updateMany({
+                    where: {
+                        status: 'PROCESSING',
+                        updatedAt: { lt: fourHoursAgo }
+                    },
+                    data: {
+                        status: 'FAILED',
+                        errorMessage: 'Proceso marcado como fallido automáticamente tras 4 horas de inactividad.'
+                    }
+                });
+                if (stuck.count > 0) {
+                    console.log(`🧹 [Cleanup] Reseteados ${stuck.count} procesos de video estancados (más de 4 horas inactivos)`);
+                }
+            } catch (err: any) {
+                console.error('[Cleanup] Failed to cleanup stuck video processes:', err.message);
+            }
+        }, 6 * 60 * 60 * 1000);
     } catch (error) {
         console.error('❌ Failed to start server:', error);
         process.exit(1);
