@@ -358,9 +358,7 @@ uploadRouter.post('/video/:id/retry', async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Solo se pueden reintentar videos fallidos' });
     }
 
-    if (!fs.existsSync(videoFile.originalPath)) {
-      return res.status(400).json({ success: false, error: 'El archivo original ya no existe en el disco' });
-    }
+    // Eliminado el fs.existsSync porque el Cerebro no tiene los discos de 64TB.
 
     const { addVideoJob } = await import('../../services/queue.service');
 

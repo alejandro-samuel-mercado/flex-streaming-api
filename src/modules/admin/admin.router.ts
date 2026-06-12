@@ -385,35 +385,25 @@ adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res
         
         let count = 0;
         for (const v of toRetry) {
-            // Check if file exists before enqueuing
-            const fs = await import('fs');
-            if (fs.existsSync(v.originalPath)) {
-                const job = await addVideoJob({
-                    videoFileId: v.id,
-                    contentId: v.contentId || '',
-                    type: v.type,
-                    episodeId: v.episodeId || undefined,
-                    videoPath: v.originalPath,
-                });
+            // Eliminar chequeo fs.existsSync porque Cerebro no tiene los discos de 64TB montados.
+            // Si el archivo no existe, el worker remoto (Debian o Ubuntu) fallará por su cuenta.
+            const job = await addVideoJob({
+                videoFileId: v.id,
+                contentId: v.contentId || '',
+                type: v.type,
+                episodeId: v.episodeId || undefined,
+                videoPath: v.originalPath,
+            });
 
-                await prisma.videoFile.update({
-                    where: { id: v.id },
-                    data: { 
-                        status: 'QUEUED', 
-                        errorMessage: null, 
-                        processingJobId: job.id 
-                    }
-                });
-                count++;
-            } else {
-                await prisma.videoFile.update({
-                    where: { id: v.id },
-                    data: { 
-                        status: 'FAILED', 
-                        errorMessage: 'Archivo original no encontrado en el disco.' 
-                    }
-                });
-            }
+            await prisma.videoFile.update({
+                where: { id: v.id },
+                data: { 
+                    status: 'QUEUED', 
+                    errorMessage: null, 
+                    processingJobId: job.id 
+                }
+            });
+            count++;
         }
         ok(res, { message: `Reenviados ${count} videos a la cola de procesamiento.` });
     } catch (err) { next(err); }
