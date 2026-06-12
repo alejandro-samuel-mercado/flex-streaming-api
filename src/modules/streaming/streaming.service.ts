@@ -268,9 +268,13 @@ export class StreamingService {
 
         if (ext === '.m3u8') {
             const content = fs.readFileSync(resolvedPath, 'utf8');
-            const modified = content.replace(
-                /^(.*\.(?:ts|m3u8|key|vtt|mp4|webm))$/gm,
-                `$1?token=${token}`
+            let modified = content.replace(
+                /^(?!#)([^\s].+)$/gm,
+                (match) => match.includes('?token=') ? match : `${match}?token=${token}`
+            );
+            modified = modified.replace(
+                /URI="([^"]+)"/g,
+                (match, uri) => uri.includes('?token=') ? match : `URI="${uri}?token=${token}"`
             );
             const { Readable } = require('stream');
             stream = Readable.from([modified]);
