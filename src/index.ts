@@ -131,16 +131,33 @@ app.use('/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH)));
 app.use('/api/media/thumbnails', express.static(path.resolve(env.THUMBNAILS_PATH))); // Alias
 
 app.use('/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH)));
-app.use('/media/subtitles', express.static(path.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback
+app.use('/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH)));
 app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))); // Alias
-app.use('/api/media/subtitles', express.static(path.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback alias
 
-app.get('/api/debug/subtitles/:id', (req, res) => {
-    const p1 = path.resolve(env.SUBTITLES_PATH, req.params.id);
-    const p2 = path.resolve(process.cwd(), 'media/subtitles', req.params.id);
-    const d1 = fs.existsSync(p1) ? fs.readdirSync(p1) : null;
-    const d2 = fs.existsSync(p2) ? fs.readdirSync(p2) : null;
-    res.json({ p1, d1, p2, d2, SUBTITLES_PATH: env.SUBTITLES_PATH, cwd: process.cwd() });
+// Distributed subtitle proxy/redirect for Cerebro node
+app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:contentId/:filename'], async (req, res, next) => {
+    // If we have the file locally, express.static already served it.
+    // If we reached here, it means the file is not on this node's disk.
+    // Let's redirect to the correct storage node if distributed mode is enabled.
+    const { contentId, filename } = req.params;
+    
+    try {
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const content = await prisma.content.findUnique({ where: { id: contentId } });
+        
+        if (content) {
+            const storageNodeUrl = content.type === 'SERIES' ? env.STORAGE_NODE_SERIES_URL : env.STORAGE_NODE_MOVIES_URL;
+            if (storageNodeUrl && storageNodeUrl !== env.BACKEND_URL) {
+                return res.redirect(302, `${storageNodeUrl}/media/subtitles/${contentId}/${filename}`);
+            }
+        }
+    } catch (err) {
+        console.error('[Subtitle Redirect Error]', err);
+    }
+    
+    // Fallback if not distributed or not found
+    next();
 });
 
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
