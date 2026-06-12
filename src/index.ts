@@ -69,16 +69,16 @@ import { videoQueueEvents } from './services/queue.service';
 import fs from 'fs';
 
 if (env.ENABLE_WORKER) {
-  try {
-    // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
-    fs.accessSync(env.MEDIA_PATH, fs.constants.R_OK);
-    require('./workers/video.worker');
-    console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
-  } catch (err) {
-    console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env.MEDIA_PATH}) is not accessible on this node.`);
-  }
+    try {
+        // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
+        fs.accessSync(env.MEDIA_PATH, fs.constants.R_OK);
+        require('./workers/video.worker');
+        console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
+    } catch (err) {
+        console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env.MEDIA_PATH}) is not accessible on this node.`);
+    }
 } else {
-  console.log('[Worker] Video processing worker DISABLED on this node');
+    console.log('[Worker] Video processing worker DISABLED on this node');
 }
 
 // Listen to BullMQ queue progress and emit to clients
@@ -148,12 +148,12 @@ app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:content
     // If we reached here, it means the file is not on this node's disk.
     // Let's redirect to the correct storage node if distributed mode is enabled.
     const { contentId, filename } = req.params;
-    
+
     try {
         const { PrismaClient } = require('@prisma/client');
         const prisma = new PrismaClient();
         const content = await prisma.content.findUnique({ where: { id: contentId } });
-        
+
         if (content) {
             const storageNodeUrl = content.type === 'SERIES' ? env.STORAGE_NODE_SERIES_URL : env.STORAGE_NODE_MOVIES_URL;
             if (storageNodeUrl && storageNodeUrl !== env.BACKEND_URL) {
@@ -163,7 +163,7 @@ app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:content
     } catch (err) {
         console.error('[Subtitle Redirect Error]', err);
     }
-    
+
     // Fallback if not distributed or not found
     next();
 });
@@ -236,7 +236,6 @@ app.get('/health', (_req, res) => {
 // ─── Error Handler (must be last) ─────────────────────────────────────────────
 app.use(errorHandler);
 
-import fs from 'fs';
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function bootstrap() {
