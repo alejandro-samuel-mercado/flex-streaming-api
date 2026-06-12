@@ -83,19 +83,10 @@ try {
 
 if (isWorkerEnabled) {
   try {
-    // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
-    // We check if there are actual files inside the peliculas folder, because the
-    // empty mountpoint directory might still exist on Cerebro.
-    const peliculasPath = require('path').join(env.MEDIA_PATH, 'peliculas');
-    const files = fs.readdirSync(peliculasPath);
-    if (files.length === 0) {
-        throw new Error('Directory is empty, disks not mounted');
-    }
-    
     require('./workers/video.worker');
     console.log(`[Worker] Video processing worker ENABLED (Mode: ${env.WORKER_MODE})`);
   } catch (err) {
-    console.log(`[Worker] Auto-disabled video worker because physical media disks are not mounted on this node.`);
+    console.log(`[Worker] Failed to initialize video worker:`, err);
   }
 } else {
   console.log('[Worker] Video processing worker DISABLED on this node (read from .env / process)');
