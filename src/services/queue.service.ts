@@ -60,28 +60,9 @@ export async function getJobLogs(jobId: string) {
  * - Otherwise, follows a 6-hour cycle: 2 hours active, 4 hours rest (anchored at 00:00).
  */
 export function isProcessingAllowed(date: Date = new Date()): boolean {
-    if (process.env.FORCE_WORKER_ACTIVE === 'true') {
-        return true;
-    }
-
-    const hour = date.getHours();
-
-    // Rule 1: Night exception (uninterrupted 3am to 7am)
-    if (hour >= 3 && hour < 7) {
-        return true;
-    }
-
-    // Rule 2: 2 hours active, 4 hours paused cycle (6-hour block)
-    // 00:00 - 02:00 -> Active (hour % 6 is 0, 1)
-    // 02:00 - 06:00 -> Paused (hour % 6 is 2, 3, 4, 5) -- overridden by 3-7am above
-    // 06:00 - 08:00 -> Active (hour % 6 is 0, 1)
-    // 08:00 - 12:00 -> Paused
-    const hourInCycle = hour % 6;
-    if (hourInCycle < 2) {
-        return true;
-    }
-
-    return false;
+    // Process jobs immediately at all times. 
+    // The previous 6-hour cycle logic has been removed to prevent jobs from getting stuck in QUEUED.
+    return true;
 }
 
 let lastLoggedState: boolean | null = null;
