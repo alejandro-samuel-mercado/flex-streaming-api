@@ -10,9 +10,9 @@ import { ResellerService } from '../reseller/reseller.service';
 
 export const adminRouter = Router();
 
-// All admin routes require ADMIN role
+// All admin routes require ADMIN or SUPER_VENDOR role
 adminRouter.use(authenticate as RequestHandler);
-adminRouter.use(requireRole('ADMIN') as RequestHandler);
+adminRouter.use(requireRole('ADMIN', 'SUPER_VENDOR') as RequestHandler);
 
 
 
@@ -379,7 +379,7 @@ adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res
     try {
         const toRetry = await prisma.videoFile.findMany({ 
             where: { 
-                status: { in: ['FAILED', 'PENDING'] } 
+                status: { in: ['FAILED', 'PENDING', 'PROCESSING'] } 
             } 
         });
         

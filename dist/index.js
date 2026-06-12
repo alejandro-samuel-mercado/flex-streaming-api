@@ -160,15 +160,30 @@ app.use('/api/uploads', express_1.default.static(path_1.default.resolve(env_1.en
 app.use('/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH)));
 app.use('/api/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH))); // Alias
 app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH)));
-app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback
+app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH)));
 app.use('/api/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH))); // Alias
-app.use('/api/media/subtitles', express_1.default.static(path_1.default.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback alias
-app.get('/api/debug/subtitles/:id', (req, res) => {
-    const p1 = path_1.default.resolve(env_1.env.SUBTITLES_PATH, req.params.id);
-    const p2 = path_1.default.resolve(process.cwd(), 'media/subtitles', req.params.id);
-    const d1 = fs_1.default.existsSync(p1) ? fs_1.default.readdirSync(p1) : null;
-    const d2 = fs_1.default.existsSync(p2) ? fs_1.default.readdirSync(p2) : null;
-    res.json({ p1, d1, p2, d2, SUBTITLES_PATH: env_1.env.SUBTITLES_PATH, cwd: process.cwd() });
+// Distributed subtitle proxy/redirect for Cerebro node
+app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:contentId/:filename'], async (req, res, next) => {
+    // If we have the file locally, express.static already served it.
+    // If we reached here, it means the file is not on this node's disk.
+    // Let's redirect to the correct storage node if distributed mode is enabled.
+    const { contentId, filename } = req.params;
+    try {
+        const { PrismaClient } = require('@prisma/client');
+        const prisma = new PrismaClient();
+        const content = await prisma.content.findUnique({ where: { id: contentId } });
+        if (content) {
+            const storageNodeUrl = content.type === 'SERIES' ? env_1.env.STORAGE_NODE_SERIES_URL : env_1.env.STORAGE_NODE_MOVIES_URL;
+            if (storageNodeUrl && storageNodeUrl !== env_1.env.BACKEND_URL) {
+                return res.redirect(302, `${storageNodeUrl}/media/subtitles/${contentId}/${filename}`);
+            }
+        }
+    }
+    catch (err) {
+        console.error('[Subtitle Redirect Error]', err);
+    }
+    // Fallback if not distributed or not found
+    next();
 });
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = (0, express_rate_limit_1.default)({

@@ -46,9 +46,9 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const zod_1 = require("zod");
 const reseller_service_1 = require("../reseller/reseller.service");
 exports.adminRouter = (0, express_1.Router)();
-// All admin routes require ADMIN role
+// All admin routes require ADMIN or SUPER_VENDOR role
 exports.adminRouter.use(auth_middleware_1.authenticate);
-exports.adminRouter.use((0, auth_middleware_1.requireRole)('ADMIN'));
+exports.adminRouter.use((0, auth_middleware_1.requireRole)('ADMIN', 'SUPER_VENDOR'));
 // ─── Dashboard KPIs ──────────────────────────────────────────────────────────
 exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
     try {
@@ -381,7 +381,7 @@ exports.adminRouter.post('/videos/retry-failed', (async (_req, res, next) => {
     try {
         const toRetry = await prisma_1.prisma.videoFile.findMany({
             where: {
-                status: { in: ['FAILED', 'PENDING'] }
+                status: { in: ['FAILED', 'PENDING', 'PROCESSING'] }
             }
         });
         let count = 0;
