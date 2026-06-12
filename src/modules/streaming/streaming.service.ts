@@ -183,9 +183,14 @@ export class StreamingService {
 
             // 1. Try hlsPath from DB (the most reliable source)
             if (videoFile.hlsPath) {
-                resolvedRoot = path.isAbsolute(videoFile.hlsPath)
-                    ? videoFile.hlsPath
-                    : path.resolve(process.cwd(), videoFile.hlsPath);
+                if (path.isAbsolute(videoFile.hlsPath)) {
+                    resolvedRoot = videoFile.hlsPath;
+                } else if (videoFile.hlsPath.startsWith('media/hls')) {
+                    // Map old relative paths directly to the new 64TB HLS path
+                    resolvedRoot = path.resolve(env.HLS_PATH, videoFile.hlsPath.replace('media/hls', '').replace(/^\//, ''));
+                } else {
+                    resolvedRoot = path.resolve(process.cwd(), videoFile.hlsPath);
+                }
             }
 
             // 2. Fallback: folder named after the videoFileId
