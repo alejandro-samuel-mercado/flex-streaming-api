@@ -361,9 +361,7 @@ exports.uploadRouter.post('/video/:id/retry', async (req, res, next) => {
         if (videoFile.status !== 'FAILED') {
             return res.status(400).json({ success: false, error: 'Solo se pueden reintentar videos fallidos' });
         }
-        if (!fs_1.default.existsSync(videoFile.originalPath)) {
-            return res.status(400).json({ success: false, error: 'El archivo original ya no existe en el disco' });
-        }
+        // Eliminado el fs.existsSync porque el Cerebro no tiene los discos de 64TB.
         const { addVideoJob } = await Promise.resolve().then(() => __importStar(require('../../services/queue.service')));
         await prisma_1.prisma.videoFile.update({
             where: { id },

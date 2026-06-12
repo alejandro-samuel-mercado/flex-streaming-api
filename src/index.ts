@@ -135,6 +135,14 @@ app.use('/media/subtitles', express.static(path.resolve(process.cwd(), 'media/su
 app.use('/api/media/subtitles', express.static(path.resolve(env.SUBTITLES_PATH))); // Alias
 app.use('/api/media/subtitles', express.static(path.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback alias
 
+app.get('/api/debug/subtitles/:id', (req, res) => {
+    const p1 = path.resolve(env.SUBTITLES_PATH, req.params.id);
+    const p2 = path.resolve(process.cwd(), 'media/subtitles', req.params.id);
+    const d1 = fs.existsSync(p1) ? fs.readdirSync(p1) : null;
+    const d2 = fs.existsSync(p2) ? fs.readdirSync(p2) : null;
+    res.json({ p1, d1, p2, d2, SUBTITLES_PATH: env.SUBTITLES_PATH, cwd: process.cwd() });
+});
+
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,

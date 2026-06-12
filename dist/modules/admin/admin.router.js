@@ -386,35 +386,24 @@ exports.adminRouter.post('/videos/retry-failed', (async (_req, res, next) => {
         });
         let count = 0;
         for (const v of toRetry) {
-            // Check if file exists before enqueuing
-            const fs = await Promise.resolve().then(() => __importStar(require('fs')));
-            if (fs.existsSync(v.originalPath)) {
-                const job = await (0, queue_service_1.addVideoJob)({
-                    videoFileId: v.id,
-                    contentId: v.contentId || '',
-                    type: v.type,
-                    episodeId: v.episodeId || undefined,
-                    videoPath: v.originalPath,
-                });
-                await prisma_1.prisma.videoFile.update({
-                    where: { id: v.id },
-                    data: {
-                        status: 'QUEUED',
-                        errorMessage: null,
-                        processingJobId: job.id
-                    }
-                });
-                count++;
-            }
-            else {
-                await prisma_1.prisma.videoFile.update({
-                    where: { id: v.id },
-                    data: {
-                        status: 'FAILED',
-                        errorMessage: 'Archivo original no encontrado en el disco.'
-                    }
-                });
-            }
+            // Eliminar chequeo fs.existsSync porque Cerebro no tiene los discos de 64TB montados.
+            // Si el archivo no existe, el worker remoto (Debian o Ubuntu) fallará por su cuenta.
+            const job = await (0, queue_service_1.addVideoJob)({
+                videoFileId: v.id,
+                contentId: v.contentId || '',
+                type: v.type,
+                episodeId: v.episodeId || undefined,
+                videoPath: v.originalPath,
+            });
+            await prisma_1.prisma.videoFile.update({
+                where: { id: v.id },
+                data: {
+                    status: 'QUEUED',
+                    errorMessage: null,
+                    processingJobId: job.id
+                }
+            });
+            count++;
         }
         (0, api_response_1.ok)(res, { message: `Reenviados ${count} videos a la cola de procesamiento.` });
     }

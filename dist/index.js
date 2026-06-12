@@ -102,7 +102,13 @@ const io = new socket_io_1.Server(httpServer, {
 exports.io = io;
 // Import worker and events to start them
 const queue_service_1 = require("./services/queue.service");
-require("./workers/video.worker");
+if (env_1.env.ENABLE_WORKER) {
+    require('./workers/video.worker');
+    console.log(`[Worker] Video processing worker ENABLED (Mode: ${env_1.env.WORKER_MODE})`);
+}
+else {
+    console.log('[Worker] Video processing worker DISABLED on this node');
+}
 // Listen to BullMQ queue progress and emit to clients
 queue_service_1.videoQueueEvents.on('progress', ({ jobId, data }) => {
     io.emit('video-progress', { jobId, progress: data });
@@ -154,7 +160,16 @@ app.use('/api/uploads', express_1.default.static(path_1.default.resolve(env_1.en
 app.use('/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH)));
 app.use('/api/media/thumbnails', express_1.default.static(path_1.default.resolve(env_1.env.THUMBNAILS_PATH))); // Alias
 app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH)));
+app.use('/media/subtitles', express_1.default.static(path_1.default.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback
 app.use('/api/media/subtitles', express_1.default.static(path_1.default.resolve(env_1.env.SUBTITLES_PATH))); // Alias
+app.use('/api/media/subtitles', express_1.default.static(path_1.default.resolve(process.cwd(), 'media/subtitles'))); // Legacy fallback alias
+app.get('/api/debug/subtitles/:id', (req, res) => {
+    const p1 = path_1.default.resolve(env_1.env.SUBTITLES_PATH, req.params.id);
+    const p2 = path_1.default.resolve(process.cwd(), 'media/subtitles', req.params.id);
+    const d1 = fs_1.default.existsSync(p1) ? fs_1.default.readdirSync(p1) : null;
+    const d2 = fs_1.default.existsSync(p2) ? fs_1.default.readdirSync(p2) : null;
+    res.json({ p1, d1, p2, d2, SUBTITLES_PATH: env_1.env.SUBTITLES_PATH, cwd: process.cwd() });
+});
 // ─── Rate Limiting (differentiated per endpoint type) ─────────────────────────
 const authLimiter = (0, express_rate_limit_1.default)({
     windowMs: 15 * 60 * 1000,
@@ -258,6 +273,28 @@ async function bootstrap() {
         }, 6 * 60 * 60 * 1000);
         // Run once at startup too
         chunk_upload_service_1.ChunkUploadService.cleanupStaleChunks();
+        // Periodic cleanup of stuck video processes (every 6 hours)
+        setInterval(async () => {
+            try {
+                const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+                const stuck = await prisma_1.prisma.videoFile.updateMany({
+                    where: {
+                        status: 'PROCESSING',
+                        updatedAt: { lt: fourHoursAgo }
+                    },
+                    data: {
+                        status: 'FAILED',
+                        errorMessage: 'Proceso marcado como fallido automáticamente tras 4 horas de inactividad.'
+                    }
+                });
+                if (stuck.count > 0) {
+                    console.log(`🧹 [Cleanup] Reseteados ${stuck.count} procesos de video estancados (más de 4 horas inactivos)`);
+                }
+            }
+            catch (err) {
+                console.error('[Cleanup] Failed to cleanup stuck video processes:', err.message);
+            }
+        }, 6 * 60 * 60 * 1000);
     }
     catch (error) {
         console.error('❌ Failed to start server:', error);

@@ -1,5 +1,5 @@
 export declare class CategoriesService {
-    static getAllContentTypes(): Promise<("MOVIE" | "SERIES" | "ANIME" | "ANIMATION" | "DOCUMENTARY" | "BIOGRAPHY" | "REALITY_SHOW" | "TALK_SHOW" | "VARIETY_SHOW" | "STAND_UP" | "SPECIAL" | "EDUCATIONAL" | "KIDS" | "FAMILY" | "INTERACTIVE" | "EXPERIMENTAL" | "DOCUDRAMA" | "NOVELA" | "SHORT")[]>;
+    static getAllContentTypes(): Promise<("SERIES" | "MOVIE" | "ANIME" | "ANIMATION" | "DOCUMENTARY" | "BIOGRAPHY" | "REALITY_SHOW" | "TALK_SHOW" | "VARIETY_SHOW" | "STAND_UP" | "SPECIAL" | "EDUCATIONAL" | "KIDS" | "FAMILY" | "INTERACTIVE" | "EXPERIMENTAL" | "DOCUDRAMA" | "NOVELA" | "SHORT")[]>;
     static getAllGenres(): Promise<{
         id: string;
         name: string;

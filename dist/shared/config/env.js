@@ -40,6 +40,11 @@ const envSchema = zod_1.z.object({
     FFMPEG_PATH: zod_1.z.string().default('ffmpeg'),
     FFPROBE_PATH: zod_1.z.string().default('ffprobe'),
     MAX_CONCURRENT_ENCODING: zod_1.z.coerce.number().default(1),
+    // Distributed Architecture
+    ENABLE_WORKER: zod_1.z.coerce.boolean().default(true),
+    WORKER_MODE: zod_1.z.enum(['ALL', 'MOVIES', 'SERIES']).default('ALL'),
+    STORAGE_NODE_SERIES_URL: zod_1.z.string().optional(),
+    STORAGE_NODE_MOVIES_URL: zod_1.z.string().optional(),
     // Media Scanner
     MEDIA_SCAN_DIRS: zod_1.z.string().optional().default(''),
 });

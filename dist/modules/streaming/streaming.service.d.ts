@@ -9,6 +9,7 @@ export declare class StreamingService {
         expiresIn: number;
         videoFileId: string;
         masterPlaylist: string | null;
+        streamBaseUrl: string;
         qualities: {
             resolution: string;
             width: number;
@@ -34,7 +35,7 @@ export declare class StreamingService {
     static serveSegment(videoFileId: string, filePath: string, token: string, ip: string): Promise<{
         status: number;
         headers: Record<string, string>;
-        stream: fs.ReadStream | null;
+        stream: NodeJS.ReadableStream | null;
     }>;
     /**
      * Byte-range streaming for direct video files (fallback / dev mode).

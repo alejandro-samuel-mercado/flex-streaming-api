@@ -21,6 +21,8 @@ export declare const env: {
     FFMPEG_PATH: string;
     FFPROBE_PATH: string;
     MAX_CONCURRENT_ENCODING: number;
+    ENABLE_WORKER: boolean;
+    WORKER_MODE: "ALL" | "MOVIES" | "SERIES";
     MEDIA_SCAN_DIRS: string;
     GOOGLE_CLIENT_ID?: string | undefined;
     GOOGLE_CLIENT_SECRET?: string | undefined;
@@ -31,5 +33,7 @@ export declare const env: {
     SMTP_FROM?: string | undefined;
     TMDB_API_KEY?: string | undefined;
     TMDB_ACCESS_TOKEN?: string | undefined;
+    STORAGE_NODE_SERIES_URL?: string | undefined;
+    STORAGE_NODE_MOVIES_URL?: string | undefined;
 };
 //# sourceMappingURL=env.d.ts.map

@@ -139,7 +139,7 @@ export class StreamingService {
             subtitleTracks: videoFile.subtitleTracks.map((s) => ({
                 language: s.language,
                 label: s.label,
-                url: s.url,
+                url: s.url.startsWith('http') ? s.url : `${streamBaseUrl}${s.url.startsWith('/') ? '' : '/'}${s.url}`,
                 isDefault: s.isDefault,
             })),
         };

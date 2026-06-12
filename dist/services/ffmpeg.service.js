@@ -7,6 +7,7 @@ exports.FFmpegService = void 0;
 const fluent_ffmpeg_1 = __importDefault(require("fluent-ffmpeg"));
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
+const child_process_1 = require("child_process");
 const env_1 = require("../shared/config/env");
 // Initialize FFmpeg and FFprobe paths from environment configuration
 if (env_1.env.FFMPEG_PATH)
@@ -46,7 +47,8 @@ class FFmpegService {
         const audioTracks = [];
         const playlistPath = path_1.default.join(resolvedOutputFolder, 'master.m3u8');
         const profiles = [
-            { name: '1080p', resolution: '1920:1080', bitrate: '5000k', maxrate: '7500k', bufsize: '10000k', bandwidth: 8400000 }
+            { name: '1080p', resolution: '1920:1080', bitrate: '4500k', maxrate: '6000k', bufsize: '9000k', bandwidth: 5200000 },
+            { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3500k', bufsize: '5000k', bandwidth: 2900000 },
         ];
         // Detect source framerate for proper GOP alignment — preserve exact fraction for max FPS fidelity
         const videoStream = metadata.streams.find(s => s.codec_type === 'video');
@@ -63,9 +65,9 @@ class FFmpegService {
                 fpsValue = frameRateStr; // pass exact fraction e.g. "24000/1001"
             }
         }
-        // GOP = 2 seconds worth of frames (clean keyframe interval for HLS)
+        // GOP = 2 seconds worth of frames (required for clean 6s HLS segments — must be divisor of hls_time)
         const gopSize = Math.round(fpsNum * 2);
-        console.log(`🎬 [FFmpeg] Source FPS: ${fpsNum.toFixed(3)} (${fpsValue}), GOP size: ${gopSize} (2s intervals)`);
+        console.log(`🎬 [FFmpeg] Source FPS: ${fpsNum.toFixed(3)} (${fpsValue}), GOP size: ${gopSize} (2s intervals, 6s segments)`);
         let lastReportedProgress = 0;
         const totalSteps = profiles.length + audioStreams.length;
         const taskProgress = new Array(totalSteps).fill(0);
@@ -92,7 +94,7 @@ class FFmpegService {
                 let lastTimemarkAt = Date.now();
                 let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
-                    .renice(5)
+                    .renice(19) // Lowest CPU priority — yields to all other processes
                     .inputOptions([
                     '-analyzeduration', '100M',
                     '-probesize', '100M',
@@ -144,7 +146,8 @@ class FFmpegService {
                     '-maxrate', profile.maxrate,
                     '-bufsize', profile.bufsize,
                     '-max_muxing_queue_size', '1024',
-                    '-hls_time', '30',
+                    '-hls_time', '6',
+                    '-hls_list_size', '0',
                     '-hls_playlist_type', 'vod',
                     '-hls_flags', 'independent_segments',
                     '-hls_segment_type', 'mpegts',
@@ -159,7 +162,22 @@ class FFmpegService {
                 cmd
                     .outputOptions(opts)
                     .output(path_1.default.join(resolvedOutputFolder, `${profile.name}.m3u8`))
-                    .on('start', () => resetStallTimeout())
+                    .on('start', () => {
+                    resetStallTimeout();
+                    // Apply Idle I/O priority — FFmpeg only reads/writes disk
+                    // when NO other process (e.g. video streaming) needs the disk.
+                    // This prevents HDD I/O saturation from blocking playback.
+                    try {
+                        const proc = cmd._ffmpegProc;
+                        if (proc?.pid) {
+                            (0, child_process_1.execSync)(`ionice -c 3 -p ${proc.pid}`, { stdio: 'ignore' });
+                            console.log(`🎬 [FFmpeg] ionice Idle class applied to PID ${proc.pid}`);
+                        }
+                    }
+                    catch (e) {
+                        // ionice not available (non-Linux env), silently skip
+                    }
+                })
                     .on('progress', (progress) => {
                     resetStallTimeout();
                     // Actualizar timemark para el watchdog
@@ -201,7 +219,7 @@ class FFmpegService {
                 let lastTimemarkAt = Date.now();
                 let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
-                    .renice(5)
+                    .renice(19)
                     .inputOptions([
                     '-analyzeduration', '100M',
                     '-probesize', '100M',
@@ -247,7 +265,15 @@ class FFmpegService {
                     '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `audio_${lang}_%03d.ts`)
                 ])
                     .output(path_1.default.join(resolvedOutputFolder, `audio_${lang}.m3u8`))
-                    .on('start', () => resetStallTimeout())
+                    .on('start', () => {
+                    resetStallTimeout();
+                    try {
+                        const proc = cmd._ffmpegProc;
+                        if (proc?.pid)
+                            (0, child_process_1.execSync)(`ionice -c 3 -p ${proc.pid}`, { stdio: 'ignore' });
+                    }
+                    catch (e) { }
+                })
                     .on('progress', (progress) => {
                     resetStallTimeout();
                     // Actualizar timemark para el watchdog
@@ -318,7 +344,7 @@ class FFmpegService {
                 fs_1.default.mkdirSync(outputFolder, { recursive: true });
             }
             let timeout;
-            const cmd = (0, fluent_ffmpeg_1.default)(inputPath).renice(5);
+            const cmd = (0, fluent_ffmpeg_1.default)(inputPath).renice(19);
             timeout = setTimeout(() => {
                 cmd.kill('SIGKILL');
                 reject(new Error(`[Timeout] La extracción de portada se atascó o tardó más de 2 minutos.`));
@@ -379,7 +405,7 @@ class FFmpegService {
             try {
                 await new Promise((resolve, reject) => {
                     let timeout;
-                    const cmd = (0, fluent_ffmpeg_1.default)(resolvedInput).renice(5);
+                    const cmd = (0, fluent_ffmpeg_1.default)(resolvedInput).renice(19);
                     timeout = setTimeout(() => {
                         cmd.kill('SIGKILL');
                         reject(new Error(`[Timeout] La extracción de subtítulos se atascó o tardó más de 5 minutos.`));
