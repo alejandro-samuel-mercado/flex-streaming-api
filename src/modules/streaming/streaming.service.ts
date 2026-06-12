@@ -259,7 +259,7 @@ export class StreamingService {
                     ext === '.vtt' ? 'text/vtt' :
                         'application/octet-stream';
 
-        const accelPath = `/internal_hls/${resolvedPath.replace(env.HLS_PATH, '').replace(/^\//, '')}`;
+        const accelPath = `/internal_home/${resolvedPath.replace(/^\/home\//, '')}`;
 
         return {
             status: 200,
