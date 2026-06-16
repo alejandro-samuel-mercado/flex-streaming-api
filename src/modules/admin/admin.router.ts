@@ -361,10 +361,16 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
                 try {
                     const job = await videoQueue.getJob(v.processingJobId);
                     if (job) {
+                        // Job is active — use real-time BullMQ progress
                         return { ...resVideo, progress: job.progress };
+                    } else {
+                        // Job not found in BullMQ (e.g. in delayed state during worker routing).
+                        // Keep the video visible with last known progress from DB.
+                        return { ...resVideo, progress: resVideo.progress ?? 0 };
                     }
                 } catch (e) {
                     console.warn(`[AdminRouter] Could not fetch progress for job ${v.processingJobId}`);
+                    return { ...resVideo, progress: resVideo.progress ?? 0 };
                 }
             }
             return resVideo;
