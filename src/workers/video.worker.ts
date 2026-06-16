@@ -15,18 +15,12 @@ export const videoWorker = new Worker(
     
     const outputFolder = path.join(env.MEDIA_PATH, 'hls', contentId);
 
-    let lastSavedProgress = 0;
     const onProgress = async (percent: number) => {
       try {
         await job.updateProgress(percent);
       } catch (err: any) {
+        // Prevent worker crash if job is deleted from Redis while FFmpeg is still running
         console.warn(`[VideoWorker] Progress update failed for job ${job.id}: ${err.message}`);
-      }
-      // Persist to DB every 5% so admin panel can show progress even if BullMQ job is temporarily hidden
-      if (percent - lastSavedProgress >= 5 || percent >= 100) {
-        lastSavedProgress = percent;
-        prisma.videoFile.update({ where: { id: videoFileId }, data: { progress: Math.round(percent) } })
-          .catch(() => { /* non-fatal */ });
       }
     };
 
