@@ -93,6 +93,7 @@ function parseSeasonEpisodeFromFilename(fileName: string): { season: number; epi
 export class MediaScannerService {
 
   private static creatingContents = new Map<string, Promise<string>>();
+  private static resolvingSeries = new Map<string, Promise<string>>();
 
   static getSuggestedDirectories(): string[] {
     const dirs = env.MEDIA_SCAN_DIRS;
@@ -468,47 +469,70 @@ export class MediaScannerService {
     let contentId: string;
     let tmdbMatch = false;
 
-    if (episode.tmdbSeriesId) {
-      const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
-      if (existing) {
-        contentId = existing.id;
-        tmdbMatch = true;
-      } else {
-        try {
-          const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
-          contentId = await this._createSeriesContent(details);
-          tmdbMatch = true;
-        } catch (err: any) {
-          console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
-          contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
+    const seriesKey = episode.tmdbSeriesId ? `tmdb-${episode.tmdbSeriesId}` : `folder-${episode.seriesFolderName}`;
+    
+    if (!this.resolvingSeries.has(seriesKey)) {
+      const resolveSeries = async () => {
+        if (episode.tmdbSeriesId) {
+          const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
+          if (existing) {
+            tmdbMatch = true;
+            return existing.id;
+          }
+          try {
+            const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
+            const id = await this._createSeriesContent(details);
+            tmdbMatch = true;
+            return id;
+          } catch (err: any) {
+            console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
+            return await this._createMinimalSeriesContent(episode.seriesFolderName);
+          }
+        } else {
+          const seriesName = this.cleanFileName(episode.seriesFolderName);
+          const tmdbResult = await TMDBService.searchWithFallback(seriesName).catch(() => ({ bestMatch: null, confidence: 0 }));
+          if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
+            const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
+            const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');
+            tmdbMatch = true;
+            return await this._createSeriesContent(details);
+          } else {
+            return await this._createMinimalSeriesContent(episode.seriesFolderName);
+          }
         }
-      }
-    } else {
-      // No TMDB id in folder name — try searching TMDB by series name
-      const seriesName = this.cleanFileName(episode.seriesFolderName);
-      const tmdbResult = await TMDBService.searchWithFallback(seriesName).catch(() => ({ bestMatch: null, confidence: 0 }));
-      if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
-        const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
-        const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');
-        contentId = await this._createSeriesContent(details);
-        tmdbMatch = true;
-      } else {
-        contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
-      }
+      };
+      this.resolvingSeries.set(seriesKey, resolveSeries().finally(() => this.resolvingSeries.delete(seriesKey)));
     }
 
-    // Find or create the Season
-    const season = await prisma.season.upsert({
-      where: { contentId_number: { contentId, number: episode.season } },
-      update: {},
-      create: { contentId, number: episode.season }
-    });
+    contentId = await this.resolvingSeries.get(seriesKey)!;
+    // tmdbMatch state might be slightly off if resolved by another promise, but that's acceptable for the scan summary
 
-    const episodeRecord = await prisma.episode.upsert({
-      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
-      update: {},
-      create: { seasonId: season.id, number: episode.episodeNumber }
-    });
+    // Find or create the Season (with retry for concurrency on upsert)
+    let season;
+    try {
+      season = await prisma.season.upsert({
+        where: { contentId_number: { contentId, number: episode.season } },
+        update: {},
+        create: { contentId, number: episode.season }
+      });
+    } catch {
+      // If unique constraint failed, it was just created by another concurrent episode
+      season = await prisma.season.findUniqueOrThrow({ where: { contentId_number: { contentId, number: episode.season } } });
+    }
+
+    // Find or create the Episode
+    let episodeRecord;
+    try {
+      episodeRecord = await prisma.episode.upsert({
+        where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
+        update: {},
+        create: { seasonId: season.id, number: episode.episodeNumber }
+      });
+    } catch {
+      episodeRecord = await prisma.episode.findUniqueOrThrow({ where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } } });
+    }
+
+
 
     await this._syncEpisodeMetadata(
       episodeRecord.id,
