@@ -149,7 +149,7 @@ export class FFmpegService {
                     '-vf', `scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
                     '-c:v', 'h264',
                     '-pix_fmt', 'yuv420p',
-                    '-fps_mode', 'cfr',
+                    '-vsync', '1',
                     '-r', fpsValue,
                     '-g', gopSize.toString(),
                     '-keyint_min', gopSize.toString(),
