@@ -1,4 +1,4 @@
-import { Worker, Job } from 'bullmq';
+import { Worker, Job, UnrecoverableError } from 'bullmq';
 import Redis from 'ioredis';
 import { env } from '../shared/config/env';
 import { FFmpegService } from '../services/ffmpeg.service';
@@ -32,14 +32,12 @@ export const videoWorker = new Worker(
     // Server 3 (MOVIES): skips EPISODE jobs, lets them wait for Server 2.
     const jobType = job.data.type || 'MOVIE';
     if (env.WORKER_MODE === 'MOVIES' && jobType === 'EPISODE') {
-      job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only. Re-queuing.`);
-      await job.moveToDelayed(Date.now() + 30000); // Retry in 30s on another worker
-      return { skipped: true, reason: 'wrong_mode' };
+      job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only.`);
+      throw new UnrecoverableError('SKIP_WRONG_MODE: This node only processes MOVIES');
     }
     if (env.WORKER_MODE === 'SERIES' && jobType === 'MOVIE') {
-      job.log(`[WorkerMode] Skipping MOVIE job — this node handles SERIES only. Re-queuing.`);
-      await job.moveToDelayed(Date.now() + 30000);
-      return { skipped: true, reason: 'wrong_mode' };
+      job.log(`[WorkerMode] Skipping MOVIE job — this node handles SERIES only.`);
+      throw new UnrecoverableError('SKIP_WRONG_MODE: This node only processes SERIES');
     }
 
     try {
@@ -322,6 +320,12 @@ videoWorker.on('completed', (job) => {
 });
 
 videoWorker.on('failed', async (job, err) => {
+  // Don't pollute logs or mark DB records as FAILED for wrong-mode skips
+  if (err.message.startsWith('SKIP_WRONG_MODE')) {
+    console.log(`[VideoWorker] Job ${job?.id} skipped (wrong mode): ${err.message}`);
+    return;
+  }
+
   console.error(`Job ${job?.id} has failed with ${err.message}`);
   if (job?.data?.videoFileId) {
     try {

@@ -267,6 +267,7 @@ export class StreamingService {
         let stream: NodeJS.ReadableStream | null = null;
         let headers: Record<string, string> = {
             'Content-Type': contentType,
+            'Accept-Ranges': 'bytes',
             'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
         };
 
@@ -280,12 +281,9 @@ export class StreamingService {
                 /URI="([^"]+)"/g,
                 (match, uri) => uri.includes('?token=') ? match : `URI="${uri}?token=${token}"`
             );
-            headers['Content-Length'] = Buffer.byteLength(modified, 'utf8').toString();
             const { Readable } = require('stream');
             stream = Readable.from([modified]);
         } else {
-            const stat = fs.statSync(resolvedPath);
-            headers['Content-Length'] = stat.size.toString();
             stream = fs.createReadStream(resolvedPath);
         }
 
