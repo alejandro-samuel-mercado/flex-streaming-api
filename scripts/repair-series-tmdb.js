@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
  * repair-series-tmdb.js
- * 
- * Finds all SERIES content created without TMDB metadata (no tmdbId, empty description)
- * and attempts to fetch and apply TMDB data for each one.
- * 
+ *
+ * 1. For series WITHOUT tmdbId: if title starts with a number, use it as TMDB ID directly.
+ *    Otherwise search TMDB by title.
+ * 2. For DUPLICATES (same TMDB already exists on another content):
+ *    move all VideoFiles from the empty duplicate to the real content, then soft-delete the duplicate.
+ *
  * Run on the Series server:
  *   node scripts/repair-series-tmdb.js
  */
@@ -16,112 +18,126 @@ const { MediaScannerService } = require('../dist/modules/media-scanner/media-sca
 
 const prisma = new PrismaClient();
 
-async function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/** Extract a TMDB numeric ID if the title starts with one, e.g. "43348 pablo escobar..." */
+function extractTmdbIdFromTitle(title) {
+  const m = title.match(/^(\d{4,7})\b/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+async function applyTmdbData(contentId, details) {
+  await prisma.content.update({
+    where: { id: contentId },
+    data: {
+      tmdbId: String(details.tmdbId),
+      imdbId: details.imdbId || undefined,
+      releaseYear: details.releaseYear || undefined,
+      originalTitle: details.originalTitle || undefined,
+      duration: details.duration || undefined,
+      rating: details.rating || undefined,
+      country: details.country || undefined,
+      languages: details.languages || [],
+      originalLanguage: details.originalLanguage || undefined,
+      isAdult: details.isAdult || false,
+    }
+  });
+
+  const existing = await prisma.contentTranslation.findFirst({ where: { contentId, language: 'es' } });
+  if (existing) {
+    await prisma.contentTranslation.update({
+      where: { id: existing.id },
+      data: { title: details.title, description: details.synopsis || existing.description }
+    });
+  } else {
+    await prisma.contentTranslation.create({
+      data: { contentId, language: 'es', title: details.title, description: details.synopsis || '' }
+    });
+  }
+
+  await MediaScannerService._downloadTMDBImages(contentId, details).catch(() => {});
 }
 
 async function main() {
-  // Find all SERIES with no tmdbId (created minimally by the scanner)
   const seriesWithoutTmdb = await prisma.content.findMany({
-    where: {
-      type: { in: ['SERIES', 'ANIME'] },
-      tmdbId: null,
-      deletedAt: null,
-    },
+    where: { type: { in: ['SERIES', 'ANIME'] }, tmdbId: null, deletedAt: null },
     include: {
-      translations: { select: { title: true, description: true } },
-      thumbnails: { select: { type: true } },
+      translations: { select: { title: true } },
+      videoFiles: { select: { id: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
 
   console.log(`\n🔍 Found ${seriesWithoutTmdb.length} series without TMDB data.\n`);
 
-  let fixed = 0;
-  let notFound = 0;
-  let errors = 0;
+  let fixed = 0, merged = 0, notFound = 0, errors = 0;
 
   for (const series of seriesWithoutTmdb) {
     const title = series.translations[0]?.title || '';
-    if (!title) { errors++; continue; }
+    const idx = fixed + merged + notFound + errors + 1;
+    process.stdout.write(`[${idx}/${seriesWithoutTmdb.length}] "${title}" → `);
 
-    process.stdout.write(`[${fixed + notFound + errors + 1}/${seriesWithoutTmdb.length}] "${title}" → `);
+    if (!title) { errors++; console.log('No title'); continue; }
 
     try {
-      // Search TMDB
-      const result = await TMDBService.searchWithFallback(title);
+      let details = null;
 
-      if (!result.bestMatch || result.confidence < 0.3) {
-        console.log(`❌ No match (confidence: ${(result.confidence * 100).toFixed(0)}%)`);
-        notFound++;
-        await sleep(300);
-        continue;
-      }
-
-      const mediaType = result.bestMatch.media_type === 'movie' ? 'movie' : 'tv';
-      const details = await TMDBService.getFullDetails(result.bestMatch.id, mediaType);
-
-      // Check if another content already has this tmdbId (avoid duplicate)
-      const duplicate = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
-      if (duplicate && duplicate.id !== series.id) {
-        console.log(`⚠️  TMDB ${details.tmdbId} already exists on another content (${duplicate.id}). Skipping.`);
-        notFound++;
-        await sleep(300);
-        continue;
-      }
-
-      // Apply metadata to the existing content record
-      await prisma.content.update({
-        where: { id: series.id },
-        data: {
-          tmdbId: String(details.tmdbId),
-          imdbId: details.imdbId || undefined,
-          releaseYear: details.releaseYear || undefined,
-          originalTitle: details.originalTitle || undefined,
-          duration: details.duration || undefined,
-          rating: details.rating || undefined,
-          country: details.country || undefined,
-          languages: details.languages || [],
-          originalLanguage: details.originalLanguage || undefined,
-          isAdult: details.isAdult || false,
+      // Try direct lookup by numeric ID embedded in title (e.g. "43348 pablo escobar")
+      const numericId = extractTmdbIdFromTitle(title);
+      if (numericId) {
+        try { details = await TMDBService.getFullDetails(numericId, 'tv'); } catch (_) {}
+        if (!details) {
+          try { details = await TMDBService.getFullDetails(numericId, 'movie'); } catch (_) {}
         }
+      }
+
+      // Fallback: text search
+      if (!details) {
+        const result = await TMDBService.searchWithFallback(title);
+        if (result.bestMatch && result.confidence >= 0.3) {
+          const mediaType = result.bestMatch.media_type === 'movie' ? 'movie' : 'tv';
+          details = await TMDBService.getFullDetails(result.bestMatch.id, mediaType);
+        }
+      }
+
+      if (!details) {
+        console.log(`Not found in TMDB`);
+        notFound++;
+        await sleep(400);
+        continue;
+      }
+
+      // Check for duplicate (another content already has this tmdbId)
+      const canonical = await prisma.content.findFirst({
+        where: { tmdbId: String(details.tmdbId), id: { not: series.id } }
       });
 
-      // Update translation (title + description)
-      const existingTranslation = await prisma.contentTranslation.findFirst({
-        where: { contentId: series.id, language: 'es' }
-      });
-      if (existingTranslation) {
-        await prisma.contentTranslation.update({
-          where: { id: existingTranslation.id },
-          data: {
-            title: details.title,
-            description: details.synopsis || existingTranslation.description
-          }
-        });
+      if (canonical) {
+        // Move VideoFiles to the canonical record and soft-delete duplicate
+        if (series.videoFiles.length > 0) {
+          await prisma.videoFile.updateMany({
+            where: { id: { in: series.videoFiles.map(v => v.id) } },
+            data: { contentId: canonical.id }
+          });
+        }
+        await prisma.content.update({ where: { id: series.id }, data: { deletedAt: new Date() } });
+        console.log(`Merged ${series.videoFiles.length} video(s) into "${details.title}" (${canonical.id}) and soft-deleted duplicate`);
+        merged++;
       } else {
-        await prisma.contentTranslation.create({
-          data: { contentId: series.id, language: 'es', title: details.title, description: details.synopsis || '' }
-        });
+        await applyTmdbData(series.id, details);
+        console.log(`Fixed → "${details.title}" (TMDB ${details.tmdbId})`);
+        fixed++;
       }
 
-      // Download poster/backdrop if missing
-      const hasPoster = series.thumbnails.some(t => t.type === 'POSTER');
-      if (!hasPoster) {
-        await MediaScannerService._downloadTMDBImages(series.id, details).catch(() => {});
-      }
-
-      console.log(`✅ Fixed → "${details.title}" (TMDB ${details.tmdbId}, confidence: ${(result.confidence * 100).toFixed(0)}%)`);
-      fixed++;
-      await sleep(400); // Respect TMDB rate limits
+      await sleep(400);
     } catch (err) {
-      console.log(`💥 Error: ${err.message}`);
+      console.log(`Error: ${err.message}`);
       errors++;
       await sleep(500);
     }
   }
 
-  console.log(`\n✅ Done. Fixed: ${fixed} | Not found: ${notFound} | Errors: ${errors}`);
+  console.log(`\nDone. Fixed: ${fixed} | Merged duplicates: ${merged} | Not found: ${notFound} | Errors: ${errors}`);
   await prisma.$disconnect();
 }
 
