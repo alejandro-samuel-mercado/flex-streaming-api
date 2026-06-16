@@ -2,10 +2,9 @@
 /**
  * repair-series-tmdb.js
  *
- * 1. For series WITHOUT tmdbId: if title starts with a number, use it as TMDB ID directly.
- *    Otherwise search TMDB by title.
- * 2. For DUPLICATES (same TMDB already exists on another content):
- *    move all VideoFiles from the empty duplicate to the real content, then soft-delete the duplicate.
+ * Finds and repairs series content that is missing data:
+ * 1. Series with NO tmdbId → search TMDB by numeric ID in title or by text
+ * 2. Series WITH tmdbId but missing poster OR empty description → re-fetch from TMDB
  *
  * Run on the Series server:
  *   node scripts/repair-series-tmdb.js
@@ -17,16 +16,14 @@ const { TMDBService } = require('../dist/services/tmdb.service');
 const { MediaScannerService } = require('../dist/modules/media-scanner/media-scanner.service');
 
 const prisma = new PrismaClient();
-
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/** Extract a TMDB numeric ID if the title starts with one, e.g. "43348 pablo escobar..." */
 function extractTmdbIdFromTitle(title) {
   const m = title.match(/^(\d{4,7})\b/);
   return m ? parseInt(m[1], 10) : null;
 }
 
-async function applyTmdbData(contentId, details) {
+async function applyTmdbData(contentId, details, hasPoster) {
   await prisma.content.update({
     where: { id: contentId },
     data: {
@@ -43,11 +40,16 @@ async function applyTmdbData(contentId, details) {
     }
   });
 
-  const existing = await prisma.contentTranslation.findFirst({ where: { contentId, language: 'es' } });
-  if (existing) {
+  // Update or create Spanish translation
+  const existingTrans = await prisma.contentTranslation.findFirst({ where: { contentId, language: 'es' } });
+  const hasRealDescription = existingTrans?.description && existingTrans.description.trim().length > 10;
+  if (existingTrans) {
     await prisma.contentTranslation.update({
-      where: { id: existing.id },
-      data: { title: details.title, description: details.synopsis || existing.description }
+      where: { id: existingTrans.id },
+      data: {
+        title: details.title,
+        description: hasRealDescription ? existingTrans.description : (details.synopsis || '')
+      }
     });
   } else {
     await prisma.contentTranslation.create({
@@ -55,45 +57,88 @@ async function applyTmdbData(contentId, details) {
     });
   }
 
-  await MediaScannerService._downloadTMDBImages(contentId, details).catch(() => {});
+  // Download images only if poster is missing
+  if (!hasPoster) {
+    await MediaScannerService._downloadTMDBImages(contentId, details).catch(() => {});
+  }
 }
 
 async function main() {
-  const seriesWithoutTmdb = await prisma.content.findMany({
+  // Case 1: No tmdbId at all
+  const withoutTmdb = await prisma.content.findMany({
     where: { type: { in: ['SERIES', 'ANIME'] }, tmdbId: null, deletedAt: null },
     include: {
-      translations: { select: { title: true } },
+      translations: { select: { id: true, title: true, description: true } },
+      thumbnails: { select: { type: true } },
       videoFiles: { select: { id: true } },
     },
-    orderBy: { createdAt: 'desc' },
   });
 
-  console.log(`\n🔍 Found ${seriesWithoutTmdb.length} series without TMDB data.\n`);
+  // Case 2: Has tmdbId but no poster thumbnail
+  const withoutPoster = await prisma.content.findMany({
+    where: {
+      type: { in: ['SERIES', 'ANIME'] },
+      tmdbId: { not: null },
+      deletedAt: null,
+      thumbnails: { none: { type: 'POSTER' } },
+    },
+    include: {
+      translations: { select: { id: true, title: true, description: true } },
+      thumbnails: { select: { type: true } },
+      videoFiles: { select: { id: true } },
+    },
+  });
+
+  const allToFix = [
+    ...withoutTmdb.map(s => ({ ...s, hasPoster: false, reason: 'no-tmdb' })),
+    ...withoutPoster.map(s => ({ ...s, hasPoster: false, reason: 'no-poster' })),
+  ];
+
+  // Deduplicate by id
+  const seen = new Set();
+  const unique = allToFix.filter(s => { if (seen.has(s.id)) return false; seen.add(s.id); return true; });
+
+  console.log(`\n🔍 Found ${unique.length} series to repair (${withoutTmdb.length} without tmdbId, ${withoutPoster.length} missing poster).\n`);
 
   let fixed = 0, merged = 0, notFound = 0, errors = 0;
 
-  for (const series of seriesWithoutTmdb) {
+  for (const series of unique) {
     const title = series.translations[0]?.title || '';
+    const hasPoster = series.thumbnails.some(t => t.type === 'POSTER');
     const idx = fixed + merged + notFound + errors + 1;
-    process.stdout.write(`[${idx}/${seriesWithoutTmdb.length}] "${title}" → `);
+    process.stdout.write(`[${idx}/${unique.length}] "${title}" (${series.reason}) → `);
 
     if (!title) { errors++; console.log('No title'); continue; }
 
     try {
       let details = null;
 
-      // Try direct lookup by numeric ID embedded in title (e.g. "43348 pablo escobar")
-      const numericId = extractTmdbIdFromTitle(title);
-      if (numericId) {
-        try { details = await TMDBService.getFullDetails(numericId, 'tv'); } catch (_) {}
-        if (!details) {
-          try { details = await TMDBService.getFullDetails(numericId, 'movie'); } catch (_) {}
+      // If it already has a tmdbId, fetch directly
+      if (series.tmdbId) {
+        try {
+          details = await TMDBService.getFullDetails(parseInt(series.tmdbId), 'tv');
+        } catch (_) {
+          try { details = await TMDBService.getFullDetails(parseInt(series.tmdbId), 'movie'); } catch (_) {}
+        }
+      }
+
+      // Try extracting numeric tmdbId from title
+      if (!details) {
+        const numericId = extractTmdbIdFromTitle(title);
+        if (numericId) {
+          try { details = await TMDBService.getFullDetails(numericId, 'tv'); } catch (_) {}
+          if (!details) {
+            try { details = await TMDBService.getFullDetails(numericId, 'movie'); } catch (_) {}
+          }
         }
       }
 
       // Fallback: text search
       if (!details) {
-        const result = await TMDBService.searchWithFallback(title);
+        // Strip leading numbers for cleaner text search
+        const cleanTitle = title.replace(/^\d+\s*/, '').trim();
+        const searchTitle = cleanTitle || title;
+        const result = await TMDBService.searchWithFallback(searchTitle);
         if (result.bestMatch && result.confidence >= 0.3) {
           const mediaType = result.bestMatch.media_type === 'movie' ? 'movie' : 'tv';
           details = await TMDBService.getFullDetails(result.bestMatch.id, mediaType);
@@ -113,7 +158,6 @@ async function main() {
       });
 
       if (canonical) {
-        // Move VideoFiles to the canonical record and soft-delete duplicate
         if (series.videoFiles.length > 0) {
           await prisma.videoFile.updateMany({
             where: { id: { in: series.videoFiles.map(v => v.id) } },
@@ -121,10 +165,10 @@ async function main() {
           });
         }
         await prisma.content.update({ where: { id: series.id }, data: { deletedAt: new Date() } });
-        console.log(`Merged ${series.videoFiles.length} video(s) into "${details.title}" (${canonical.id}) and soft-deleted duplicate`);
+        console.log(`Duplicate → merged ${series.videoFiles.length} video(s) into "${details.title}" and soft-deleted`);
         merged++;
       } else {
-        await applyTmdbData(series.id, details);
+        await applyTmdbData(series.id, details, hasPoster);
         console.log(`Fixed → "${details.title}" (TMDB ${details.tmdbId})`);
         fixed++;
       }
