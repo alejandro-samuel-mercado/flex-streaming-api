@@ -769,14 +769,19 @@ export class MediaScannerService {
   private static async _downloadTMDBImages(contentId: string, details: TMDBFullDetails): Promise<void> {
     const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', contentId);
     if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
+
+    // Use absolute URL so in a multi-server setup the frontend fetches from the
+    // correct storage node (Series server, Movies server, etc.) instead of Cerebro.
+    const baseUrl = env.BACKEND_URL.replace(/\/$/, '');
+
     try {
       if (details.posterPath) {
         await TMDBService.downloadImage(details.posterPath, path.join(mediaFolder, 'poster.jpg'));
-        await prisma.thumbnail.create({ data: { contentId, type: 'POSTER', url: `/media/thumbnails/${contentId}/poster.jpg`, width: 500, height: 750 } });
+        await prisma.thumbnail.create({ data: { contentId, type: 'POSTER', url: `${baseUrl}/media/thumbnails/${contentId}/poster.jpg`, width: 500, height: 750 } });
       }
       if (details.backdropPath) {
         await TMDBService.downloadImage(details.backdropPath, path.join(mediaFolder, 'backdrop.jpg'));
-        await prisma.thumbnail.create({ data: { contentId, type: 'BACKDROP', url: `/media/thumbnails/${contentId}/backdrop.jpg`, width: 1920, height: 1080 } });
+        await prisma.thumbnail.create({ data: { contentId, type: 'BACKDROP', url: `${baseUrl}/media/thumbnails/${contentId}/backdrop.jpg`, width: 1920, height: 1080 } });
       }
     } catch (err: any) { console.warn(`[MediaScanner] Image download error for ${contentId}: ${err.message}`); }
   }
