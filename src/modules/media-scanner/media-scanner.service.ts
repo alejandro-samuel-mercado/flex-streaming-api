@@ -70,6 +70,26 @@ function parseSeasonEpisode(folderName: string): { season: number; episode: numb
   return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
 }
 
+/**
+ * Parse season and episode from filenames with varied formats:
+ *   "Before T01-05.mkv"  → S01E05
+ *   "Show T01E09.mkv"    → S01E09
+ *   "Series 1x09.mkv"   → S01E09
+ *   "Episode 5.mkv"      → S01E05 (season defaults to 1)
+ */
+function parseSeasonEpisodeFromFilename(fileName: string): { season: number; episode: number } | null {
+  // T01-05, T01E05, T01-E05 formats (common in Spanish file naming)
+  const tFormat = fileName.match(/[Tt](\d+)[-\s]?[Ee]?(\d+)/);
+  if (tFormat) return { season: parseInt(tFormat[1], 10), episode: parseInt(tFormat[2], 10) };
+  // 1x09 format
+  const xFormat = fileName.match(/(\d+)[xX](\d+)/);
+  if (xFormat) return { season: parseInt(xFormat[1], 10), episode: parseInt(xFormat[2], 10) };
+  // Standalone episode number (e.g. "Episode 5" or just "05")
+  const epOnly = fileName.match(/(?:^|\D)(\d{1,3})(?:\D|$)/);
+  if (epOnly) return { season: 1, episode: parseInt(epOnly[1], 10) };
+  return null;
+}
+
 export class MediaScannerService {
 
   private static creatingContents = new Map<string, Promise<string>>();
@@ -191,9 +211,14 @@ export class MediaScannerService {
   }
 
   /**
-   * Series scanner: looks for episode FOLDERS containing index.m3u8 or video.m3u8.
-   * Expected structure: /series/{tmdbId}_{name}/temporada N/{tmdbId}_S{s}E{e}/index.m3u8
-   * The filePath stored is the episode folder path (used as the unique key).
+   * Series scanner: looks for:
+   *   1. Episode FOLDERS containing index.m3u8/video.m3u8 (pre-processed HLS — imported as COMPLETED)
+   *   2. Raw video files (.mkv, .mp4, etc.) inside series subfolders (enqueued for FFmpeg processing)
+   *
+   * Supported structures:
+   *   /series/{tmdbId}_{name}/temporada N/{tmdbId}_S{s}E{e}/index.m3u8  ← pre-processed HLS
+   *   /series/{name}/temp 1/Series T01-05.mkv                            ← raw video → FFmpeg
+   *   /series/{name}/Season 1/S01E05.mkv                                 ← raw video → FFmpeg
    */
   private static async _scanSeriesRecursive(
     dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
@@ -208,40 +233,64 @@ export class MediaScannerService {
     for (const entry of entries) {
       if (++count % 50 === 0) await new Promise(resolve => setImmediate(resolve));
 
-      if (!entry.isDirectory()) continue;
       const fullPath = path.join(dirPath, entry.name);
 
-      // Detect if this directory is an episode folder (contains index.m3u8 or video.m3u8)
-      const m3u8Path = await this._findM3u8(fullPath);
-      if (m3u8Path) {
-        // This is an episode folder
-        const seInfo = parseSeasonEpisode(entry.name);
-        const tmdbSeriesId = parseTmdbId(seriesFolderName || entry.name);
-        const stat = await fs.promises.stat(fullPath);
-
-        // key used to detect if already imported: episode folder path
-        const key = fullPath;
-        results.push({
-          fileName: entry.name,
-          cleanName: this.cleanFileName(entry.name),
-          filePath: key,
-          fileSize: stat.size,
-          extension: 'HLS',
-          lastModified: stat.mtime,
-          alreadyImported: importedPaths.has(key),
-          contentType: 'SERIES',
-          episode: {
-            m3u8Path,
-            season: seInfo?.season ?? 1,
-            episodeNumber: seInfo?.episode ?? 1,
-            tmdbSeriesId,
-            seriesFolderName: seriesFolderName || entry.name
-          }
-        });
-      } else {
-        // Not an episode — go deeper, passing the series folder name at depth 0
-        const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
-        await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
+      if (entry.isDirectory()) {
+        // Check if this folder is a pre-processed HLS episode (has index.m3u8)
+        const m3u8Path = await this._findM3u8(fullPath);
+        if (m3u8Path) {
+          const seInfo = parseSeasonEpisode(entry.name);
+          const tmdbSeriesId = parseTmdbId(seriesFolderName || entry.name);
+          const stat = await fs.promises.stat(fullPath);
+          results.push({
+            fileName: entry.name,
+            cleanName: this.cleanFileName(entry.name),
+            filePath: fullPath,
+            fileSize: stat.size,
+            extension: 'HLS',
+            lastModified: stat.mtime,
+            alreadyImported: importedPaths.has(fullPath),
+            contentType: 'SERIES',
+            episode: {
+              m3u8Path,
+              season: seInfo?.season ?? 1,
+              episodeNumber: seInfo?.episode ?? 1,
+              tmdbSeriesId,
+              seriesFolderName: seriesFolderName || entry.name
+            }
+          });
+        } else {
+          // Go deeper. At depth 0 this is the series root folder name.
+          const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
+          await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
+        }
+      } else if (entry.isFile() && currentDepth > 0) {
+        // Raw video file inside a series subdirectory — needs FFmpeg processing
+        const ext = path.extname(entry.name).toLowerCase();
+        if (VIDEO_EXTENSIONS.has(ext)) {
+          try {
+            const stat = await fs.promises.stat(fullPath);
+            const seInfo = parseSeasonEpisode(entry.name) || parseSeasonEpisodeFromFilename(entry.name);
+            const tmdbSeriesId = parseTmdbId(seriesFolderName || '');
+            results.push({
+              fileName: entry.name,
+              cleanName: this.cleanFileName(entry.name),
+              filePath: fullPath,
+              fileSize: stat.size,
+              extension: ext.replace('.', '').toUpperCase(),
+              lastModified: stat.mtime,
+              alreadyImported: importedPaths.has(fullPath),
+              contentType: 'SERIES',
+              episode: {
+                m3u8Path: '', // empty = needs FFmpeg processing
+                season: seInfo?.season ?? 1,
+                episodeNumber: seInfo?.episode ?? 1,
+                tmdbSeriesId,
+                seriesFolderName: seriesFolderName || path.basename(dirPath)
+              }
+            });
+          } catch { /* skip unreadable files */ }
+        }
       }
     }
   }
@@ -271,7 +320,13 @@ export class MediaScannerService {
 
     try {
       if (contentType === 'SERIES' && episode) {
-        return await this._importSeriesEpisode(filePath, fileName, episode);
+        if (episode.m3u8Path) {
+          // Pre-processed HLS episode — register as COMPLETED directly
+          return await this._importSeriesEpisode(filePath, fileName, episode);
+        } else {
+          // Raw video file in a series folder — needs FFmpeg processing
+          return await this._importRawSeriesEpisode(filePath, fileName, episode);
+        }
       }
 
       // Movie flow
@@ -399,6 +454,93 @@ export class MediaScannerService {
     console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId} (Marked READY)`);
 
     return { filePath: episodeFolderPath, fileName: folderName, success: true, contentId, tmdbMatch };
+  }
+
+  /**
+   * Import a raw video file (mkv/mp4/etc.) that belongs to a series.
+   * Creates season/episode records and enqueues for FFmpeg processing.
+   */
+  private static async _importRawSeriesEpisode(
+    filePath: string,
+    fileName: string,
+    episode: NonNullable<ScannedFile['episode']>
+  ): Promise<ImportResult> {
+    let contentId: string;
+    let tmdbMatch = false;
+
+    if (episode.tmdbSeriesId) {
+      const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
+      if (existing) {
+        contentId = existing.id;
+        tmdbMatch = true;
+      } else {
+        try {
+          const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
+          contentId = await this._createSeriesContent(details);
+          tmdbMatch = true;
+        } catch (err: any) {
+          console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
+          contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
+        }
+      }
+    } else {
+      // No TMDB id in folder name — try searching TMDB by series name
+      const seriesName = this.cleanFileName(episode.seriesFolderName);
+      const tmdbResult = await TMDBService.searchWithFallback(seriesName).catch(() => ({ bestMatch: null, confidence: 0 }));
+      if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
+        const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
+        const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');
+        contentId = await this._createSeriesContent(details);
+        tmdbMatch = true;
+      } else {
+        contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
+      }
+    }
+
+    // Find or create the Season
+    const season = await prisma.season.upsert({
+      where: { contentId_number: { contentId, number: episode.season } },
+      update: {},
+      create: { contentId, number: episode.season }
+    });
+
+    const episodeRecord = await prisma.episode.upsert({
+      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
+      update: {},
+      create: { seasonId: season.id, number: episode.episodeNumber }
+    });
+
+    await this._syncEpisodeMetadata(
+      episodeRecord.id,
+      episode.tmdbSeriesId,
+      episode.season,
+      episode.episodeNumber
+    );
+
+    // Create VideoFile as QUEUED and enqueue for FFmpeg
+    const videoFile = await prisma.videoFile.create({
+      data: {
+        contentId: null,
+        episodeId: episodeRecord.id,
+        type: 'EPISODE',
+        originalPath: filePath,
+        status: 'QUEUED',
+        fileSize: BigInt(fs.statSync(filePath).size),
+      }
+    });
+
+    const job = await addVideoJob({
+      videoFileId: videoFile.id,
+      contentId: episodeRecord.id, // worker uses this as the "owner" id
+      type: 'EPISODE',
+      videoPath: filePath
+    });
+
+    await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
+
+    console.log(`📦 [MediaScanner] Enqueued raw series episode ${fileName} → S${episode.season}E${episode.episodeNumber} of "${episode.seriesFolderName}" (contentId: ${contentId})`);
+
+    return { filePath, fileName, success: true, contentId, tmdbMatch };
   }
 
   private static async _createSeriesContent(details: TMDBFullDetails): Promise<string> {
