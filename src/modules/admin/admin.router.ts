@@ -31,7 +31,7 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
             recentActivity
         ] = await Promise.all([
             prisma.user.count({ where: { deletedAt: null } }),
-            prisma.videoFile.count({ where: { status: { in: ['COMPLETED', 'READY'] } } }), // Cuenta los videos/capítulos subidos y procesados
+            prisma.videoFile.count({ where: { status: 'COMPLETED' } }), // Cuenta los videos/capítulos subidos y procesados
             prisma.userMembership.count({ where: { isActive: true } }),
             prisma.content.aggregate({ _sum: { viewCount: true } }),
             prisma.content.findMany({

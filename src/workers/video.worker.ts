@@ -42,6 +42,7 @@ export const videoWorker = new Worker(
       throw new DelayedError();
     }
 
+    let existsInitial: any = null;
     try {
       // ─── Initial Checks ───────────────────────────────────────────────
       // Check if file exists and is readable by the process
@@ -51,7 +52,7 @@ export const videoWorker = new Worker(
         throw new Error(`Cannot read input file at ${videoPath}: ${err.message}. Check permissions.`);
       }
 
-      const existsInitial = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
+      existsInitial = await prisma.videoFile.findUnique({ where: { id: videoFileId } });
       if (!existsInitial) {
         job.log('Job cancelled: VideoFile record no longer exists. Aborting early.');
         return { cancelled: true };
