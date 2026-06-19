@@ -277,15 +277,20 @@ export const videoWorker = new Worker(
       job.log(`Failed inside worker: ${error.message}`);
 
       // ── Cleanup on failure ────────────────────────────────────────────
-      // 1. Mark the video file as FAILED so the UI shows the correct state
+      // 1. Mark the video file as FAILED or delete if it's a ghost file
       try {
-        await prisma.videoFile.updateMany({
-          where: { id: videoFileId },
-          data: { 
-            status: 'FAILED',
-            errorMessage: error.message 
-          }
-        });
+        if (error.message.includes('ENOENT') || error.message.includes('Cannot read input file')) {
+          await prisma.videoFile.deleteMany({ where: { id: videoFileId } });
+          job.log(`[Auto-Clean] Deleted ghost videoFile ${videoFileId} because the physical file is missing.`);
+        } else {
+          await prisma.videoFile.updateMany({
+            where: { id: videoFileId },
+            data: { 
+              status: 'FAILED',
+              errorMessage: error.message 
+            }
+          });
+        }
 
         // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
         const errContentId = existsInitial?.contentId || contentId;
@@ -329,16 +334,19 @@ videoWorker.on('failed', async (job, err) => {
   console.error(`Job ${job?.id} has failed with ${err.message}`);
   if (job?.data?.videoFileId) {
     try {
-      await prisma.videoFile.updateMany({
-        where: { id: job.data.videoFileId },
-        data: {
-          status: 'FAILED',
-          errorMessage: err.message.includes('ENOENT') 
-             ? `El archivo físico de video no se encuentra en este servidor (Verifique si la ruta existe o vuelva a subirlo): ${err.message}` 
-             : `Error en BullMQ (Stalled o Caído): ${err.message}`
-        }
-      });
-      console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
+      if (err.message.includes('ENOENT') || err.message.includes('Cannot read input file')) {
+        await prisma.videoFile.deleteMany({ where: { id: job.data.videoFileId } });
+        console.log(`[Auto-Clean] Deleted ghost videoFile ${job.data.videoFileId} because the physical file is missing.`);
+      } else {
+        await prisma.videoFile.updateMany({
+          where: { id: job.data.videoFileId },
+          data: {
+            status: 'FAILED',
+            errorMessage: `Error en BullMQ (Stalled o Caído): ${err.message}`
+          }
+        });
+        console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
+      }
     } catch (dbErr: any) {
       console.error(`[VideoWorker] Failed to update database status on job failure: ${dbErr.message}`);
     }
