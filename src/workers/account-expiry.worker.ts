@@ -58,57 +58,47 @@ export class AccountExpiryWorker {
 
       console.log(`⏰ [AccountExpiry] Expiring ${expiredAccounts.length} account(s)`);
 
-      for (const account of expiredAccounts) {
-        try {
-          await prisma.$transaction(async (tx) => {
-            // Mark as expired
-            await tx.endUserAccount.update({
-              where: { id: account.id },
-              data: { status: 'EXPIRED' },
-            });
+      const accountIds = expiredAccounts.map(a => a.id);
+      const userIds = expiredAccounts.map(a => a.userId).filter(Boolean) as string[];
+      const virtualIds = accountIds.map(id => `VIRTUAL_${id}`);
+      const allUserIdsToRevoke = [...userIds, ...virtualIds];
 
-            // Disconnect all active devices
-            await tx.deviceSession.updateMany({
-              where: { endUserAccountId: account.id, isActive: true },
-              data: { isActive: false },
-            });
-          });
+      // Update Database in bulk to avoid exhausting the connection pool
+      await prisma.$transaction([
+        prisma.endUserAccount.updateMany({
+          where: { id: { in: accountIds } },
+          data: { status: 'EXPIRED' },
+        }),
+        prisma.deviceSession.updateMany({
+          where: { endUserAccountId: { in: accountIds }, isActive: true },
+          data: { isActive: false },
+        }),
+      ]);
 
-          // Revoke refresh tokens from Redis (outside transaction)
-          if (account.userId) {
-            const tokens = await prisma.refreshToken.findMany({
-              where: { userId: account.userId },
-              select: { token: true },
-            });
+      // Revoke tokens
+      if (allUserIdsToRevoke.length > 0) {
+        const tokens = await prisma.refreshToken.findMany({
+          where: { userId: { in: allUserIdsToRevoke } },
+          select: { token: true },
+        });
 
-            for (const t of tokens) {
-              await redis.del(`${REFRESH_TOKEN_PREFIX}${t.token}`);
-            }
-
-            await prisma.refreshToken.deleteMany({
-              where: { userId: account.userId },
-            });
+        if (tokens.length > 0) {
+          const redisPipeline = redis.pipeline();
+          for (const t of tokens) {
+            redisPipeline.del(`${REFRESH_TOKEN_PREFIX}${t.token}`);
           }
-
-          // Also try with VIRTUAL_ prefix for accounts without linked user
-          const virtualTokens = await prisma.refreshToken.findMany({
-            where: { userId: `VIRTUAL_${account.id}` },
-            select: { token: true },
-          });
-
-          for (const t of virtualTokens) {
-            await redis.del(`${REFRESH_TOKEN_PREFIX}${t.token}`);
-          }
-
-          await prisma.refreshToken.deleteMany({
-            where: { userId: `VIRTUAL_${account.id}` },
-          });
-
-          console.log(`  ⏰ Expired: "${account.username}" (was ${account.status})`);
-        } catch (err) {
-          console.error(`  ❌ [AccountExpiry] Error expiring "${account.username}":`, err);
+          await redisPipeline.exec();
         }
+
+        await prisma.refreshToken.deleteMany({
+          where: { userId: { in: allUserIdsToRevoke } },
+        });
       }
+
+      expiredAccounts.forEach(account => {
+        console.log(`  ⏰ Expired: "${account.username}" (was ${account.status})`);
+      });
+
     } catch (err) {
       console.error('❌ [AccountExpiry] Worker error:', err);
     }

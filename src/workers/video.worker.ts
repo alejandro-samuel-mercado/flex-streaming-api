@@ -191,8 +191,9 @@ export const videoWorker = new Worker(
       const jobType = job.data.type || 'MOVIE';
 
       // ─── Determine content status: READY if video is done ─────
+      const realContentId = existsInitial.contentId || contentId;
       const content = await prisma.content.findUnique({
-        where: { id: contentId },
+        where: { id: realContentId },
         include: {
           translations: true,
           thumbnails: true,
@@ -203,10 +204,10 @@ export const videoWorker = new Worker(
       if (content) {
         // If it's a movie or series/anime, it should be READY since video is done
         await prisma.content.update({
-          where: { id: contentId },
+          where: { id: realContentId },
           data: { status: 'READY' }
         });
-        job.log(`Content ${contentId} marked as READY (video processing complete)`);
+        job.log(`Content ${realContentId} marked as READY (video processing complete)`);
         
         // Log warnings about missing data but DON'T block the status
         const hasDescription = content.translations.some((t: any) => t.description && t.description.trim().length > 0);
@@ -277,7 +278,7 @@ export const videoWorker = new Worker(
       // ── Cleanup on failure ────────────────────────────────────────────
       // 1. Mark the video file as FAILED so the UI shows the correct state
       try {
-        await prisma.videoFile.update({
+        await prisma.videoFile.updateMany({
           where: { id: videoFileId },
           data: { 
             status: 'FAILED',
@@ -286,10 +287,11 @@ export const videoWorker = new Worker(
         });
 
         // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
-        await prisma.content.update({
-          where: { id: contentId },
+        const errContentId = existsInitial?.contentId || contentId;
+        await prisma.content.updateMany({
+          where: { id: errContentId },
           data: { status: 'ERROR' }
-        }).catch(() => null); // Ignore if contentId was actually an episodeId or invalid
+        });
 
       } catch (dbErr: any) {
         job.log(`Warning: could not set FAILED/ERROR status: ${dbErr.message}`);
@@ -326,11 +328,13 @@ videoWorker.on('failed', async (job, err) => {
   console.error(`Job ${job?.id} has failed with ${err.message}`);
   if (job?.data?.videoFileId) {
     try {
-      await prisma.videoFile.update({
+      await prisma.videoFile.updateMany({
         where: { id: job.data.videoFileId },
         data: {
           status: 'FAILED',
-          errorMessage: `Error en BullMQ (Stalled o Caído): ${err.message}`
+          errorMessage: err.message.includes('ENOENT') 
+             ? `El archivo físico de video no se encuentra en este servidor (Verifique si la ruta existe o vuelva a subirlo): ${err.message}` 
+             : `Error en BullMQ (Stalled o Caído): ${err.message}`
         }
       });
       console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
