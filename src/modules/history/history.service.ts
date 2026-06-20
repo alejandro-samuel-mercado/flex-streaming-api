@@ -3,24 +3,30 @@ import { prisma } from '../../shared/config/prisma';
 export class HistoryService {
   static async updateWatchProgress(profileId: string, contentId: string, progress: number, duration?: number, episodeId?: string) {
     const completed = duration ? progress >= duration * 0.9 : false;
+    const finalEpisodeId = episodeId || null;
 
     try {
-      return await prisma.watchHistory.upsert({
+      // Find existing record safely considering null episodeId
+      const existing = await prisma.watchHistory.findFirst({
         where: {
-          profileId_contentId_episodeId: { 
-            profileId, 
-            contentId: contentId || '', 
-            episodeId: episodeId || '' 
-          },
+          profileId,
+          contentId,
+          episodeId: finalEpisodeId,
         },
-        update: { progress, duration, completed, watchedAt: new Date() },
-        create: { profileId, contentId, episodeId: episodeId || '', progress, duration, completed },
       });
+
+      if (existing) {
+        return await prisma.watchHistory.update({
+          where: { id: existing.id },
+          data: { progress, duration, completed, watchedAt: new Date() },
+        });
+      } else {
+        return await prisma.watchHistory.create({
+          data: { profileId, contentId, episodeId: finalEpisodeId, progress, duration, completed },
+        });
+      }
     } catch (err: any) {
-      // If profileId doesn't exist, ignore or log. Avoid crashing with P2003
       if (err.code === 'P2003') {
-        // Silently ignore to avoid log spam from old clients
-        // console.warn(`[HistoryService] Invalid profileId ${profileId} for watch progress. Ignoring.`);
         return null;
       }
       throw err;
