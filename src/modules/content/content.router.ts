@@ -57,7 +57,8 @@ contentRouter.get('/', (async (req, res, next) => {
     console.log('[ContentRouter] Query received:', req.query);
     const filters = ContentFiltersSchema.parse(req.query);
     console.log('[ContentRouter] Parsed filters:', filters);
-    const { data, total, page, limit } = await ContentService.getAllContent(filters);
+    // Las rutas públicas solo deben mostrar contenido con video listo
+    const { data, total, page, limit } = await ContentService.getAllContent({ ...filters, isPublic: true });
     ok(res, data, paginate(page, limit, total));
   } catch (err) { next(err); }
 }) as RequestHandler);

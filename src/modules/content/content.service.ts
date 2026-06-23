@@ -48,10 +48,11 @@ export class ContentService {
         sort: string;
         lang: string;
         incomplete?: boolean;
+        isPublic?: boolean;
     }) {
         const {
             page, limit, search, type, status, genreId, tagId,
-            platformId, isFree, featured, sort, incomplete, minYear
+            platformId, isFree, featured, sort, incomplete, minYear, isPublic
         } = filters;
 
         const skip = (page - 1) * limit;
@@ -63,9 +64,36 @@ export class ContentService {
 
         // 2. Status condition
         if (status) {
+            // Admin pasando un status explícito: respetar lo que pide
             conditions.push({ status: status as ContentStatus });
+        } else if (isPublic) {
+            // Llamada pública sin filtro de status: solo mostrar contenido listo
+            conditions.push({ status: { in: ['READY', 'ACTIVE'] } });
         } else {
+            // Llamada de admin sin filtro de status: mostrar todo excepto eliminados lógicamente
             conditions.push({ status: { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING', 'DRAFT'] } });
+        }
+
+        // 2b. En llamadas públicas, filtrar por contenido que tenga video disponible
+        if (isPublic) {
+            conditions.push({
+                OR: [
+                    // Películas / contenido directo con al menos un video listo
+                    { videoFiles: { some: { status: 'COMPLETED' } } },
+                    // Series / Anime: al menos un episodio con video listo
+                    {
+                        seasons: {
+                            some: {
+                                episodes: {
+                                    some: {
+                                        videoFiles: { some: { status: 'COMPLETED' } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ]
+            });
         }
 
         // 3. Type condition
