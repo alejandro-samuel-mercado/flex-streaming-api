@@ -2,6 +2,7 @@ import { Router, RequestHandler, Response, NextFunction } from 'express';
 import { authenticate, requireRole, AuthenticatedRequest } from '../../shared/middleware/auth.middleware';
 import { ok } from '../../shared/utils/api-response';
 import { MediaScannerService } from './media-scanner.service';
+import fs from 'fs';
 
 export const mediaScannerRouter = Router();
 
@@ -464,4 +465,78 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
     console.error('❌ [MediaScanner] Error in apply-tmdb:', err);
     next(err);
   }
+}) as RequestHandler);
+
+/**
+ * POST /api/admin/media-scanner/cleanup-stuck
+ * Limpia VideoFiles atascados en estado QUEUED o PROCESSING:
+ *   - Si el archivo físico YA NO EXISTE → elimina el registro de la BD.
+ *   - Si el archivo físico SÍ EXISTE → re-encola el job de procesamiento.
+ * Útil para recuperarse de fallos de Redis o reinicios inesperados del servidor.
+ */
+mediaScannerRouter.post('/cleanup-stuck', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { prisma } = await import('../../shared/config/prisma');
+    const { addVideoJob } = await import('../../services/queue.service');
+
+    // Fetch all jobs stuck in QUEUED or PROCESSING
+    const stuckJobs = await prisma.videoFile.findMany({
+      where: { status: { in: ['QUEUED', 'PROCESSING'] } },
+      select: {
+        id: true,
+        originalPath: true,
+        status: true,
+        type: true,
+        contentId: true,
+        episodeId: true,
+      }
+    });
+
+    let deleted = 0;
+    let requeued = 0;
+    let skipped = 0;
+
+    for (const vf of stuckJobs) {
+      const fileExists = vf.originalPath && fs.existsSync(vf.originalPath);
+
+      if (!fileExists) {
+        // Ghost record: file is gone, clean up the DB entry
+        await prisma.videoFile.delete({ where: { id: vf.id } }).catch(() => {});
+        deleted++;
+        console.log(`[cleanup-stuck] Deleted ghost videoFile ${vf.id} — path missing: ${vf.originalPath}`);
+      } else {
+        // File exists but job is stuck: reset to QUEUED and re-enqueue
+        await prisma.videoFile.update({
+          where: { id: vf.id },
+          data: { status: 'QUEUED', processingJobId: null }
+        });
+
+        try {
+          const ownerContentId = vf.episodeId || vf.contentId;
+          if (!ownerContentId) { skipped++; continue; }
+
+          const job = await addVideoJob({
+            videoFileId: vf.id,
+            contentId: ownerContentId,
+            type: vf.type,
+            videoPath: vf.originalPath!,
+          });
+          await prisma.videoFile.update({ where: { id: vf.id }, data: { processingJobId: job.id } });
+          requeued++;
+          console.log(`[cleanup-stuck] Re-queued videoFile ${vf.id} → new job ${job.id}`);
+        } catch (qErr: any) {
+          console.error(`[cleanup-stuck] Failed to re-queue ${vf.id}: ${qErr.message}`);
+          skipped++;
+        }
+      }
+    }
+
+    ok(res, {
+      message: 'Limpieza completada',
+      total: stuckJobs.length,
+      deleted,
+      requeued,
+      skipped,
+    });
+  } catch (err) { next(err); }
 }) as RequestHandler);
