@@ -19,12 +19,10 @@ export async function addVideoJob(jobData: {
     videoPath: string;
 }) {
     return await videoQueue.add('process-video', jobData, {
-        attempts: 3,
-        backoff: {
-            type: 'exponential',
-            delay: 5000, // wait 5s, then 10s, then 20s...
-        },
+        attempts: 1,        // No automatic retries — if it fails, it fails cleanly.
+                            // The auto-scanner re-imports when the file is ready/fixed.
         removeOnComplete: true,
+        removeOnFail: true, // Remove failed jobs from Redis to keep the queue clean.
     });
 }
 

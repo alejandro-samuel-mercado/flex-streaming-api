@@ -540,3 +540,43 @@ mediaScannerRouter.post('/cleanup-stuck', (async (_req: AuthenticatedRequest, re
     });
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+/**
+ * POST /api/admin/media-scanner/drain-and-reset
+ * NUCLEAR RESET: Vacía toda la cola de BullMQ (Redis) y elimina todos los registros
+ * VideoFile en estado QUEUED o PROCESSING de la base de datos.
+ *
+ * Resultado: el auto-scanner detectará los archivos físicos como "nuevos" en el
+ * próximo ciclo y los re-encolará con la configuración actual (incluido el fast-path FFmpeg).
+ *
+ * ⚠️ USAR CON CUIDADO: cancela TODOS los trabajos en curso.
+ */
+mediaScannerRouter.post('/drain-and-reset', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { prisma } = await import('../../shared/config/prisma');
+    const { videoQueue } = await import('../../services/queue.service');
+
+    // 1. Obliterate the BullMQ queue: removes ALL jobs (waiting, active, delayed, failed)
+    await videoQueue.obliterate({ force: true });
+
+    // 2. Delete all QUEUED and PROCESSING videoFile records from the DB
+    //    so the auto-scanner sees the physical files as "new" again
+    const deleted = await prisma.videoFile.deleteMany({
+      where: { status: { in: ['QUEUED', 'PROCESSING'] } }
+    });
+
+    // 3. Reset any content stuck in ERROR or PROCESSING back to PENDING
+    const resetContent = await prisma.content.updateMany({
+      where: { status: { in: ['ERROR', 'PROCESSING'] } },
+      data: { status: 'PENDING' }
+    });
+
+    console.log(`[drain-and-reset] Queue obliterated. Deleted ${deleted.count} videoFile records. Reset ${resetContent.count} content records to PENDING.`);
+
+    ok(res, {
+      message: 'Cola vaciada y BD limpiada. El auto-scanner re-detectará los archivos en el próximo ciclo.',
+      deletedVideoFiles: deleted.count,
+      resetContentToPending: resetContent.count,
+    });
+  } catch (err) { next(err); }
+}) as RequestHandler);
