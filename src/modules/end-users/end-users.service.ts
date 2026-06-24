@@ -306,7 +306,7 @@ export class EndUsersService {
     });
   }
 
-  static async deleteAccount(accountId: string, userId: string, userRole: UserRole, forceDelete = false) {
+  static async deleteAccount(accountId: string, userId: string, userRole: UserRole) {
     const account = await prisma.endUserAccount.findUnique({ where: { id: accountId } });
     if (!account || account.deletedAt) {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');

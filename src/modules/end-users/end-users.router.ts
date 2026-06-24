@@ -87,8 +87,7 @@ endUsersRouter.patch('/:id/password', auth, vendorPlus, (async (req, res, next) 
 endUsersRouter.delete('/:id', auth, vendorPlus, (async (req, res, next) => {
   try {
     const authReq = req as unknown as AuthenticatedRequest;
-    const forceDelete = req.query.force === 'true';
-    await EndUsersService.deleteAccount(req.params.id, authReq.user!.id, authReq.user!.role, forceDelete);
+    await EndUsersService.deleteAccount(req.params.id, authReq.user!.id, authReq.user!.role);
     ok(res, { message: 'Account deleted successfully' });
   } catch (err) { next(err); }
 }) as RequestHandler);
