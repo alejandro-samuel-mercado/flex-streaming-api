@@ -126,7 +126,6 @@ export class ContentService {
         // 5d. Incomplete filter
         if (incomplete) {
             conditions.push({
-                status: 'PENDING',
                 OR: [
                     { translations: { none: {} } },
                     { translations: { every: { description: { equals: '' } } } },
