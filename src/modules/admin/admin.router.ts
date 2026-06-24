@@ -385,7 +385,7 @@ adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res
     try {
         const toRetry = await prisma.videoFile.findMany({ 
             where: { 
-                status: { in: ['FAILED', 'PENDING', 'PROCESSING'] } 
+                status: 'FAILED'
             } 
         });
         
