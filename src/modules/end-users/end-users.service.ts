@@ -316,13 +316,9 @@ export class EndUsersService {
       throw new AppError(403, 'You do not have permission to delete this client', 'FORBIDDEN');
     }
 
-    if (account.status === 'ACTIVE' && userRole !== 'ADMIN') {
-      throw new AppError(400, 'Cannot delete an active account. Deactivate it first.', 'ACCOUNT_ACTIVE');
-    }
-
-    if (account.status === 'ACTIVE' && userRole === 'ADMIN' && !forceDelete) {
-      throw new AppError(400, 'Account is active. Set forceDelete=true to confirm.', 'CONFIRM_FORCE_DELETE');
-    }
+    // Removed the restriction that prevented vendors from deleting ACTIVE accounts.
+    // The user explicitly requested to be able to delete accounts in any state.
+    // We already handle the security consequences by revoking access and disconnecting devices below.
 
     // Security: Ensure we disconnect devices and revoke all tokens
     await this.revokeAccess(accountId, account.userId);

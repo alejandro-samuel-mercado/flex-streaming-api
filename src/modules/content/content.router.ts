@@ -52,13 +52,15 @@ contentRouter.get('/recent', cacheMiddleware('catalog'), (async (_req, res, next
   } catch (err) { next(err); }
 }) as RequestHandler);
 
-contentRouter.get('/', (async (req, res, next) => {
+contentRouter.get('/', optionalAuth as RequestHandler, (async (req, res, next) => {
   try {
-    console.log('[ContentRouter] Query received:', req.query);
     const filters = ContentFiltersSchema.parse(req.query);
-    console.log('[ContentRouter] Parsed filters:', filters);
-    // Las rutas públicas solo deben mostrar contenido con video listo
-    const { data, total, page, limit } = await ContentService.getAllContent({ ...filters, isPublic: true });
+    
+    // Si el usuario es ADMIN, ve todo el contenido. Si no (o visitante), solo lo público.
+    const isAdmin = (req as AuthenticatedRequest).user?.role === 'ADMIN';
+    const isPublic = !isAdmin;
+
+    const { data, total, page, limit } = await ContentService.getAllContent({ ...filters, isPublic });
     ok(res, data, paginate(page, limit, total));
   } catch (err) { next(err); }
 }) as RequestHandler);
