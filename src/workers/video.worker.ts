@@ -277,12 +277,21 @@ export const videoWorker = new Worker(
       job.log(`Failed inside worker: ${error.message}`);
 
       // ── Cleanup on failure ────────────────────────────────────────────
-      // 1. Mark the video file as FAILED or delete if it's a ghost file
+      // 1. Mark the video file as FAILED or delete if unrecoverable
       try {
-        if (error.message.includes('ENOENT') || error.message.includes('Cannot read input file')) {
+        const isGhostFile = error.message.includes('ENOENT') || error.message.includes('Cannot read input file');
+        // Corrupted files (ffprobe fails) are treated like ghost files: delete the record so
+        // the auto-scanner can detect and re-import the file once the client re-uploads a valid copy.
+        const isCorrupted = error.message.includes('Invalid data found') ||
+                            error.message.includes('moov atom not found') ||
+                            error.message.includes('EBML header') ||
+                            error.message.includes('ffprobe exited with code 1');
+
+        if (isGhostFile || isCorrupted) {
           await prisma.videoFile.deleteMany({ where: { id: videoFileId } });
-          job.log(`[Auto-Clean] Deleted ghost videoFile ${videoFileId} because the physical file is missing.`);
+          job.log(`[Auto-Clean] Deleted ${isCorrupted ? 'corrupted' : 'ghost'} videoFile ${videoFileId} — it will be re-imported automatically once a valid file exists.`);
         } else {
+          // Transient error (Redis hiccup, timeout, etc.): keep as FAILED for manual inspection
           await prisma.videoFile.updateMany({
             where: { id: videoFileId },
             data: { 
@@ -292,15 +301,17 @@ export const videoWorker = new Worker(
           });
         }
 
-        // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
+        // 2. NEVER mark content as ERROR due to a single video failure.
+        //    The content stays PENDING so it keeps appearing in admin and the scanner
+        //    can retry it when the file is fixed. Only reset from ERROR→PENDING if needed.
         const errContentId = existsInitial?.contentId || contentId;
         await prisma.content.updateMany({
-          where: { id: errContentId },
-          data: { status: 'ERROR' }
+          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+          data: { status: 'PENDING' }
         });
 
       } catch (dbErr: any) {
-        job.log(`Warning: could not set FAILED/ERROR status: ${dbErr.message}`);
+        job.log(`Warning: could not set FAILED/PENDING status: ${dbErr.message}`);
       }
 
       // 3. Delete partially-written HLS output to avoid corrupt segments on disk
@@ -330,22 +341,36 @@ videoWorker.on('completed', (job) => {
 });
 
 videoWorker.on('failed', async (job, err) => {
-
   console.error(`Job ${job?.id} has failed with ${err.message}`);
   if (job?.data?.videoFileId) {
     try {
-      if (err.message.includes('ENOENT') || err.message.includes('Cannot read input file')) {
+      const isGhostFile = err.message.includes('ENOENT') || err.message.includes('Cannot read input file');
+      const isCorrupted = err.message.includes('Invalid data found') ||
+                          err.message.includes('moov atom not found') ||
+                          err.message.includes('EBML header') ||
+                          err.message.includes('ffprobe exited with code 1');
+
+      if (isGhostFile || isCorrupted) {
         await prisma.videoFile.deleteMany({ where: { id: job.data.videoFileId } });
-        console.log(`[Auto-Clean] Deleted ghost videoFile ${job.data.videoFileId} because the physical file is missing.`);
+        console.log(`[Auto-Clean] Deleted ${isCorrupted ? 'corrupted' : 'ghost'} videoFile ${job.data.videoFileId} — auto-scanner will re-import when a valid file is available.`);
       } else {
         await prisma.videoFile.updateMany({
           where: { id: job.data.videoFileId },
           data: {
             status: 'FAILED',
-            errorMessage: `Error en BullMQ (Stalled o Caído): ${err.message}`
+            errorMessage: `BullMQ job failure: ${err.message}`
           }
         });
         console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
+      }
+
+      // Reset content from ERROR/PROCESSING back to PENDING — never block content permanently
+      const errContentId = job.data.contentId;
+      if (errContentId) {
+        await prisma.content.updateMany({
+          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+          data: { status: 'PENDING' }
+        });
       }
     } catch (dbErr: any) {
       console.error(`[VideoWorker] Failed to update database status on job failure: ${dbErr.message}`);
