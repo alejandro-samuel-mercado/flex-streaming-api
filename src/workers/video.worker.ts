@@ -294,12 +294,15 @@ export const videoWorker = new Worker(
           job.log(`[Auto-Clean] Deleted ghost videoFile ${videoFileId} — physical file is missing.`);
         } else if (isCorrupted) {
           // Corrupted: file exists but is unreadable by ffprobe.
-          // Delete the DB record and the physical file to clean up space and queue.
-          await prisma.videoFile.deleteMany({ where: { id: videoFileId } });
+          // Mark as FAILED so the client sees it, but delete the physical file to prevent scanner loops.
+          await prisma.videoFile.updateMany({
+            where: { id: videoFileId },
+            data: { status: 'FAILED', errorMessage: `Archivo corrompido o vacío: ${error.message}` }
+          });
           try {
             if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
           } catch (e) {}
-          job.log(`[Auto-Clean] Deleted corrupted videoFile ${videoFileId} and its physical file. Re-upload a valid file.`);
+          job.log(`[Auto-Clean] Marked corrupted videoFile ${videoFileId} as FAILED and deleted physical file. Re-upload a valid file.`);
         } else {
           // Transient error (timeout, Redis hiccup, etc.): keep as FAILED for inspection
           await prisma.videoFile.updateMany({
