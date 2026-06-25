@@ -315,16 +315,32 @@ export class MediaScannerService {
     }
   }
 
-  /** Find index.m3u8 or video.m3u8 directly inside a folder. */
-  private static async _findM3u8(dirPath: string): Promise<string | null> {
-    try {
-      const entries = await fs.promises.readdir(dirPath);
-      for (const name of entries) {
-        if (name === 'index.m3u8' || name === 'video.m3u8' || name === 'master.m3u8') {
-          return path.join(dirPath, name);
-        }
+  /** Find index.m3u8 / video.m3u8 / master.m3u8 up to 2 levels deep inside a folder. */
+  private static async _findM3u8(dirPath: string, depth = 0): Promise<string | null> {
+    if (depth > 2) return null;
+    let entries: string[];
+    try { entries = await fs.promises.readdir(dirPath); }
+    catch { return null; }
+
+    for (const name of entries) {
+      if (name === 'index.m3u8' || name === 'video.m3u8' || name === 'master.m3u8') {
+        return path.join(dirPath, name);
       }
-    } catch { /* ignore */ }
+    }
+
+    // Not found at this level — check subfolders (only 1 extra level to avoid deep traversal)
+    if (depth < 2) {
+      for (const name of entries) {
+        const sub = path.join(dirPath, name);
+        try {
+          const stat = await fs.promises.stat(sub);
+          if (stat.isDirectory()) {
+            const found = await this._findM3u8(sub, depth + 1);
+            if (found) return found;
+          }
+        } catch { /* skip */ }
+      }
+    }
     return null;
   }
 
