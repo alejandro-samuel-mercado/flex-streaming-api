@@ -559,10 +559,10 @@ mediaScannerRouter.post('/drain-and-reset', (async (_req: AuthenticatedRequest, 
     // 1. Obliterate the BullMQ queue: removes ALL jobs (waiting, active, delayed, failed)
     await videoQueue.obliterate({ force: true });
 
-    // 2. Delete all QUEUED and PROCESSING videoFile records from the DB
+    // 2. Delete all QUEUED, PROCESSING, FAILED, and PENDING videoFile records from the DB
     //    so the auto-scanner sees the physical files as "new" again
     const deleted = await prisma.videoFile.deleteMany({
-      where: { status: { in: ['QUEUED', 'PROCESSING'] } }
+      where: { status: { in: ['QUEUED', 'PROCESSING', 'FAILED', 'PENDING'] } }
     });
 
     // 3. Reset any content stuck in ERROR or PROCESSING back to PENDING
