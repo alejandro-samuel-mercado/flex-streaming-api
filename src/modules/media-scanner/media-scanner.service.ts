@@ -189,7 +189,26 @@ export class MediaScannerService {
 
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
-        await this._scanMoviesRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
+        // Check if this folder is a pre-processed HLS movie (has index.m3u8)
+        const m3u8Path = await this._findM3u8(fullPath);
+        if (m3u8Path) {
+          try {
+            const stat = await fs.promises.stat(fullPath);
+            results.push({
+              fileName: entry.name,
+              cleanName: this.cleanFileName(entry.name),
+              filePath: fullPath,
+              fileSize: stat.size,
+              extension: 'HLS',
+              lastModified: stat.mtime,
+              alreadyImported: importedPaths.has(fullPath),
+              contentType: 'MOVIE',
+              episode: { m3u8Path, season: 1, episodeNumber: 1, tmdbSeriesId: null, seriesFolderName: '' } // Hack to pass m3u8Path
+            });
+          } catch { /* skip */ }
+        } else {
+          await this._scanMoviesRecursive(fullPath, results, importedPaths, currentDepth + 1, maxDepth);
+        }
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
         if (VIDEO_EXTENSIONS.has(ext)) {
@@ -301,7 +320,7 @@ export class MediaScannerService {
     try {
       const entries = await fs.promises.readdir(dirPath);
       for (const name of entries) {
-        if (name === 'index.m3u8' || name === 'video.m3u8') {
+        if (name === 'index.m3u8' || name === 'video.m3u8' || name === 'master.m3u8') {
           return path.join(dirPath, name);
         }
       }
@@ -331,6 +350,11 @@ export class MediaScannerService {
       }
 
       // Movie flow
+      if (episode?.m3u8Path) {
+        // This is a pre-processed HLS movie folder
+        return await this._importHLSMovie(filePath, fileName, episode.m3u8Path);
+      }
+
       const cleanName = this.cleanFileName(fileName);
       const tmdbResult = await TMDBService.searchWithFallback(cleanName);
       if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
@@ -455,6 +479,105 @@ export class MediaScannerService {
     console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId} (Marked READY)`);
 
     return { filePath: episodeFolderPath, fileName: folderName, success: true, contentId, tmdbMatch };
+  }
+
+  /**
+   * Import a movie that is ALREADY in HLS format.
+   * Does NOT enqueue FFmpeg processing.
+   */
+  private static async _importHLSMovie(folderPath: string, folderName: string, m3u8Url: string): Promise<ImportResult> {
+    const cleanName = this.cleanFileName(folderName);
+    const tmdbResult = await TMDBService.searchWithFallback(cleanName);
+    
+    let contentId: string;
+    let tmdbMatch = false;
+
+    if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
+      // Find or create with TMDB
+      const match = tmdbResult.bestMatch;
+      const existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
+      if (existing) {
+        contentId = existing.id;
+      } else {
+        const lockKey = `tmdb-${match.id}`;
+        if (this.creatingContents.has(lockKey)) {
+          contentId = await this.creatingContents.get(lockKey)!;
+        } else {
+          let details;
+          try {
+             details = await TMDBService.getFullDetails(match.id, 'movie');
+          } catch {
+             // Fallback minimal
+             const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+             const content = await prisma.content.create({
+               data: {
+                 type: 'MOVIE', status: 'READY', slug,
+                 translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
+               }
+             });
+             contentId = content.id;
+             details = null;
+          }
+
+          if (details) {
+            const baseSlug = details.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+            const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
+            const content = await prisma.content.create({
+              data: {
+                type: 'MOVIE', status: 'READY', slug, tmdbId: String(details.tmdbId),
+                translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] }
+              }
+            });
+            contentId = content.id;
+            
+            if (details.posterPath) {
+               const posterUrl = `https://image.tmdb.org/t/p/w500${details.posterPath}`;
+               await prisma.thumbnail.create({ data: { contentId, type: 'POSTER', url: posterUrl, width: 500, height: 750 } });
+            }
+          }
+        }
+      }
+      tmdbMatch = true;
+    } else {
+      // Minimal creation
+      const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+      const content = await prisma.content.create({
+        data: {
+          type: 'MOVIE', status: 'READY', slug,
+          translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
+        }
+      });
+      contentId = content.id;
+    }
+
+    const videoFile = await prisma.videoFile.create({
+      data: {
+        contentId: contentId!, // Tell TS it is definitely assigned
+        type: 'MOVIE',
+        originalPath: folderPath,
+        status: 'COMPLETED',
+        masterPlaylist: '', 
+        hlsPath: folderPath,
+        fileSize: BigInt(0),
+      }
+    });
+
+    const m3u8Filename = path.basename(m3u8Url);
+    const virtualMasterPath = `/api/stream/hls/${videoFile.id}/${m3u8Filename}`;
+
+    await prisma.videoFile.update({
+      where: { id: videoFile.id },
+      data: { 
+        masterPlaylist: virtualMasterPath,
+        qualities: {
+          create: [
+            { resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: virtualMasterPath, codec: 'h264' }
+          ]
+        }
+      }
+    });
+
+    return { filePath: folderPath, fileName: folderName, success: true, contentId: contentId!, tmdbMatch };
   }
 
   /**
