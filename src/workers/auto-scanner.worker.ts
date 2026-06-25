@@ -74,8 +74,20 @@ export class AutoScannerWorker {
       });
       const cfg = Object.fromEntries(configs.map(c => [c.key, c.value]));
 
-      const moviePath  = cfg['AUTO_SCAN_MOVIE_PATH']  || cfg['AUTO_SCAN_PATH'] || '';
-      const seriesPath = cfg['AUTO_SCAN_SERIES_PATH'] || '';
+      let moviePath  = cfg['AUTO_SCAN_MOVIE_PATH']  || cfg['AUTO_SCAN_PATH'] || '';
+      let seriesPath = cfg['AUTO_SCAN_SERIES_PATH'] || '';
+
+      // Override with local .env to allow split servers
+      const envDirs = process.env.MEDIA_SCAN_DIRS;
+      if (envDirs) {
+        if (envDirs.includes('peliculas') || envDirs.includes('movies')) {
+          seriesPath = ''; // Disable series scanning on this server
+          moviePath = envDirs;
+        } else if (envDirs.includes('series')) {
+          moviePath = '';  // Disable movies scanning on this server
+          seriesPath = envDirs;
+        }
+      }
 
       if (!moviePath && !seriesPath) {
         console.log('[AutoScanner] No scan paths configured');
