@@ -385,7 +385,11 @@ adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res
     try {
         const toRetry = await prisma.videoFile.findMany({ 
             where: { 
-                status: 'FAILED'
+                status: 'FAILED',
+                OR: [
+                    { errorMessage: null },
+                    { errorMessage: { not: { startsWith: 'Archivo corrompido' } } }
+                ]
             } 
         });
         
