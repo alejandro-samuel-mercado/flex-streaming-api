@@ -357,8 +357,11 @@ videoWorker.on('failed', async (job, err) => {
                           err.message.includes('ffprobe exited with code 1');
 
       if (isGhostFile) {
-        await prisma.videoFile.deleteMany({ where: { id: job.data.videoFileId } });
-        console.log(`[Auto-Clean] Deleted ghost videoFile ${job.data.videoFileId} — file missing.`);
+        await prisma.videoFile.updateMany({
+          where: { id: job.data.videoFileId },
+          data: { status: 'FAILED', errorMessage: `Archivo no encontrado (ENOENT). Verifica que el worker tenga acceso al archivo físico.` }
+        });
+        console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (ghost file). Deletion skipped to prevent scan loops.`);
       } else if (isCorrupted) {
         await prisma.videoFile.updateMany({
           where: { id: job.data.videoFileId },
