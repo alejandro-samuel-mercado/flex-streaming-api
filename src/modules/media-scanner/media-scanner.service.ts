@@ -663,7 +663,18 @@ export class MediaScannerService {
 
   private static async _importWithTMDB(filePath: string, fileName: string, tmdbMatch: any, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
     const mediaType = tmdbMatch.media_type === 'tv' ? 'tv' : tmdbMatch.media_type === 'movie' ? 'movie' : (tmdbMatch.title ? 'movie' : 'tv');
-    const details = await TMDBService.getFullDetails(tmdbMatch.id, mediaType as 'movie' | 'tv');
+    let details;
+    try {
+      details = await TMDBService.getFullDetails(tmdbMatch.id, mediaType as 'movie' | 'tv');
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        // Retry with the opposite type if TMDB couldn't find it (ID mismatch between tv/movie)
+        const fallbackType = mediaType === 'movie' ? 'tv' : 'movie';
+        details = await TMDBService.getFullDetails(tmdbMatch.id, fallbackType);
+      } else {
+        throw err;
+      }
+    }
 
     const existingContent = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
     let contentId: string;
