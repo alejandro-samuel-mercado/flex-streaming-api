@@ -138,7 +138,10 @@ export class MediaScannerService {
       for (let i = 0; i < allFiles.length; i += CHUNK) {
         const chunk = allFiles.slice(i, i + CHUNK).map(f => f.filePath);
         const found = await prisma.videoFile.findMany({
-          where: { originalPath: { in: chunk } },
+          where: { 
+            originalPath: { in: chunk },
+            status: { not: 'FAILED' }
+          },
           select: { originalPath: true }
         });
         for (const v of found) importedPaths.add(v.originalPath);
@@ -356,7 +359,12 @@ export class MediaScannerService {
   static async importFile(filePath: string, contentType: 'MOVIE' | 'SERIES' = 'MOVIE', episode?: ScannedFile['episode']): Promise<ImportResult> {
     const fileName = path.basename(filePath);
 
-    const existingVideo = await prisma.videoFile.findFirst({ where: { originalPath: filePath } });
+    const existingVideo = await prisma.videoFile.findFirst({ 
+      where: { 
+        originalPath: filePath,
+        status: { not: 'FAILED' }
+      } 
+    });
     if (existingVideo) {
       return { filePath, fileName, success: false, tmdbMatch: false, error: 'Este archivo ya fue importado' };
     }
