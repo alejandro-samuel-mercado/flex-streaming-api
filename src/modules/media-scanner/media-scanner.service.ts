@@ -130,17 +130,23 @@ export class MediaScannerService {
     }
 
     // Phase 2: Batch-check which paths are already imported (chunks of 200)
+    // If DB is temporarily unreachable, we continue without this check —
+    // importFile() has its own duplicate guard so nothing will be double-imported.
     const CHUNK = 200;
     const importedPaths = new Set<string>();
-    for (let i = 0; i < allFiles.length; i += CHUNK) {
-      const chunk = allFiles.slice(i, i + CHUNK).map(f => f.filePath);
-      const found = await prisma.videoFile.findMany({
-        where: { originalPath: { in: chunk } },
-        select: { originalPath: true }
-      });
-      for (const v of found) importedPaths.add(v.originalPath);
-      // Yield event loop between chunks
-      if (i + CHUNK < allFiles.length) await new Promise(r => setImmediate(r));
+    try {
+      for (let i = 0; i < allFiles.length; i += CHUNK) {
+        const chunk = allFiles.slice(i, i + CHUNK).map(f => f.filePath);
+        const found = await prisma.videoFile.findMany({
+          where: { originalPath: { in: chunk } },
+          select: { originalPath: true }
+        });
+        for (const v of found) importedPaths.add(v.originalPath);
+        // Yield event loop between chunks
+        if (i + CHUNK < allFiles.length) await new Promise(r => setImmediate(r));
+      }
+    } catch (err: any) {
+      console.warn(`[MediaScanner] DB batch-check failed (${err?.message}). Continuing scan — importFile() will handle duplicates.`);
     }
 
     // Phase 3: Mark imported status
@@ -149,6 +155,7 @@ export class MediaScannerService {
     }
 
     allFiles.sort((a, b) => a.fileName.localeCompare(b.fileName));
+    console.log(`[MediaScanner] Scan complete: ${allFiles.length} files found (${importedPaths.size} already imported).`);
     return allFiles;
   }
 
