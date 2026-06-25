@@ -357,7 +357,7 @@ export class MediaScannerService {
 
       const cleanName = this.cleanFileName(fileName);
       const tmdbResult = await TMDBService.searchWithFallback(cleanName);
-      if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
+      if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
         return await this._importWithTMDB(filePath, fileName, tmdbResult.bestMatch, 'MOVIE');
       } else {
         return await this._importMinimal(filePath, fileName, cleanName, 'MOVIE');
@@ -625,7 +625,7 @@ export class MediaScannerService {
         } else {
           const seriesName = this.cleanFileName(episode.seriesFolderName);
           const tmdbResult = await TMDBService.searchWithFallback(seriesName).catch(() => ({ bestMatch: null, confidence: 0 }));
-          if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
+          if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
             const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
             const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');
             tmdbMatch = true;
@@ -801,10 +801,18 @@ export class MediaScannerService {
     try {
       details = await TMDBService.getFullDetails(tmdbMatch.id, mediaType as 'movie' | 'tv');
     } catch (err: any) {
-      if (err.response?.status === 404) {
+      if (err.response?.status === 404 || err.isAxiosError) {
         // Retry with the opposite type if TMDB couldn't find it (ID mismatch between tv/movie)
         const fallbackType = mediaType === 'movie' ? 'tv' : 'movie';
-        details = await TMDBService.getFullDetails(tmdbMatch.id, fallbackType);
+        try {
+          details = await TMDBService.getFullDetails(tmdbMatch.id, fallbackType);
+        } catch (err2: any) {
+          // Both types returned 404 or failed — TMDB match was a false positive.
+          // Fall back to minimal import so the file is still registered in the DB.
+          console.warn(`[MediaScanner] TMDB ID ${tmdbMatch.id} not found as '${mediaType}' nor '${fallbackType}'. Importing minimally: ${fileName}`);
+          const cleanName = this.cleanFileName(fileName);
+          return await this._importMinimal(filePath, fileName, cleanName, contentType);
+        }
       } else {
         throw err;
       }

@@ -79,8 +79,14 @@ export class TMDBService {
         }
       });
       return response.data;
-    } catch (error) {
-      console.error('TMDB Details Error:', error);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status === 404) {
+        // Expected: TMDB doesn't have this ID — log clean message only
+        console.warn(`[TMDB] ${type}/${id} → 404 Not Found`);
+      } else {
+        console.error(`[TMDB] getDetails(${type}/${id}) failed: ${error?.message || error}`);
+      }
       throw error;
     }
   }
@@ -371,8 +377,11 @@ export class TMDBService {
         }
       });
       return response.data;
-    } catch (error) {
-      console.error(`TMDB Episode Details Error (tvId: ${tvId}, S${seasonNumber}E${episodeNumber}):`, error);
+    } catch (error: any) {
+      const status = error?.response?.status;
+      if (status !== 404) {
+        console.warn(`[TMDB] Episode S${seasonNumber}E${episodeNumber} for tvId ${tvId}: ${error?.message || error}`);
+      }
       return null;
     }
   }
