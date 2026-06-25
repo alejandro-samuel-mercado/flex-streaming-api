@@ -487,8 +487,19 @@ export class MediaScannerService {
    */
   private static async _importHLSMovie(folderPath: string, folderName: string, m3u8Url: string): Promise<ImportResult> {
     const cleanName = this.cleanFileName(folderName);
-    const tmdbResult = await TMDBService.searchWithFallback(cleanName);
-    
+    let tmdbResult;
+
+    // Check if the folder name is or starts with a TMDB ID (e.g., "1309923" or "1309923_movie_name")
+    const tmdbIdMatch = folderName.match(/^(\d+)/);
+    const explicitTmdbId = tmdbIdMatch ? parseInt(tmdbIdMatch[1], 10) : null;
+
+    if (explicitTmdbId) {
+       // Mock the search result to force the TMDB flow to use this exact ID
+       tmdbResult = { bestMatch: { id: explicitTmdbId }, confidence: 1 };
+    } else {
+       tmdbResult = await TMDBService.searchWithFallback(cleanName);
+    }
+
     let contentId: string;
     let tmdbMatch = false;
 
