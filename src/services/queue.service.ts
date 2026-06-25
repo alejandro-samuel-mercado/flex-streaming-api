@@ -7,8 +7,10 @@ const connection = new Redis(env.REDIS_URL, {
     maxRetriesPerRequest: null,
 });
 
-export const videoQueue = new Queue('video-processing', { connection: connection as any });
-export const videoQueueEvents = new QueueEvents('video-processing', { connection: connection as any });
+const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
+
+export const videoQueue = new Queue(QUEUE_NAME, { connection: connection as any });
+export const videoQueueEvents = new QueueEvents(QUEUE_NAME, { connection: connection as any });
 
 export async function addVideoJob(jobData: {
     videoFileId: string;

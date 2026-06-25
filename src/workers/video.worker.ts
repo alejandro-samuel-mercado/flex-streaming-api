@@ -8,8 +8,10 @@ import fs from 'fs';
 
 const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
+const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
+
 export const videoWorker = new Worker(
-  'video-processing',
+  QUEUE_NAME,
   async (job: Job) => {
     const { videoFileId, contentId, videoPath } = job.data;
     
