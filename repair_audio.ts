@@ -81,6 +81,7 @@ async function run() {
             await new Promise((res, rej) => {
                 ffmpeg(oldPlaylist)
                     .outputOptions([
+                        '-y',
                         ...mapOptions,
                         '-c', 'copy',
                         '-hls_time', '6',

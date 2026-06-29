@@ -94,6 +94,7 @@ class FFmpegService {
                 }
                 cmd
                     .outputOptions([
+                    '-y',
                     ...mapOptions,
                     '-c:v', 'copy',
                     ...audioOpts,
@@ -179,6 +180,7 @@ class FFmpegService {
                 }
                 cmd
                     .outputOptions([
+                    '-y',
                     ...mapOptions,
                     '-c:v', 'h264',
                     '-preset', 'veryfast',
