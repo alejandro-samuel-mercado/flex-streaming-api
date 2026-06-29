@@ -54,11 +54,13 @@ export class FFmpegService {
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
         const canCopyVideo = HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
 
-        const audioCodec = audioStreams[0]?.codec_name?.toLowerCase() || '';
         const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
-        const canCopyAudio = HLS_COMPATIBLE_AUDIO.some(c => audioCodec.includes(c));
+        const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => 
+            HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c))
+        );
+        const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 
-        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codec: ${audioCodec} (copy: ${canCopyAudio})`);
+        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
 
         if (canCopyVideo) {
             // ══════════════════════════════════════════════════════════════════
@@ -128,7 +130,7 @@ export class FFmpegService {
                     index: i,
                     language: s.tags?.language || `audio${i}`,
                     name: s.tags?.title || `Audio ${i + 1}`,
-                    codec: canCopyAudio ? audioCodec : 'aac',
+                    codec: canCopyAudio ? (s.codec_name || 'aac') : 'aac',
                     playlistUrl: '720p.m3u8'
                 });
             }
