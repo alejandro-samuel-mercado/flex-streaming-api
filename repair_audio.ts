@@ -19,8 +19,8 @@ async function run() {
         },
         include: { 
             audioTracks: { orderBy: { trackIndex: 'asc' } },
-            content: { select: { title: true } },
-            episode: { include: { season: { include: { content: { select: { title: true } } } } } }
+            content: { select: { translations: { select: { title: true } } } },
+            episode: { include: { season: { include: { content: { select: { translations: { select: { title: true } } } } } } } }
         }
     });
 
@@ -34,7 +34,7 @@ async function run() {
             continue;
         }
 
-        const title = file.content?.title || (file.episode ? `${file.episode.season.content?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
+        const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
         console.log(`\n[REPARANDO] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
 
         // Read metadata from 720p.m3u8 to know audio tracks
