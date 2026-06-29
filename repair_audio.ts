@@ -31,13 +31,15 @@ async function run() {
         
         const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
         let oldPlaylist = path.join(file.hlsPath, '720p.m3u8');
-        const demuxedVideoPlaylist = path.join(file.hlsPath, 'stream_v:0.m3u8');
+        const demuxedVideoPlaylist = fs.existsSync(path.join(file.hlsPath, 'stream_video.m3u8')) 
+            ? path.join(file.hlsPath, 'stream_video.m3u8') 
+            : path.join(file.hlsPath, 'stream_0.m3u8');
         
         if (!fs.existsSync(oldPlaylist)) {
-            // Check if master.m3u8 exists but it's the old format (stream_v:0.m3u8 doesn't exist)
+            // Check if master.m3u8 exists but it's the old format
             if (fs.existsSync(path.join(file.hlsPath, 'master.m3u8')) && !fs.existsSync(demuxedVideoPlaylist)) {
                 oldPlaylist = path.join(file.hlsPath, 'master.m3u8');
-            } else if (fs.existsSync(path.join(file.hlsPath, 'stream_0.m3u8')) || fs.existsSync(path.join(file.hlsPath, 'stream_video.m3u8'))) {
+            } else if (fs.existsSync(demuxedVideoPlaylist)) {
                 // RESTORE MASTER.M3U8 FOR ALREADY PROCESSED MOVIES
                 console.log(`\n[RESTORE MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
                 
