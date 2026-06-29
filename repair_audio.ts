@@ -40,33 +40,19 @@ async function run() {
             if (fs.existsSync(path.join(file.hlsPath, 'master.m3u8')) && !fs.existsSync(demuxedVideoPlaylist)) {
                 oldPlaylist = path.join(file.hlsPath, 'master.m3u8');
             } else if (fs.existsSync(demuxedVideoPlaylist)) {
-                // RESTORE MASTER.M3U8 FOR ALREADY PROCESSED MOVIES
-                console.log(`\n[RESTORE MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
-                
-                const allFiles = fs.readdirSync(file.hlsPath);
-                const audioPlaylists = allFiles.filter(f => f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_0.m3u8' && f !== 'stream_video.m3u8' && f !== 'stream_v:0.m3u8' && !f.startsWith('stream_a:'));
-                
-                let masterContent = `#EXTM3U\n#EXT-X-VERSION:3\n`;
-                
-                for (let i = 0; i < audioPlaylists.length; i++) {
-                    const audioFile = audioPlaylists[i];
-                    const dbTrack = file.audioTracks.find(t => t.trackIndex === i);
-                    const lang = dbTrack?.language || 'unk';
-                    const safeName = `Audio_${i}`;
-                    const isDefault = i === 0 ? 'YES' : 'NO';
-                    
-                    masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="${audioFile}"\n`;
+                // FIX BROKEN MASTER.M3U8 FROM PREVIOUS SCRIPT BUG
+                const masterPath = path.join(file.hlsPath, 'master.m3u8');
+                if (fs.existsSync(masterPath)) {
+                    const content = fs.readFileSync(masterPath, 'utf8');
+                    if (content.includes('AUDIO="audio"') && !content.includes('CODECS=')) {
+                        console.log(`\n[FIXING MASTER.M3U8] ID: ${file.id} | Titulo: ${title}`);
+                        const fixedContent = content.replace('AUDIO="audio"', 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
+                        fs.writeFileSync(masterPath, fixedContent, 'utf-8');
+                        console.log(`  [ÉXITO] CODECS restaurados.`);
+                    }
                 }
                 
-                const videoFile = fs.existsSync(path.join(file.hlsPath, 'stream_video.m3u8')) ? 'stream_video.m3u8' : 'stream_0.m3u8';
-                if (audioPlaylists.length > 0) {
-                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\n${videoFile}\n`;
-                } else {
-                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\n${videoFile}\n`;
-                }
-                
-                fs.writeFileSync(path.join(file.hlsPath, 'master.m3u8'), masterContent, 'utf-8');
-                console.log(`  [ÉXITO] master.m3u8 reconstruido correctamente.`);
+                // Ya está procesado con éxito, saltar
                 continue;
             } else {
                 continue; // No existe ni 720p.m3u8 ni master.m3u8
