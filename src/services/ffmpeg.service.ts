@@ -116,9 +116,9 @@ export class FFmpegService {
                         '-hls_segment_type', 'mpegts',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
                         '-master_pl_name', 'master.m3u8',
-                        '-var_stream_map', varStreamMap,
                         '-max_muxing_queue_size', '1024',
                     ])
+                    .outputOption('-var_stream_map', varStreamMap)
                     .output(path.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', resetStall)
                     .on('progress', (p) => {
@@ -214,9 +214,9 @@ export class FFmpegService {
                         '-hls_segment_type', 'mpegts',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
                         '-master_pl_name', 'master.m3u8',
-                        '-var_stream_map', varStreamMap,
                         '-max_muxing_queue_size', '1024',
                     ])
+                    .outputOption('-var_stream_map', varStreamMap)
                     .output(path.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', () => {
                         resetStall();
