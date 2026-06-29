@@ -29,12 +29,38 @@ async function run() {
     for (const file of brokenFiles) {
         if (!file.hlsPath) continue;
         
+        const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
         const oldPlaylist = path.join(file.hlsPath, '720p.m3u8');
+        const demuxedVideoPlaylist = path.join(file.hlsPath, 'stream_v:0.m3u8');
+        
         if (!fs.existsSync(oldPlaylist)) {
+            // Si ya no existe 720p.m3u8 pero SÍ existe stream_v:0.m3u8, significa que ya lo demuxeamos antes, 
+            // pero el master.m3u8 quedó mal o no se sobreescribió. Lo re-generamos instantáneamente!
+            if (fs.existsSync(demuxedVideoPlaylist)) {
+                console.log(`\n[FIX MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
+                console.log(`  Ya está demuxeado. Regenerando solo el archivo master.m3u8...`);
+                
+                
+                let masterContent = `#EXTM3U\n#EXT-X-VERSION:3\n`;
+                
+                for (let i = 0; i < file.audioTracks.length; i++) {
+                    const dbTrack = file.audioTracks.find(t => t.trackIndex === i);
+                    const name = dbTrack?.label || `Audio_${i + 1}`;
+                    const lang = dbTrack?.language || 'unk';
+                    const safeName = name.replace(/[,="' ]/g, '_');
+                    const isDefault = i === 0 ? 'YES' : 'NO';
+                    
+                    masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="stream_a:${i}.m3u8"\n`;
+                }
+                
+                masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\nstream_v:0.m3u8\n`;
+                
+                fs.writeFileSync(path.join(file.hlsPath, 'master.m3u8'), masterContent, 'utf-8');
+                console.log(`  [ÉXITO] master.m3u8 sobreescrito correctamente.`);
+            }
             continue;
         }
 
-        const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
         console.log(`\n[REPARANDO] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
 
         // Read metadata from 720p.m3u8 to know audio tracks
