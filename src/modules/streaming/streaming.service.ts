@@ -278,6 +278,7 @@ export class StreamingService {
             'Content-Type': contentType,
             'Accept-Ranges': 'bytes',
             'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
+            'Access-Control-Allow-Origin': '*',
         };
 
         if (ext === '.m3u8') {
@@ -297,9 +298,13 @@ export class StreamingService {
                 console.log(`[Streaming] Dynamically injected CODECS into master playlist for ${videoFileId}`);
             }
 
+            const modifiedBuffer = Buffer.from(modified, 'utf8');
+            headers['Content-Length'] = modifiedBuffer.length.toString();
+
             const { Readable } = require('stream');
-            stream = Readable.from([modified]);
+            stream = Readable.from([modifiedBuffer]);
         } else {
+            headers['Content-Length'] = fs.statSync(resolvedPath).size.toString();
             stream = fs.createReadStream(resolvedPath);
         }
 

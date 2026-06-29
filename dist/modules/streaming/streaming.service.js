@@ -255,6 +255,7 @@ class StreamingService {
             'Content-Type': contentType,
             'Accept-Ranges': 'bytes',
             'Cache-Control': ext === '.ts' ? 'public, max-age=31536000, immutable' : 'no-cache, no-store',
+            'Access-Control-Allow-Origin': '*',
         };
         if (ext === '.m3u8') {
             const content = fs_1.default.readFileSync(resolvedPath, 'utf8');
@@ -265,10 +266,13 @@ class StreamingService {
                 modified = modified.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
                 console.log(`[Streaming] Dynamically injected CODECS into master playlist for ${videoFileId}`);
             }
+            const modifiedBuffer = Buffer.from(modified, 'utf8');
+            headers['Content-Length'] = modifiedBuffer.length.toString();
             const { Readable } = require('stream');
-            stream = Readable.from([modified]);
+            stream = Readable.from([modifiedBuffer]);
         }
         else {
+            headers['Content-Length'] = fs_1.default.statSync(resolvedPath).size.toString();
             stream = fs_1.default.createReadStream(resolvedPath);
         }
         return {
