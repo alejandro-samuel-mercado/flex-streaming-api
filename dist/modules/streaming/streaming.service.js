@@ -214,6 +214,14 @@ class StreamingService {
         setCachedVideoFile(videoFileId, videoFile);
         // Resolve the full path and verify it stays inside hlsRoot.
         let resolvedPath = path_1.default.resolve(hlsRoot, filePath);
+        // Fallback: If frontend requests '720p.m3u8' (due to stale cache) but it was converted to 'master.m3u8'
+        if ((filePath === '720p.m3u8' || filePath === 'stream_0.m3u8' || filePath === 'stream_v:0.m3u8') && !fs_1.default.existsSync(resolvedPath)) {
+            const newMasterPath = path_1.default.resolve(hlsRoot, 'master.m3u8');
+            if (fs_1.default.existsSync(newMasterPath)) {
+                resolvedPath = newMasterPath;
+                console.log(`[Streaming] Alias applied: ${filePath} -> master.m3u8 for video ${videoFileId} (Bypassing stale cache)`);
+            }
+        }
         // Fallback: If requesting 'master.m3u8' but it doesn't exist, try to serve the actual master playlist
         if (filePath === 'master.m3u8' && !fs_1.default.existsSync(resolvedPath) && videoFile.masterPlaylist) {
             const actualFilename = videoFile.masterPlaylist.split('/').pop();
