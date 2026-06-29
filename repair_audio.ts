@@ -53,7 +53,11 @@ async function run() {
                     masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="stream_a:${i}.m3u8"\n`;
                 }
                 
-                masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\nstream_v:0.m3u8\n`;
+                if (file.audioTracks.length > 0) {
+                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\nstream_v:0.m3u8\n`;
+                } else {
+                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\nstream_v:0.m3u8\n`;
+                }
                 
                 fs.writeFileSync(path.join(file.hlsPath, 'master.m3u8'), masterContent, 'utf-8');
                 console.log(`  [ÉXITO] master.m3u8 sobreescrito correctamente.`);
