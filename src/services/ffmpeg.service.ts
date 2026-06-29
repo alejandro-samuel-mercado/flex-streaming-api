@@ -98,8 +98,8 @@ export class FFmpegService {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
-                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
-                        const safeName = name.replace(/[,="' ]/g, '_');
+                        const name = audioStreams[i].tags?.title || `Audio`;
+                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                     }
                 }
@@ -186,8 +186,8 @@ export class FFmpegService {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
-                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
-                        const safeName = name.replace(/[,="' ]/g, '_');
+                        const name = audioStreams[i].tags?.title || `Audio`;
+                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                     }
                 }

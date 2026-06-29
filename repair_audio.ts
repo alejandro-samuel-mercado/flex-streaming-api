@@ -45,9 +45,9 @@ async function run() {
                 
                 for (let i = 0; i < file.audioTracks.length; i++) {
                     const dbTrack = file.audioTracks.find(t => t.trackIndex === i);
-                    const name = dbTrack?.label || `Audio_${i + 1}`;
+                    const name = dbTrack?.label || `Audio`;
                     const lang = dbTrack?.language || 'unk';
-                    const safeName = name.replace(/[,="' ]/g, '_');
+                    const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`; // GUARANTEE UNIQUE
                     const isDefault = i === 0 ? 'YES' : 'NO';
                     
                     masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="stream_a:${i}.m3u8"\n`;
@@ -99,10 +99,9 @@ async function run() {
                 
                 // Tratar de recuperar los nombres desde la DB si existen
                 const dbTrack = file.audioTracks.find(t => t.trackIndex === i);
-                const name = dbTrack?.label || `Audio_${i + 1}`;
+                const name = dbTrack?.label || `Audio`;
                 const lang = dbTrack?.language || 'unk';
-                const safeName = name.replace(/[,="' ]/g, '_');
-                
+                const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`; // GUARANTEE UNIQUE
                 varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
             }
         }
