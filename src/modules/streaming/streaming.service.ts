@@ -284,6 +284,8 @@ export class StreamingService {
         if (ext === '.m3u8') {
             // Read and immediately strip BOM if present to prevent ExoPlayer ParseException
             let content = fs.readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, '').trim();
+            // Normalize line endings to \n to prevent \r from corrupting regex capture groups
+            content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             const actualFilename = path.basename(resolvedPath);
 
             // Ensure the file starts with #EXTM3U for strict players like ExoPlayer
