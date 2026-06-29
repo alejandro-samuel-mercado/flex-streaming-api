@@ -120,10 +120,10 @@ async function run() {
                 data: { masterPlaylist: `/api/stream/hls/${file.id}/master.m3u8` }
             });
             
-            await prisma.$executeRawUnsafe(`UPDATE "VideoQuality" SET "playlistUrl" = '/api/stream/hls/${file.id}/master.m3u8' WHERE "videoFileId" = '${file.id}'`);
+            await prisma.$executeRawUnsafe(`UPDATE "video_qualities" SET "playlistUrl" = '/api/stream/hls/${file.id}/master.m3u8' WHERE "videoFileId" = '${file.id}'`);
             
             if (audioStreams.length > 0) {
-                await prisma.$executeRawUnsafe(`UPDATE "AudioTrack" SET "playlistUrl" = 'stream_' || ("trackIndex" + 1) || '.m3u8' WHERE "videoFileId" = '${file.id}'`);
+                await prisma.$executeRawUnsafe(`UPDATE "audio_tracks" SET "playlistUrl" = 'stream_' || ("trackIndex" + 1) || '.m3u8' WHERE "videoFileId" = '${file.id}'`);
             }
             
             console.log(`  [LISTO] Base de datos actualizada.`);
