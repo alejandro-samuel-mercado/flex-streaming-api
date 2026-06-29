@@ -27,7 +27,6 @@ async function run() {
         
         const oldPlaylist = path.join(file.hlsPath, '720p.m3u8');
         if (!fs.existsSync(oldPlaylist)) {
-            console.log(`[SALTAR] ${file.id}: No se encontró 720p.m3u8 en ${oldPlaylist}`);
             continue;
         }
 
