@@ -17,7 +17,11 @@ async function run() {
             status: 'COMPLETED',
             hlsPath: { not: null }
         },
-        include: { audioTracks: { orderBy: { trackIndex: 'asc' } } }
+        include: { 
+            audioTracks: { orderBy: { trackIndex: 'asc' } },
+            content: { select: { title: true } },
+            episode: { include: { season: { include: { content: { select: { title: true } } } } } }
+        }
     });
 
     console.log(`Se encontraron ${brokenFiles.length} peliculas/episodios para reparar.`);
@@ -30,7 +34,8 @@ async function run() {
             continue;
         }
 
-        console.log(`\n[REPARANDO] ID: ${file.id} | Ruta: ${file.hlsPath}`);
+        const title = file.content?.title || (file.episode ? `${file.episode.season.content?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
+        console.log(`\n[REPARANDO] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
 
         // Read metadata from 720p.m3u8 to know audio tracks
         let metadata: any;
