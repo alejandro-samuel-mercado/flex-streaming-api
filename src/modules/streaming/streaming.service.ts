@@ -301,20 +301,55 @@ export class StreamingService {
                     
                     if (audioPlaylists.length > 0) {
                         let audioTags = '';
+                        const languageMap: Record<string, string> = {
+                            'spa': 'Español (España)',
+                            'lat': 'Español (Latino)',
+                            'eng': 'Inglés',
+                            'jpn': 'Japonés',
+                            'fra': 'Francés',
+                            'por': 'Portugués',
+                            'ita': 'Italiano',
+                            'ger': 'Alemán',
+                            'kor': 'Coreano',
+                            'chi': 'Chino'
+                        };
+
                         audioPlaylists.forEach((audioFile, i) => {
                             const isDefault = i === 0 ? 'DEFAULT=YES,AUTOSELECT=YES,' : '';
-                            // Extract a clean name from the file (e.g. stream_Audio_1_0.m3u8 -> Audio 1)
-                            let cleanName = audioFile.replace('stream_', '').replace('.m3u8', '').replace(/_[0-9]+$/, '').replace(/_/g, ' ');
                             
-                            // Fix common encoding corruptions from old MKV metadata
-                            cleanName = cleanName.replace(/Espa.ol/ig, 'Español')
+                            // Extract trackIndex from the end of the filename (e.g. stream_Audio_1_0.m3u8 -> index 0)
+                            const match = audioFile.match(/_([0-9]+)\.m3u8$/);
+                            const trackIndex = match ? parseInt(match[1]) : i;
+                            
+                            // Find the corresponding track in the database
+                            const dbTrack = videoFile?.audioTracks?.find((t: any) => t.trackIndex === trackIndex);
+                            
+                            let finalName = `Pista ${trackIndex + 1}`;
+                            let langCode = 'unk';
+                            
+                            if (dbTrack) {
+                                langCode = dbTrack.language || 'unk';
+                                if (langCode && languageMap[langCode.toLowerCase()]) {
+                                    finalName = languageMap[langCode.toLowerCase()];
+                                } else if (dbTrack.label && dbTrack.label.trim() !== '') {
+                                    finalName = dbTrack.label;
+                                }
+                            }
+                            
+                            // Sanitize junk names (like 'www.hbnm...')
+                            if (finalName.length > 30 || finalName.toLowerCase().includes('www') || finalName.toLowerCase().includes('.com')) {
+                                finalName = `Audio ${trackIndex + 1}`;
+                            }
+
+                            // Fix common encoding corruptions if it fell back to label
+                            finalName = finalName.replace(/Espa.ol/ig, 'Español')
                                                  .replace(/Ingl.s/ig, 'Inglés')
                                                  .replace(/Latinoam.rica/ig, 'Latinoamérica')
                                                  .replace(/Japon.s/ig, 'Japonés')
                                                  .replace(/Franc.s/ig, 'Francés')
-                                                 .replace(/[^\w\s\u00C0-\u017F]/g, ''); // Strip remaining weird corrupted symbols
+                                                 .replace(/[^\w\s\u00C0-\u017F()]/g, ''); 
                             
-                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="${cleanName.trim()}",${isDefault}URI="${audioFile}"\n`;
+                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${langCode}",NAME="${finalName.trim()}",${isDefault}URI="${audioFile}"\n`;
                         });
                         content = content.replace(/#EXT-X-STREAM-INF:(.*)/, `${audioTags}#EXT-X-STREAM-INF:$1,AUDIO="audio"`);
                     }
