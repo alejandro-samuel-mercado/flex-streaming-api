@@ -30,16 +30,16 @@ async function run() {
         if (!file.hlsPath) continue;
         
         const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
-        const oldPlaylist = path.join(file.hlsPath, '720p.m3u8');
+        let oldPlaylist = path.join(file.hlsPath, '720p.m3u8');
         const demuxedVideoPlaylist = path.join(file.hlsPath, 'stream_v:0.m3u8');
         
         if (!fs.existsSync(oldPlaylist)) {
-            // Si ya no existe 720p.m3u8 pero SÍ existe stream_v:0.m3u8, significa que ya lo demuxeamos antes, 
-            // pero el master.m3u8 quedó mal o no se sobreescribió. Lo re-generamos instantáneamente!
-            if (fs.existsSync(demuxedVideoPlaylist)) {
+            // Check if master.m3u8 exists but it's the old format (stream_v:0.m3u8 doesn't exist)
+            if (fs.existsSync(path.join(file.hlsPath, 'master.m3u8')) && !fs.existsSync(demuxedVideoPlaylist)) {
+                oldPlaylist = path.join(file.hlsPath, 'master.m3u8');
+            } else if (fs.existsSync(demuxedVideoPlaylist)) {
                 console.log(`\n[FIX MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
                 console.log(`  Ya está demuxeado. Regenerando solo el archivo master.m3u8...`);
-                
                 
                 let masterContent = `#EXTM3U\n#EXT-X-VERSION:3\n`;
                 
@@ -61,8 +61,10 @@ async function run() {
                 
                 fs.writeFileSync(path.join(file.hlsPath, 'master.m3u8'), masterContent, 'utf-8');
                 console.log(`  [ÉXITO] master.m3u8 sobreescrito correctamente.`);
+                continue;
+            } else {
+                continue; // No existe ni 720p.m3u8 ni master.m3u8
             }
-            continue;
         }
 
         console.log(`\n[REPARANDO] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
@@ -136,14 +138,16 @@ async function run() {
 
             console.log(`  [ÉXITO] HLS re-generado (Separado). Limpiando disco...`);
 
-            // 1. Delete old 720p.m3u8
-            fs.unlinkSync(oldPlaylist);
+            // 1. Delete old playlist (if it was 720p.m3u8, it is deleted. If it's master.m3u8, it was overwritten)
+            if (oldPlaylist.endsWith('720p.m3u8')) {
+                try { fs.unlinkSync(oldPlaylist); } catch(e){}
+            }
             
-            // 2. Delete old 720p_000.ts files
+            // 2. Delete old 720p_000.ts or stream_0_000.ts files
             const files = fs.readdirSync(file.hlsPath);
             let deletedCount = 0;
             for (const f of files) {
-                if (f.startsWith('720p_') && f.endsWith('.ts')) {
+                if ((f.startsWith('720p_') || f.startsWith('stream_0')) && f.endsWith('.ts')) {
                     fs.unlinkSync(path.join(file.hlsPath, f));
                     deletedCount++;
                 }
