@@ -290,6 +290,13 @@ export class StreamingService {
                 /URI="([^"]+)"/g,
                 (match, uri) => uri.includes('?token=') ? match : `URI="${uri}?token=${token}"`
             );
+            
+            // Dynamically inject CODECS into master.m3u8 to fix Hls.js audio tracks bug
+            if (modified.includes('AUDIO="audio"') && !modified.includes('CODECS=')) {
+                modified = modified.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
+                console.log(`[Streaming] Dynamically injected CODECS into master playlist for ${videoFileId}`);
+            }
+
             const { Readable } = require('stream');
             stream = Readable.from([modified]);
         } else {
