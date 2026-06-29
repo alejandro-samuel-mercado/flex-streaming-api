@@ -115,19 +115,19 @@ export class FFmpegService {
                         '-hls_playlist_type', 'vod',
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
-                        '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                        '-hls_segment_filename', 'stream_%v_%03d.ts',
                         '-master_pl_name', 'master.m3u8',
                         '-max_muxing_queue_size', '1024',
                     ])
                     .outputOption('-var_stream_map', varStreamMap)
                     .output(path.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', resetStall)
-                    .on('progress', (p) => {
+                    .on('progress', (p: any) => {
                         resetStall();
                         if (p.percent && onProgress) onProgress(Math.min(Math.round(p.percent), 99));
                     })
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
-                    .on('error', (err, _stdout, stderr) => {
+                    .on('error', (err: any, _stdout: any, stderr: any) => {
                         cleanup();
                         reject(new Error("FFmpeg copy error: " + err.message + (stderr ? "\n" + stderr : "")));
                     })
@@ -214,7 +214,7 @@ export class FFmpegService {
                         '-hls_playlist_type', 'vod',
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
-                        '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                        '-hls_segment_filename', 'stream_%v_%03d.ts',
                         '-master_pl_name', 'master.m3u8',
                         '-max_muxing_queue_size', '1024',
                     ])
@@ -227,13 +227,13 @@ export class FFmpegService {
                             if (proc?.pid) execSync(`ionice -c 3 -p ${proc.pid}`, { stdio: 'ignore' });
                         } catch {}
                     })
-                    .on('progress', (p) => {
+                    .on('progress', (p: any) => {
                         resetStall();
                         if (p.timemark && p.timemark !== lastTimemark) { lastTimemark = p.timemark; }
                         if (p.percent && onProgress) onProgress(Math.round(p.percent));
                     })
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
-                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error("FFmpeg encode error: " + err.message + (stderr ? "\n" + stderr : ""))); })
+                    .on('error', (err: any, _stdout: any, stderr: any) => { cleanup(); reject(new Error("FFmpeg encode error: " + err.message + (stderr ? "\n" + stderr : ""))); })
                     .run();
             });
 

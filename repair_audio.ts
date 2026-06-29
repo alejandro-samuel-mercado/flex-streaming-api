@@ -89,15 +89,15 @@ async function run() {
                         '-hls_playlist_type', 'vod',
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
-                        '-hls_segment_filename', path.join(file.hlsPath!, 'stream_%v_%03d.ts'),
+                        '-hls_segment_filename', 'stream_%v_%03d.ts',
                         '-master_pl_name', 'master.m3u8',
                         '-max_muxing_queue_size', '1024'
                     ])
                     .outputOption('-var_stream_map', varStreamMap)
                     .output(path.join(file.hlsPath!, 'stream_%v.m3u8'))
-                    .on('start', (cmd) => console.log('  FFmpeg CMD:', cmd))
+                    .on('start', (cmd: string) => console.log('  FFmpeg CMD:', cmd))
                     .on('end', () => res(true))
-                    .on('error', (err, stdout, stderr) => {
+                    .on('error', (err: any, stdout: any, stderr: any) => {
                         console.error('  FFmpeg error:', err.message);
                         rej(err);
                     })
