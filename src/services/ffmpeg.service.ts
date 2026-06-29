@@ -82,23 +82,27 @@ export class FFmpegService {
                     clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
                         cleanup(); cmd.kill('SIGKILL');
-                        reject(new Error('[Timeout] Remux atascado por 10 min sin actividad.'));
-                    }, 10 * 60 * 1000);
-                };
-
-                hardTimeout = setTimeout(() => {
-                    cleanup(); cmd.kill('SIGKILL');
-                    reject(new Error('[Timeout] Remux excedió 2 horas.'));
-                }, 2 * 60 * 60 * 1000);
-
-                const audioOpts = canCopyAudio
+                        reject(new Er                const audioOpts = canCopyAudio
                     ? ['-c:a', 'copy']
                     : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
 
+                const mapOptions = ['-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio';
+                if (audioStreams.length === 0) {
+                    varStreamMap = 'v:0';
+                } else {
+                    for (let i = 0; i < audioStreams.length; i++) {
+                        mapOptions.push('-map', `0:a:${i}`);
+                        const lang = audioStreams[i].tags?.language || `unk${i}`;
+                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
+                        const safeName = name.replace(/[,="' ]/g, '_');
+                        varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
+                    }
+                }
+
                 cmd
                     .outputOptions([
-                        '-map', '0:v:0',
-                        '-map', '0:a?',
+                        ...mapOptions,
                         '-c:v', 'copy',
                         ...audioOpts,
                         '-hls_time', '6',
@@ -106,10 +110,12 @@ export class FFmpegService {
                         '-hls_playlist_type', 'vod',
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
-                        '-hls_segment_filename', path.join(resolvedOutputFolder, '720p_%03d.ts'),
+                        '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                        '-master_pl_name', 'master.m3u8',
+                        '-var_stream_map', varStreamMap,
                         '-max_muxing_queue_size', '1024',
                     ])
-                    .output(path.join(resolvedOutputFolder, '720p.m3u8'))
+                    .output(path.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', resetStall)
                     .on('progress', (p) => {
                         resetStall();
@@ -118,12 +124,12 @@ export class FFmpegService {
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
                     .on('error', (err, _stdout, stderr) => {
                         cleanup();
-                        reject(new Error(`FFmpeg copy error: ${err.message}${stderr ? `\n${stderr}` : ''}`));
+                        reject(new Error(`FFmpeg copy error: ${err.message}${stderr ? \`\\n\${stderr}\` : ''}`));
                     })
                     .run();
             });
 
-            // Detect audio tracks for the master playlist (from the muxed stream)
+            // Detect audio tracks for the database
             for (let i = 0; i < audioStreams.length; i++) {
                 const s = audioStreams[i];
                 audioTracks.push({
@@ -131,20 +137,9 @@ export class FFmpegService {
                     language: s.tags?.language || `audio${i}`,
                     name: s.tags?.title || `Audio ${i + 1}`,
                     codec: canCopyAudio ? (s.codec_name || 'aac') : 'aac',
-                    playlistUrl: '720p.m3u8'
+                    playlistUrl: `stream_${i + 1}.m3u8`
                 });
             }
-
-            // Write a simple master playlist pointing to the single quality
-            const masterContent = [
-                '#EXTM3U',
-                '#EXT-X-VERSION:3',
-                '',
-                '#EXT-X-STREAM-INF:BANDWIDTH=2900000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2"',
-                '720p.m3u8',
-                '',
-            ].join('\n');
-            fs.writeFileSync(playlistPath, masterContent);
 
         } else {
             // ══════════════════════════════════════════════════════════════════
@@ -178,21 +173,23 @@ export class FFmpegService {
 
                 const resetStall = () => {
                     clearTimeout(stallTimeout);
-                    stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado 20 min.')); }, 20 * 60 * 1000);
-                };
-
-                watchdog = setInterval(() => {
-                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
-                        cleanup(); cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] FFmpeg congelado en ${lastTimemark} por 10 min.`));
+                    stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout                const mapOptions = ['-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio';
+                if (audioStreams.length === 0) {
+                    varStreamMap = 'v:0';
+                } else {
+                    for (let i = 0; i < audioStreams.length; i++) {
+                        mapOptions.push('-map', `0:a:${i}`);
+                        const lang = audioStreams[i].tags?.language || `unk${i}`;
+                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
+                        const safeName = name.replace(/[,="' ]/g, '_');
+                        varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                     }
-                }, 60 * 1000);
-
-                hardTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode excedió 4 horas.')); }, 4 * 60 * 60 * 1000);
+                }
 
                 cmd
                     .outputOptions([
-                        '-map', '0:v:0', '-map', '0:a?',
+                        ...mapOptions,
                         '-c:v', 'h264',
                         '-preset', 'veryfast',
                         '-threads', '0',  // Use all available CPU threads
@@ -211,10 +208,12 @@ export class FFmpegService {
                         '-hls_playlist_type', 'vod',
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
-                        '-hls_segment_filename', path.join(resolvedOutputFolder, '720p_%03d.ts'),
+                        '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                        '-master_pl_name', 'master.m3u8',
+                        '-var_stream_map', varStreamMap,
                         '-max_muxing_queue_size', '1024',
                     ])
-                    .output(path.join(resolvedOutputFolder, '720p.m3u8'))
+                    .output(path.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', () => {
                         resetStall();
                         try {
@@ -228,21 +227,14 @@ export class FFmpegService {
                         if (p.percent && onProgress) onProgress(Math.round(p.percent));
                     })
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
-                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error(`FFmpeg encode error: ${err.message}${stderr ? `\n${stderr}` : ''}`)); })
+                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error(`FFmpeg encode error: ${err.message}${stderr ? \`\\n\${stderr}\` : ''}`)); })
                     .run();
             });
 
             for (let i = 0; i < audioStreams.length; i++) {
                 const s = audioStreams[i];
-                audioTracks.push({ index: i, language: s.tags?.language || `audio${i}`, name: s.tags?.title || `Audio ${i + 1}`, codec: 'aac', playlistUrl: '720p.m3u8' });
+                audioTracks.push({ index: i, language: s.tags?.language || `audio${i}`, name: s.tags?.title || `Audio ${i + 1}`, codec: 'aac', playlistUrl: `stream_${i + 1}.m3u8` });
             }
-
-            const masterContent = [
-                '#EXTM3U', '#EXT-X-VERSION:3', '',
-                '#EXT-X-STREAM-INF:BANDWIDTH=2900000,RESOLUTION=1280x720,CODECS="avc1.4d401f,mp4a.40.2"',
-                '720p.m3u8', '',
-            ].join('\n');
-            fs.writeFileSync(playlistPath, masterContent);
         }
 
         return { path: playlistPath, audioTracks };

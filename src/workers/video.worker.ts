@@ -144,7 +144,7 @@ export const videoWorker = new Worker(
                 width: 1920,
                 height: 1080,
                 bitrate: 4500000,
-                playlistUrl: `/api/stream/hls/${videoFileId}/1080p.m3u8`,
+                playlistUrl: `/api/stream/hls/${videoFileId}/master.m3u8`,
                 codec: 'h264'
               },
               {
@@ -152,7 +152,7 @@ export const videoWorker = new Worker(
                 width: 1280,
                 height: 720,
                 bitrate: 2500000,
-                playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
+                playlistUrl: `/api/stream/hls/${videoFileId}/master.m3u8`,
                 codec: 'h264'
               }
             ]
