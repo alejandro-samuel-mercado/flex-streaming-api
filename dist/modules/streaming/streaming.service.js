@@ -270,13 +270,16 @@ class StreamingService {
                 }
                 // 2. If it lacks AUDIO="audio", check if separated audio exists and inject it
                 if (!content.includes('AUDIO=')) {
-                    if (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_Audio_1_0.m3u8'))) {
-                        let audioTags = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio 1",DEFAULT=YES,AUTOSELECT=YES,URI="stream_Audio_1_0.m3u8"\n';
-                        let audioCount = 1;
-                        while (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, `stream_Audio_${audioCount + 1}_0.m3u8`))) {
-                            audioCount++;
-                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio ${audioCount}",URI="stream_Audio_${audioCount}_0.m3u8"\n`;
-                        }
+                    const files = fs_1.default.existsSync(hlsRoot) ? fs_1.default.readdirSync(hlsRoot) : [];
+                    const audioPlaylists = files.filter(f => f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_video.m3u8' && f !== 'stream_0.m3u8');
+                    if (audioPlaylists.length > 0) {
+                        let audioTags = '';
+                        audioPlaylists.forEach((audioFile, i) => {
+                            const isDefault = i === 0 ? 'DEFAULT=YES,AUTOSELECT=YES,' : '';
+                            // Extract a clean name from the file (e.g. stream_Audio_1_0.m3u8 -> Audio 1)
+                            let cleanName = audioFile.replace('stream_', '').replace('.m3u8', '').replace(/_[0-9]+$/, '').replace(/_/g, ' ');
+                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="${cleanName}",${isDefault}URI="${audioFile}"\n`;
+                        });
                         content = content.replace(/#EXT-X-STREAM-INF:(.*)/, `${audioTags}#EXT-X-STREAM-INF:$1,AUDIO="audio"`);
                     }
                 }
