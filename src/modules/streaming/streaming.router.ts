@@ -54,8 +54,9 @@ streamingRouter.get('/hls/:videoFileId/*', (async (req: Request, res, next) => {
     }
 
     const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
+    const audioIndex = req.query.audioIndex ? parseInt(req.query.audioIndex as string, 10) : null;
 
-    const result = await StreamingService.serveSegment(videoFileId, filePath, token, ip);
+    const result = await StreamingService.serveSegment(videoFileId, filePath, token, ip, audioIndex);
     if (result.stream) {
       res.writeHead(result.status, result.headers);
       result.stream.pipe(res);

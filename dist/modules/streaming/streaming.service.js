@@ -152,7 +152,7 @@ class StreamingService {
     /**
      * Serve HLS segments with token validation.
      */
-    static async serveSegment(videoFileId, filePath, token, ip) {
+    static async serveSegment(videoFileId, filePath, token, ip, audioIndex = null) {
         // Verify token
         if (!(0, token_service_1.verifySignedToken)(token, videoFileId, ip)) {
             console.error(`[Streaming] 403: Invalid or expired token for video ${videoFileId}. IP: ${ip}`);
@@ -298,10 +298,11 @@ class StreamingService {
                             'chi': 'Chino'
                         };
                         audioPlaylists.forEach((audioFile, i) => {
-                            const isDefault = i === 0 ? 'DEFAULT=YES,AUTOSELECT=YES,' : '';
                             // Extract trackIndex from the end of the filename (e.g. stream_Audio_1_0.m3u8 -> index 0)
                             const match = audioFile.match(/_([0-9]+)\.m3u8$/);
                             const trackIndex = match ? parseInt(match[1]) : i;
+                            const targetIndex = (audioIndex !== null && !isNaN(audioIndex)) ? audioIndex : 0;
+                            const isDefault = trackIndex === targetIndex ? 'DEFAULT=YES,AUTOSELECT=YES,' : '';
                             // Find the corresponding track in the database
                             const dbTrack = videoFile?.audioTracks?.find((t) => t.trackIndex === trackIndex);
                             let finalName = `Pista ${trackIndex + 1}`;

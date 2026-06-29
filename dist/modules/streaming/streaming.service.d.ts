@@ -32,7 +32,7 @@ export declare class StreamingService {
     /**
      * Serve HLS segments with token validation.
      */
-    static serveSegment(videoFileId: string, filePath: string, token: string, ip: string): Promise<{
+    static serveSegment(videoFileId: string, filePath: string, token: string, ip: string, audioIndex?: number | null): Promise<{
         status: number;
         headers: Record<string, string>;
         stream: NodeJS.ReadableStream | null;

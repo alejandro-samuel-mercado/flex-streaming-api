@@ -52,7 +52,8 @@ exports.streamingRouter.get('/hls/:videoFileId/*', (async (req, res, next) => {
             return;
         }
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-        const result = await streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip);
+        const audioIndex = req.query.audioIndex ? parseInt(req.query.audioIndex, 10) : null;
+        const result = await streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip, audioIndex);
         if (result.stream) {
             res.writeHead(result.status, result.headers);
             result.stream.pipe(res);
