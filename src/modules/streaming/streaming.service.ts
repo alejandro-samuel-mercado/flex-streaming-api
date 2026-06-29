@@ -305,7 +305,16 @@ export class StreamingService {
                             const isDefault = i === 0 ? 'DEFAULT=YES,AUTOSELECT=YES,' : '';
                             // Extract a clean name from the file (e.g. stream_Audio_1_0.m3u8 -> Audio 1)
                             let cleanName = audioFile.replace('stream_', '').replace('.m3u8', '').replace(/_[0-9]+$/, '').replace(/_/g, ' ');
-                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="${cleanName}",${isDefault}URI="${audioFile}"\n`;
+                            
+                            // Fix common encoding corruptions from old MKV metadata
+                            cleanName = cleanName.replace(/Espa.ol/ig, 'Español')
+                                                 .replace(/Ingl.s/ig, 'Inglés')
+                                                 .replace(/Latinoam.rica/ig, 'Latinoamérica')
+                                                 .replace(/Japon.s/ig, 'Japonés')
+                                                 .replace(/Franc.s/ig, 'Francés')
+                                                 .replace(/[^\w\s\u00C0-\u017F]/g, ''); // Strip remaining weird corrupted symbols
+                            
+                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="${cleanName.trim()}",${isDefault}URI="${audioFile}"\n`;
                         });
                         content = content.replace(/#EXT-X-STREAM-INF:(.*)/, `${audioTags}#EXT-X-STREAM-INF:$1,AUDIO="audio"`);
                     }
