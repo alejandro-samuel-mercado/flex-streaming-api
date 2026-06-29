@@ -368,9 +368,43 @@ export class StreamingService {
                     content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
                 }
 
-                // 4. Ensure DEFAULT=YES is present on the first audio track
-                if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES')) {
+                // 4. Ensure DEFAULT=YES is present on the first audio track (only when no audioIndex override)
+                if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES') && audioIndex === null) {
                     content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
+                }
+
+                // 4b. CRITICAL: If audioIndex is specified, re-assign DEFAULT=YES to the correct track.
+                //     This works regardless of whether AUDIO= was already in the master or was injected above.
+                if (audioIndex !== null && !isNaN(audioIndex) && content.includes('TYPE=AUDIO')) {
+                    let trackCounter = -1;
+                    content = content.replace(
+                        /#EXT-X-MEDIA:TYPE=AUDIO([^\n]*)/g,
+                        (line: string) => {
+                            trackCounter++;
+                            // Remove existing DEFAULT/AUTOSELECT flags
+                            let newLine = line
+                                .replace(/,?DEFAULT=(YES|NO)/gi, '')
+                                .replace(/,?AUTOSELECT=(YES|NO)/gi, '');
+                            // Add correct DEFAULT flag based on audioIndex
+                            if (trackCounter === audioIndex) {
+                                newLine = newLine.replace('TYPE=AUDIO', 'TYPE=AUDIO');
+                                // Insert DEFAULT=YES,AUTOSELECT=YES before URI or at end
+                                if (newLine.includes(',URI=')) {
+                                    newLine = newLine.replace(',URI=', ',DEFAULT=YES,AUTOSELECT=YES,URI=');
+                                } else {
+                                    newLine += ',DEFAULT=YES,AUTOSELECT=YES';
+                                }
+                                console.log(`[Streaming] ✅ audioIndex=${audioIndex}: set DEFAULT=YES on track ${trackCounter}: ${newLine.substring(0, 80)}`);
+                            } else {
+                                if (newLine.includes(',URI=')) {
+                                    newLine = newLine.replace(',URI=', ',DEFAULT=NO,AUTOSELECT=NO,URI=');
+                                } else {
+                                    newLine += ',DEFAULT=NO,AUTOSELECT=NO';
+                                }
+                            }
+                            return newLine;
+                        }
+                    );
                 }
 
                 // 5. CRITICAL: If the master.m3u8 has no #EXT-X-STREAM-INF at all, synthesize one

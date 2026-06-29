@@ -340,6 +340,25 @@ class StreamingService {
                 if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES')) {
                     content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
                 }
+                // 5. CRITICAL: If the master.m3u8 has no #EXT-X-STREAM-INF at all, synthesize one
+                //    from the video playlist that exists on disk. This happens when FFmpeg generates
+                //    a master that only lists audio tracks but omits the video stream entry.
+                if (!content.includes('#EXT-X-STREAM-INF')) {
+                    const allFiles = fs_1.default.existsSync(hlsRoot) ? fs_1.default.readdirSync(hlsRoot) : [];
+                    // Look for a video-level playlist (stream_0, stream_video, stream_v0, etc.)
+                    const videoPlaylist = allFiles.find(f => f.endsWith('.m3u8') && f !== 'master.m3u8' &&
+                        (f === 'stream_0.m3u8' || f === 'stream_video.m3u8' || /^stream_v\d/.test(f))) || allFiles.find(f => f.endsWith('.m3u8') && f !== 'master.m3u8' && !f.toLowerCase().includes('audio'));
+                    if (videoPlaylist) {
+                        const hasAudioGroup = content.includes('GROUP-ID="group_audio"') ? ',AUDIO="group_audio"' :
+                            content.includes('GROUP-ID="audio"') ? ',AUDIO="audio"' : '';
+                        const streamInf = `#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720,CODECS="avc1.640028,mp4a.40.2"${hasAudioGroup}\n${videoPlaylist}\n`;
+                        content = content.trimEnd() + '\n' + streamInf;
+                        console.log(`[Streaming] ✅ Synthesized missing #EXT-X-STREAM-INF -> ${videoPlaylist} for video ${videoFileId}`);
+                    }
+                    else {
+                        console.warn(`[Streaming] ⚠️ master.m3u8 has no #EXT-X-STREAM-INF and no video playlist found on disk for ${videoFileId}`);
+                    }
+                }
             }
             let modified = content.replace(/^(?!#)([^\s].+)$/gm, (match) => match.includes('?token=') ? match : `${match}?token=${token}`);
             modified = modified.replace(/URI="([^"]+)"/g, (match, uri) => uri.includes('?token=') ? match : `URI="${uri}?token=${token}"`);
