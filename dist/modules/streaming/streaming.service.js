@@ -271,11 +271,11 @@ class StreamingService {
                 // 2. If it lacks AUDIO="audio", check if separated audio exists and inject it
                 if (!content.includes('AUDIO=')) {
                     if (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_Audio_1_0.m3u8'))) {
-                        let audioTags = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio_1_0",URI="stream_Audio_1_0.m3u8"\n';
+                        let audioTags = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio 1",DEFAULT=YES,AUTOSELECT=YES,URI="stream_Audio_1_0.m3u8"\n';
                         let audioCount = 1;
                         while (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, `stream_Audio_${audioCount + 1}_0.m3u8`))) {
                             audioCount++;
-                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio_${audioCount}_0",URI="stream_Audio_${audioCount}_0.m3u8"\n`;
+                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio ${audioCount}",URI="stream_Audio_${audioCount}_0.m3u8"\n`;
                         }
                         content = content.replace(/#EXT-X-STREAM-INF:(.*)/, `${audioTags}#EXT-X-STREAM-INF:$1,AUDIO="audio"`);
                     }
@@ -283,6 +283,10 @@ class StreamingService {
                 // 3. Inject CODECS if missing but AUDIO is present
                 if (content.includes('AUDIO="audio"') && !content.includes('CODECS=')) {
                     content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
+                }
+                // 4. Ensure DEFAULT=YES is present on the first audio track
+                if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES')) {
+                    content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
                 }
             }
             let modified = content.replace(/^(?!#)([^\s].+)$/gm, (match) => match.includes('?token=') ? match : `${match}?token=${token}`);
