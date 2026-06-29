@@ -11,12 +11,11 @@ const prisma = new PrismaClient();
 async function run() {
     console.log('--- Iniciando Reparacion de Archivos Multiplexados ---');
     
-    // Find videos processed recently that have "720p.m3u8" as masterPlaylist (which implies they were multiplexed via fast path)
+    // Find all completed videos, we will filter by checking if 720p.m3u8 exists physically
     const brokenFiles = await prisma.videoFile.findMany({
         where: {
             status: 'COMPLETED',
-            hlsPath: { not: null },
-            masterPlaylist: { contains: '720p.m3u8' }
+            hlsPath: { not: null }
         },
         include: { audioTracks: { orderBy: { trackIndex: 'asc' } } }
     });
