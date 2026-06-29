@@ -37,30 +37,34 @@ async function run() {
             // Check if master.m3u8 exists but it's the old format (stream_v:0.m3u8 doesn't exist)
             if (fs.existsSync(path.join(file.hlsPath, 'master.m3u8')) && !fs.existsSync(demuxedVideoPlaylist)) {
                 oldPlaylist = path.join(file.hlsPath, 'master.m3u8');
-            } else if (fs.existsSync(demuxedVideoPlaylist)) {
-                console.log(`\n[FIX MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
-                console.log(`  Ya está demuxeado. Regenerando solo el archivo master.m3u8...`);
+            } else if (fs.existsSync(path.join(file.hlsPath, 'stream_0.m3u8')) || fs.existsSync(path.join(file.hlsPath, 'stream_video.m3u8'))) {
+                // RESTORE MASTER.M3U8 FOR ALREADY PROCESSED MOVIES
+                console.log(`\n[RESTORE MASTER] ID: ${file.id} | Titulo: ${title} | Ruta: ${file.hlsPath}`);
+                
+                const allFiles = fs.readdirSync(file.hlsPath);
+                const audioPlaylists = allFiles.filter(f => f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_0.m3u8' && f !== 'stream_video.m3u8' && f !== 'stream_v:0.m3u8' && !f.startsWith('stream_a:'));
                 
                 let masterContent = `#EXTM3U\n#EXT-X-VERSION:3\n`;
                 
-                for (let i = 0; i < file.audioTracks.length; i++) {
+                for (let i = 0; i < audioPlaylists.length; i++) {
+                    const audioFile = audioPlaylists[i];
                     const dbTrack = file.audioTracks.find(t => t.trackIndex === i);
-                    const name = dbTrack?.label || `Audio`;
                     const lang = dbTrack?.language || 'unk';
-                    const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`; // GUARANTEE UNIQUE
+                    const safeName = `Audio_${i}`;
                     const isDefault = i === 0 ? 'YES' : 'NO';
                     
-                    masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="stream_a:${i}.m3u8"\n`;
+                    masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="${lang}",NAME="${safeName}",AUTOSELECT=${isDefault},DEFAULT=${isDefault},URI="${audioFile}"\n`;
                 }
                 
-                if (file.audioTracks.length > 0) {
-                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\nstream_v:0.m3u8\n`;
+                const videoFile = fs.existsSync(path.join(file.hlsPath, 'stream_video.m3u8')) ? 'stream_video.m3u8' : 'stream_0.m3u8';
+                if (audioPlaylists.length > 0) {
+                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720,AUDIO="audio"\n${videoFile}\n`;
                 } else {
-                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\nstream_v:0.m3u8\n`;
+                    masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=2500000,RESOLUTION=1280x720\n${videoFile}\n`;
                 }
                 
                 fs.writeFileSync(path.join(file.hlsPath, 'master.m3u8'), masterContent, 'utf-8');
-                console.log(`  [ÉXITO] master.m3u8 sobreescrito correctamente.`);
+                console.log(`  [ÉXITO] master.m3u8 reconstruido correctamente.`);
                 continue;
             } else {
                 continue; // No existe ni 720p.m3u8 ni master.m3u8
@@ -89,10 +93,10 @@ async function run() {
 
         // Build var_stream_map command
         const mapOptions = ['-map', '0:v:0'];
-        let varStreamMap = 'v:0,agroup:audio';
+        let varStreamMap = 'v:0,agroup:audio,name:video';
         
         if (audioStreams.length === 0) {
-            varStreamMap = 'v:0';
+            varStreamMap = 'v:0,name:video';
         } else {
             for (let i = 0; i < audioStreams.length; i++) {
                 mapOptions.push('-map', `0:a:${i}`);
@@ -142,7 +146,7 @@ async function run() {
                 try { fs.unlinkSync(oldPlaylist); } catch(e){}
             }
             
-            // 2. Delete old 720p_000.ts or stream_0_000.ts files
+            // 2. Delete old 720p_000.ts or stream_0_000.ts files (the new ones are stream_video_*.ts)
             const files = fs.readdirSync(file.hlsPath);
             let deletedCount = 0;
             for (const f of files) {

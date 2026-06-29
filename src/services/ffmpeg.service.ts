@@ -91,9 +91,9 @@ export class FFmpegService {
                     : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
 
                 const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio';
+                let varStreamMap = 'v:0,agroup:audio,name:video';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0';
+                    varStreamMap = 'v:0,name:video';
                 } else {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);
@@ -179,9 +179,9 @@ export class FFmpegService {
                 };
 
                 const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio';
+                let varStreamMap = 'v:0,agroup:audio,name:video';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0';
+                    varStreamMap = 'v:0,name:video';
                 } else {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);

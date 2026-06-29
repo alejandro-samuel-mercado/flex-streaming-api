@@ -79,9 +79,9 @@ class FFmpegService {
                     ? ['-c:a', 'copy']
                     : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
                 const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio';
+                let varStreamMap = 'v:0,agroup:audio,name:video';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0';
+                    varStreamMap = 'v:0,name:video';
                 }
                 else {
                     for (let i = 0; i < audioStreams.length; i++) {
@@ -165,9 +165,9 @@ class FFmpegService {
                     stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado por 20 min.')); }, 20 * 60 * 1000);
                 };
                 const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio';
+                let varStreamMap = 'v:0,agroup:audio,name:video';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0';
+                    varStreamMap = 'v:0,name:video';
                 }
                 else {
                     for (let i = 0; i < audioStreams.length; i++) {
