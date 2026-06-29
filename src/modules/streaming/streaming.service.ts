@@ -287,11 +287,15 @@ export class StreamingService {
 
             if (actualFilename === 'master.m3u8') {
                 // 1. Fix broken master playlists pointing to deleted level playlists
-                if (content.includes('720p.m3u8')) {
-                    content = content.replace(/720p\.m3u8/g, 'stream_video.m3u8');
-                }
-                if (content.includes('stream_0.m3u8')) {
-                    content = content.replace(/stream_0\.m3u8/g, 'stream_video.m3u8');
+                // ONLY replace if the new stream_video.m3u8 actually exists (meaning it was repaired)
+                const streamVideoExists = fs.existsSync(path.resolve(hlsRoot, 'stream_video.m3u8'));
+                if (streamVideoExists) {
+                    if (content.includes('720p.m3u8')) {
+                        content = content.replace(/720p\.m3u8/g, 'stream_video.m3u8');
+                    }
+                    if (content.includes('stream_0.m3u8')) {
+                        content = content.replace(/stream_0\.m3u8/g, 'stream_video.m3u8');
+                    }
                 }
 
                 // 2. If it lacks AUDIO="audio", check if separated audio exists and inject it
