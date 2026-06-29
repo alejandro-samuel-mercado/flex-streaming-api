@@ -258,14 +258,35 @@ class StreamingService {
             'Access-Control-Allow-Origin': '*',
         };
         if (ext === '.m3u8') {
-            const content = fs_1.default.readFileSync(resolvedPath, 'utf8');
+            let content = fs_1.default.readFileSync(resolvedPath, 'utf8');
+            const actualFilename = path_1.default.basename(resolvedPath);
+            if (actualFilename === 'master.m3u8') {
+                // 1. Fix broken master playlists pointing to deleted level playlists
+                if (content.includes('720p.m3u8')) {
+                    content = content.replace(/720p\.m3u8/g, 'stream_video.m3u8');
+                }
+                if (content.includes('stream_0.m3u8')) {
+                    content = content.replace(/stream_0\.m3u8/g, 'stream_video.m3u8');
+                }
+                // 2. If it lacks AUDIO="audio", check if separated audio exists and inject it
+                if (!content.includes('AUDIO=')) {
+                    if (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_Audio_1_0.m3u8'))) {
+                        let audioTags = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio_1_0",URI="stream_Audio_1_0.m3u8"\n';
+                        let audioCount = 1;
+                        while (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, `stream_Audio_${audioCount + 1}_0.m3u8`))) {
+                            audioCount++;
+                            audioTags += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",LANGUAGE="spa",NAME="Audio_${audioCount}_0",URI="stream_Audio_${audioCount}_0.m3u8"\n`;
+                        }
+                        content = content.replace(/#EXT-X-STREAM-INF:(.*)/, `${audioTags}#EXT-X-STREAM-INF:$1,AUDIO="audio"`);
+                    }
+                }
+                // 3. Inject CODECS if missing but AUDIO is present
+                if (content.includes('AUDIO="audio"') && !content.includes('CODECS=')) {
+                    content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
+                }
+            }
             let modified = content.replace(/^(?!#)([^\s].+)$/gm, (match) => match.includes('?token=') ? match : `${match}?token=${token}`);
             modified = modified.replace(/URI="([^"]+)"/g, (match, uri) => uri.includes('?token=') ? match : `URI="${uri}?token=${token}"`);
-            // Dynamically inject CODECS into master.m3u8 to fix Hls.js audio tracks bug
-            if (modified.includes('AUDIO="audio"') && !modified.includes('CODECS=')) {
-                modified = modified.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
-                console.log(`[Streaming] Dynamically injected CODECS into master playlist for ${videoFileId}`);
-            }
             const modifiedBuffer = Buffer.from(modified, 'utf8');
             headers['Content-Length'] = modifiedBuffer.length.toString();
             const { Readable } = require('stream');
