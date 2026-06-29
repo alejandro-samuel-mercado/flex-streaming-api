@@ -19,6 +19,7 @@ export declare class ContentService {
         sort: string;
         lang: string;
         incomplete?: boolean;
+        isPublic?: boolean;
     }): Promise<{
         data: ({
             type: import(".prisma/client").$Enums.ContentType;

@@ -71,18 +71,22 @@ export class FFmpegService {
 
             await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
-                let hardTimeout: NodeJS.Timeout;
+
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .inputOptions(['-analyzeduration', '100M', '-probesize', '100M', '-nostdin']);
 
-                const cleanup = () => { clearTimeout(stallTimeout); clearTimeout(hardTimeout); };
+                const cleanup = () => { clearTimeout(stallTimeout); };
 
                 const resetStall = () => {
                     clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
                         cleanup(); cmd.kill('SIGKILL');
-                        reject(new Er                const audioOpts = canCopyAudio
+                        reject(new Error('[Timeout] Copiado HLS atascado por 10 min.'));
+                    }, 10 * 60 * 1000);
+                };
+
+                const audioOpts = canCopyAudio
                     ? ['-c:a', 'copy']
                     : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
 
@@ -124,7 +128,7 @@ export class FFmpegService {
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
                     .on('error', (err, _stdout, stderr) => {
                         cleanup();
-                        reject(new Error(`FFmpeg copy error: ${err.message}${stderr ? \`\\n\${stderr}\` : ''}`));
+                        reject(new Error("FFmpeg copy error: " + err.message + (stderr ? "\n" + stderr : "")));
                     })
                     .run();
             });
@@ -160,20 +164,20 @@ export class FFmpegService {
 
             await new Promise((resolve, reject) => {
                 let stallTimeout: NodeJS.Timeout;
-                let hardTimeout: NodeJS.Timeout;
                 let lastTimemark = '';
-                let lastTimemarkAt = Date.now();
-                let watchdog: NodeJS.Timeout;
 
                 const cmd = ffmpeg(resolvedInputPath)
                     .renice(19)
                     .inputOptions(['-analyzeduration', '100M', '-probesize', '100M', '-nostdin']);
 
-                const cleanup = () => { clearTimeout(stallTimeout); clearTimeout(hardTimeout); clearInterval(watchdog); };
+                const cleanup = () => { clearTimeout(stallTimeout); };
 
                 const resetStall = () => {
                     clearTimeout(stallTimeout);
-                    stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout                const mapOptions = ['-map', '0:v:0'];
+                    stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado por 20 min.')); }, 20 * 60 * 1000);
+                };
+
+                const mapOptions = ['-map', '0:v:0'];
                 let varStreamMap = 'v:0,agroup:audio';
                 if (audioStreams.length === 0) {
                     varStreamMap = 'v:0';
@@ -223,11 +227,11 @@ export class FFmpegService {
                     })
                     .on('progress', (p) => {
                         resetStall();
-                        if (p.timemark && p.timemark !== lastTimemark) { lastTimemark = p.timemark; lastTimemarkAt = Date.now(); }
+                        if (p.timemark && p.timemark !== lastTimemark) { lastTimemark = p.timemark; }
                         if (p.percent && onProgress) onProgress(Math.round(p.percent));
                     })
                     .on('end', () => { cleanup(); if (onProgress) onProgress(100); resolve(true); })
-                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error(`FFmpeg encode error: ${err.message}${stderr ? \`\\n\${stderr}\` : ''}`)); })
+                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error("FFmpeg encode error: " + err.message + (stderr ? "\n" + stderr : ""))); })
                     .run();
             });
 

@@ -16,16 +16,15 @@ const env_1 = require("../shared/config/env");
 const connection = new ioredis_1.default(env_1.env.REDIS_URL, {
     maxRetriesPerRequest: null,
 });
-exports.videoQueue = new bullmq_1.Queue('video-processing', { connection: connection });
-exports.videoQueueEvents = new bullmq_1.QueueEvents('video-processing', { connection: connection });
+const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
+exports.videoQueue = new bullmq_1.Queue(QUEUE_NAME, { connection: connection });
+exports.videoQueueEvents = new bullmq_1.QueueEvents(QUEUE_NAME, { connection: connection });
 async function addVideoJob(jobData) {
     return await exports.videoQueue.add('process-video', jobData, {
-        attempts: 3,
-        backoff: {
-            type: 'exponential',
-            delay: 5000, // wait 5s, then 10s, then 20s...
-        },
+        attempts: 1, // No automatic retries — if it fails, it fails cleanly.
+        // The auto-scanner re-imports when the file is ready/fixed.
         removeOnComplete: true,
+        removeOnFail: true, // Remove failed jobs from Redis to keep the queue clean.
     });
 }
 async function removeVideoJob(jobId) {

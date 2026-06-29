@@ -54,7 +54,7 @@ exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
     try {
         const [totalUsers, totalContent, activeMembers, totalViews, recentContent, processingVideos, topContent, recentActivity] = await Promise.all([
             prisma_1.prisma.user.count({ where: { deletedAt: null } }),
-            prisma_1.prisma.content.count({ where: { deletedAt: null } }),
+            prisma_1.prisma.videoFile.count({ where: { status: 'COMPLETED' } }), // Cuenta los videos/capítulos subidos y procesados
             prisma_1.prisma.userMembership.count({ where: { isActive: true } }),
             prisma_1.prisma.content.aggregate({ _sum: { viewCount: true } }),
             prisma_1.prisma.content.findMany({
@@ -361,11 +361,18 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
                 try {
                     const job = await queue_service_1.videoQueue.getJob(v.processingJobId);
                     if (job) {
+                        // Job is active — use real-time BullMQ progress
                         return { ...resVideo, progress: job.progress };
+                    }
+                    else {
+                        // Job not found in BullMQ (e.g. in delayed state during worker routing).
+                        // Keep the video visible with last known progress from DB.
+                        return { ...resVideo, progress: resVideo.progress ?? 0 };
                     }
                 }
                 catch (e) {
                     console.warn(`[AdminRouter] Could not fetch progress for job ${v.processingJobId}`);
+                    return { ...resVideo, progress: resVideo.progress ?? 0 };
                 }
             }
             return resVideo;
@@ -381,7 +388,11 @@ exports.adminRouter.post('/videos/retry-failed', (async (_req, res, next) => {
     try {
         const toRetry = await prisma_1.prisma.videoFile.findMany({
             where: {
-                status: { in: ['FAILED', 'PENDING', 'PROCESSING'] }
+                status: 'FAILED',
+                OR: [
+                    { errorMessage: null },
+                    { errorMessage: { not: { startsWith: 'Archivo corrompido' } } }
+                ]
             }
         });
         let count = 0;

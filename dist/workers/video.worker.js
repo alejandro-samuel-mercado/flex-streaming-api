@@ -12,7 +12,8 @@ const prisma_1 = require("../shared/config/prisma");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const connection = new ioredis_1.default(env_1.env.REDIS_URL, { maxRetriesPerRequest: null });
-exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
+const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
+exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
     const { videoFileId, contentId, videoPath } = job.data;
     const outputFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'hls', contentId);
     const onProgress = async (percent) => {
@@ -32,14 +33,15 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
     const jobType = job.data.type || 'MOVIE';
     if (env_1.env.WORKER_MODE === 'MOVIES' && jobType === 'EPISODE') {
         job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only. Re-queuing.`);
-        await job.moveToDelayed(Date.now() + 30000); // Retry in 30s on another worker
-        return { skipped: true, reason: 'wrong_mode' };
+        await job.moveToDelayed(Date.now() + 30000, job.token);
+        throw new bullmq_1.DelayedError();
     }
     if (env_1.env.WORKER_MODE === 'SERIES' && jobType === 'MOVIE') {
         job.log(`[WorkerMode] Skipping MOVIE job — this node handles SERIES only. Re-queuing.`);
-        await job.moveToDelayed(Date.now() + 30000);
-        return { skipped: true, reason: 'wrong_mode' };
+        await job.moveToDelayed(Date.now() + 30000, job.token);
+        throw new bullmq_1.DelayedError();
     }
+    let existsInitial = null;
     try {
         // ─── Initial Checks ───────────────────────────────────────────────
         // Check if file exists and is readable by the process
@@ -49,7 +51,7 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
         catch (err) {
             throw new Error(`Cannot read input file at ${videoPath}: ${err.message}. Check permissions.`);
         }
-        const existsInitial = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
+        existsInitial = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
         if (!existsInitial) {
             job.log('Job cancelled: VideoFile record no longer exists. Aborting early.');
             return { cancelled: true };
@@ -128,7 +130,7 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                             width: 1920,
                             height: 1080,
                             bitrate: 4500000,
-                            playlistUrl: `/api/stream/hls/${videoFileId}/1080p.m3u8`,
+                            playlistUrl: `/api/stream/hls/${videoFileId}/master.m3u8`,
                             codec: 'h264'
                         },
                         {
@@ -136,7 +138,7 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
                             width: 1280,
                             height: 720,
                             bitrate: 2500000,
-                            playlistUrl: `/api/stream/hls/${videoFileId}/720p.m3u8`,
+                            playlistUrl: `/api/stream/hls/${videoFileId}/master.m3u8`,
                             codec: 'h264'
                         }
                     ]
@@ -174,8 +176,9 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
         }
         const jobType = job.data.type || 'MOVIE';
         // ─── Determine content status: READY if video is done ─────
+        const realContentId = existsInitial.contentId || contentId;
         const content = await prisma_1.prisma.content.findUnique({
-            where: { id: contentId },
+            where: { id: realContentId },
             include: {
                 translations: true,
                 thumbnails: true,
@@ -185,10 +188,10 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
         if (content) {
             // If it's a movie or series/anime, it should be READY since video is done
             await prisma_1.prisma.content.update({
-                where: { id: contentId },
+                where: { id: realContentId },
                 data: { status: 'READY' }
             });
-            job.log(`Content ${contentId} marked as READY (video processing complete)`);
+            job.log(`Content ${realContentId} marked as READY (video processing complete)`);
             // Log warnings about missing data but DON'T block the status
             const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);
             const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
@@ -256,23 +259,49 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
     catch (error) {
         job.log(`Failed inside worker: ${error.message}`);
         // ── Cleanup on failure ────────────────────────────────────────────
-        // 1. Mark the video file as FAILED so the UI shows the correct state
+        // 1. Mark the video file as FAILED or delete if unrecoverable
         try {
-            await prisma_1.prisma.videoFile.update({
-                where: { id: videoFileId },
-                data: {
-                    status: 'FAILED',
-                    errorMessage: error.message
+            const isGhostFile = error.message.includes('ENOENT') || error.message.includes('Cannot read input file');
+            const isCorrupted = error.message.includes('Invalid data found') ||
+                error.message.includes('moov atom not found') ||
+                error.message.includes('EBML header') ||
+                error.message.includes('ffprobe exited with code 1');
+            if (isGhostFile) {
+                // Ghost: the physical file doesn't exist — delete DB record so the scanner
+                // can re-import it if the file ever appears again.
+                await prisma_1.prisma.videoFile.deleteMany({ where: { id: videoFileId } });
+                job.log(`[Auto-Clean] Deleted ghost videoFile ${videoFileId} — physical file is missing.`);
+            }
+            else if (isCorrupted) {
+                // Corrupted: file exists but is unreadable by ffprobe.
+                // Mark as FAILED so the client sees it, but delete the physical file to prevent scanner loops.
+                await prisma_1.prisma.videoFile.updateMany({
+                    where: { id: videoFileId },
+                    data: { status: 'FAILED', errorMessage: `Archivo corrompido o vacío: ${error.message}` }
+                });
+                try {
+                    if (fs_1.default.existsSync(videoPath))
+                        fs_1.default.unlinkSync(videoPath);
                 }
+                catch (e) { }
+                job.log(`[Auto-Clean] Marked corrupted videoFile ${videoFileId} as FAILED and deleted physical file. Re-upload a valid file.`);
+            }
+            else {
+                // Transient error (timeout, Redis hiccup, etc.): keep as FAILED for inspection
+                await prisma_1.prisma.videoFile.updateMany({
+                    where: { id: videoFileId },
+                    data: { status: 'FAILED', errorMessage: error.message }
+                });
+            }
+            // 2. NEVER mark content as ERROR — reset to PENDING so it stays visible and retryable
+            const errContentId = existsInitial?.contentId || contentId;
+            await prisma_1.prisma.content.updateMany({
+                where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+                data: { status: 'PENDING' }
             });
-            // 2. Also mark the main content as ERROR so it doesn't show as READY on the web
-            await prisma_1.prisma.content.update({
-                where: { id: contentId },
-                data: { status: 'ERROR' }
-            }).catch(() => null); // Ignore if contentId was actually an episodeId or invalid
         }
         catch (dbErr) {
-            job.log(`Warning: could not set FAILED/ERROR status: ${dbErr.message}`);
+            job.log(`Warning: could not update status after failure: ${dbErr.message}`);
         }
         // 3. Delete partially-written HLS output to avoid corrupt segments on disk
         try {
@@ -289,9 +318,9 @@ exports.videoWorker = new bullmq_1.Worker('video-processing', async (job) => {
 }, {
     connection: connection,
     concurrency: env_1.env.MAX_CONCURRENT_ENCODING,
-    lockDuration: 2 * 60 * 60 * 1000, // 2 hours — FFmpeg jobs are long-running (movies take hours)
+    lockDuration: 12 * 60 * 60 * 1000, // 12 hours — FFmpeg jobs are extremely long-running
     stalledInterval: 60 * 1000, // Check for stalled jobs every 60s
-    maxStalledCount: 10, // Allow up to 10 stall checks (very forgiving for long encodes)
+    maxStalledCount: 10, // Allow up to 10 stall checks
 });
 exports.videoWorker.on('completed', (job) => {
     console.log(`Job ${job.id} has completed!`);
@@ -300,14 +329,40 @@ exports.videoWorker.on('failed', async (job, err) => {
     console.error(`Job ${job?.id} has failed with ${err.message}`);
     if (job?.data?.videoFileId) {
         try {
-            await prisma_1.prisma.videoFile.update({
-                where: { id: job.data.videoFileId },
-                data: {
-                    status: 'FAILED',
-                    errorMessage: `Error en BullMQ (Stalled o Caído): ${err.message}`
-                }
-            });
-            console.log(`[VideoWorker] Updated database status of videoFile ${job.data.videoFileId} to FAILED due to job failure`);
+            const isGhostFile = err.message.includes('ENOENT') || err.message.includes('Cannot read input file');
+            const isCorrupted = err.message.includes('Invalid data found') ||
+                err.message.includes('moov atom not found') ||
+                err.message.includes('EBML header') ||
+                err.message.includes('ffprobe exited with code 1');
+            if (isGhostFile) {
+                await prisma_1.prisma.videoFile.updateMany({
+                    where: { id: job.data.videoFileId },
+                    data: { status: 'FAILED', errorMessage: `Archivo no encontrado (ENOENT). Verifica que el worker tenga acceso al archivo físico.` }
+                });
+                console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (ghost file). Deletion skipped to prevent scan loops.`);
+            }
+            else if (isCorrupted) {
+                await prisma_1.prisma.videoFile.updateMany({
+                    where: { id: job.data.videoFileId },
+                    data: { status: 'FAILED', errorMessage: `Archivo corrompido o subida incompleta: ${err.message}` }
+                });
+                console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (corrupted). Admin must use cleanup-stuck after re-upload.`);
+            }
+            else {
+                await prisma_1.prisma.videoFile.updateMany({
+                    where: { id: job.data.videoFileId },
+                    data: { status: 'FAILED', errorMessage: `BullMQ job failure: ${err.message}` }
+                });
+                console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (transient error).`);
+            }
+            // Reset content from ERROR/PROCESSING back to PENDING — never permanently block content
+            const errContentId = job.data.contentId;
+            if (errContentId) {
+                await prisma_1.prisma.content.updateMany({
+                    where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+                    data: { status: 'PENDING' }
+                });
+            }
         }
         catch (dbErr) {
             console.error(`[VideoWorker] Failed to update database status on job failure: ${dbErr.message}`);

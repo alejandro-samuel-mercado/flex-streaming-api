@@ -133,7 +133,7 @@ export declare class EndUsersService {
         password: string;
         username: string;
     }>;
-    static deleteAccount(accountId: string, userId: string, userRole: UserRole, forceDelete?: boolean): Promise<{
+    static deleteAccount(accountId: string, userId: string, userRole: UserRole): Promise<{
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;

@@ -90,12 +90,13 @@ exports.contentRouter.get('/recent', (0, cache_middleware_1.cacheMiddleware)('ca
         next(err);
     }
 }));
-exports.contentRouter.get('/', (async (req, res, next) => {
+exports.contentRouter.get('/', auth_middleware_1.optionalAuth, (async (req, res, next) => {
     try {
-        console.log('[ContentRouter] Query received:', req.query);
         const filters = ContentFiltersSchema.parse(req.query);
-        console.log('[ContentRouter] Parsed filters:', filters);
-        const { data, total, page, limit } = await content_service_1.ContentService.getAllContent(filters);
+        // Si el usuario es ADMIN, ve todo el contenido. Si no (o visitante), solo lo público.
+        const isAdmin = req.user?.role === 'ADMIN';
+        const isPublic = !isAdmin;
+        const { data, total, page, limit } = await content_service_1.ContentService.getAllContent({ ...filters, isPublic });
         (0, api_response_1.ok)(res, data, (0, api_response_1.paginate)(page, limit, total));
     }
     catch (err) {

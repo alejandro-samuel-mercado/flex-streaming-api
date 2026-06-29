@@ -29,310 +29,208 @@ class FFmpegService {
         });
     }
     /**
-     * Generates HLS (.m3u8 and .ts segments) from an input video file using fluent-ffmpeg.
-     * This generates multiple resolutions based on the PROMPT MAESTRO specifications.
+     * Generates HLS (.m3u8 and .ts segments) from an input video file.
+     *
+     * FAST PATH (95% of cases): If the source video is already H.264/H.265 and audio is AAC/MP3,
+     * it uses `-c copy` (stream copy / remux). This is near-instant and CPU-free.
+     *
+     * SLOW PATH (fallback): Only re-encodes if the source codec is not HLS-compatible
+     * (e.g. VP9, AV1, HEVC with incompatible profile, etc.).
      */
     static async generateHLS(inputPath, outputFolder, onProgress) {
-        // Ensure absolute paths
         const resolvedInputPath = path_1.default.resolve(inputPath);
         const resolvedOutputFolder = path_1.default.resolve(outputFolder);
-        // Ensure output directory exists
         if (!fs_1.default.existsSync(resolvedOutputFolder)) {
             fs_1.default.mkdirSync(resolvedOutputFolder, { recursive: true });
         }
-        console.log(`🎬 [FFmpeg] Output Folder: ${resolvedOutputFolder}`);
-        // Get metadata to find audio tracks
         const metadata = await this.getMetadata(resolvedInputPath);
+        const videoStream = metadata.streams.find(s => s.codec_type === 'video');
         const audioStreams = metadata.streams.filter(s => s.codec_type === 'audio');
         const audioTracks = [];
         const playlistPath = path_1.default.join(resolvedOutputFolder, 'master.m3u8');
-        const profiles = [
-            { name: '1080p', resolution: '1920:1080', bitrate: '4500k', maxrate: '6000k', bufsize: '9000k', bandwidth: 5200000 },
-            { name: '720p', resolution: '1280:720', bitrate: '2500k', maxrate: '3500k', bufsize: '5000k', bandwidth: 2900000 },
-        ];
-        // Detect source framerate for proper GOP alignment — preserve exact fraction for max FPS fidelity
-        const videoStream = metadata.streams.find(s => s.codec_type === 'video');
-        let fpsNum = 24; // numeric fps for GOP calculation
-        let fpsValue = '24'; // exact value passed to FFmpeg -r flag
-        // Some videos have '0/0' in r_frame_rate, so we fallback to avg_frame_rate
-        const frameRateStr = (videoStream?.r_frame_rate && videoStream.r_frame_rate !== '0/0')
-            ? videoStream.r_frame_rate
-            : ((videoStream?.avg_frame_rate && videoStream.avg_frame_rate !== '0/0') ? videoStream.avg_frame_rate : null);
-        if (frameRateStr) {
-            const [num, den] = frameRateStr.split('/').map(Number);
-            if (num && den) {
-                fpsNum = num / den; // e.g. 23.976, 29.97, 25, 30, 60
-                fpsValue = frameRateStr; // pass exact fraction e.g. "24000/1001"
-            }
-        }
-        // GOP = 2 seconds worth of frames (required for clean 6s HLS segments — must be divisor of hls_time)
-        const gopSize = Math.round(fpsNum * 2);
-        console.log(`🎬 [FFmpeg] Source FPS: ${fpsNum.toFixed(3)} (${fpsValue}), GOP size: ${gopSize} (2s intervals, 6s segments)`);
-        let lastReportedProgress = 0;
-        const totalSteps = profiles.length + audioStreams.length;
-        const taskProgress = new Array(totalSteps).fill(0);
-        const reportProgress = () => {
-            if (!onProgress)
-                return;
-            const overallPercent = taskProgress.reduce((sum, p) => sum + p, 0) / totalSteps;
-            const currentProgress = Math.round(overallPercent);
-            if (currentProgress > lastReportedProgress) {
-                lastReportedProgress = currentProgress;
-                onProgress(currentProgress);
-            }
-        };
-        // 1. Process Video Profiles (Sequential to save resources)
-        const hasMultipleAudio = audioStreams.length > 0;
-        for (let i = 0; i < profiles.length; i++) {
-            const profile = profiles[i];
-            const taskIndex = i;
-            console.log(`🎬 [FFmpeg] Processing Video ${profile.name}...`);
+        // ── Detect if we can use fast copy path ───────────────────────────────
+        const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
+        const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
+        const canCopyVideo = HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
+        const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
+        const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)));
+        const audioCodec = audioStreams.map(s => s.codec_name).join(',');
+        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
+        if (canCopyVideo) {
+            // ══════════════════════════════════════════════════════════════════
+            // FAST PATH: remux to HLS without re-encoding
+            // A 2-hour movie takes ~30 seconds instead of 2 hours.
+            // ══════════════════════════════════════════════════════════════════
+            console.log(`⚡ [FFmpeg] Using FAST PATH (stream copy) — no re-encoding needed`);
             await new Promise((resolve, reject) => {
                 let stallTimeout;
-                let hardTimeout;
-                let lastTimemark = '';
-                let lastTimemarkAt = Date.now();
-                let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
-                    .renice(19) // Lowest CPU priority — yields to all other processes
-                    .inputOptions([
-                    '-analyzeduration', '100M',
-                    '-probesize', '100M',
-                    '-nostdin'
-                ]);
-                const cleanup = () => {
+                    .inputOptions(['-analyzeduration', '100M', '-probesize', '100M', '-nostdin']);
+                const cleanup = () => { clearTimeout(stallTimeout); };
+                const resetStall = () => {
                     clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
-                    clearInterval(timemarkWatchdog);
-                };
-                const resetStallTimeout = () => {
-                    if (stallTimeout)
-                        clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => {
                         cleanup();
                         cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] El proceso se atascó (20 min sin actividad). Cancelado automáticamente.`));
-                    }, 20 * 60 * 1000);
+                        reject(new Error('[Timeout] Copiado HLS atascado por 10 min.'));
+                    }, 10 * 60 * 1000);
                 };
-                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
-                // (FFmpeg puede seguir emitiendo eventos pero sin progresar realmente)
-                timemarkWatchdog = setInterval(() => {
-                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
-                        console.warn(`[FFmpeg] ⚠️ Watchdog: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
-                        cleanup();
-                        cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                const audioOpts = canCopyAudio
+                    ? ['-c:a', 'copy']
+                    : ['-c:a', 'aac', '-b:a', '192k', '-ac', '2'];
+                const mapOptions = ['-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio';
+                if (audioStreams.length === 0) {
+                    varStreamMap = 'v:0';
+                }
+                else {
+                    for (let i = 0; i < audioStreams.length; i++) {
+                        mapOptions.push('-map', `0:a:${i}`);
+                        const lang = audioStreams[i].tags?.language || `unk${i}`;
+                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
+                        const safeName = name.replace(/[,="' ]/g, '_');
+                        varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                     }
-                }, 60 * 1000);
-                hardTimeout = setTimeout(() => {
-                    cleanup();
-                    cmd.kill('SIGKILL');
-                    reject(new Error(`[Timeout] El proceso excedió el tiempo máximo permitido (4 horas). Cancelado automáticamente.`));
-                }, 4 * 60 * 60 * 1000);
-                const opts = [
-                    '-preset', 'veryfast',
-                    '-threads', '2',
-                    '-profile:v', 'main',
-                    '-level', '4.0',
-                    '-vf', `scale=w=${profile.resolution.split(':')[0]}:h=${profile.resolution.split(':')[1]}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
-                    '-c:v', 'h264',
-                    '-pix_fmt', 'yuv420p',
-                    '-fps_mode', 'cfr',
-                    '-r', fpsValue,
-                    '-g', gopSize.toString(),
-                    '-keyint_min', gopSize.toString(),
-                    '-sc_threshold', '0',
-                    '-b:v', profile.bitrate,
-                    '-maxrate', profile.maxrate,
-                    '-bufsize', profile.bufsize,
-                    '-max_muxing_queue_size', '1024',
+                }
+                cmd
+                    .outputOptions([
+                    ...mapOptions,
+                    '-c:v', 'copy',
+                    ...audioOpts,
                     '-hls_time', '6',
                     '-hls_list_size', '0',
                     '-hls_playlist_type', 'vod',
                     '-hls_flags', 'independent_segments',
                     '-hls_segment_type', 'mpegts',
-                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `${profile.name}_%03d.ts`)
-                ];
-                if (hasMultipleAudio) {
-                    opts.unshift('-map', '0:v:0', '-an');
-                }
-                else {
-                    opts.unshift('-map', '0:v:0', '-map', '0:a:0', '-c:a', 'aac', '-b:a', '192k');
-                }
-                cmd
-                    .outputOptions(opts)
-                    .output(path_1.default.join(resolvedOutputFolder, `${profile.name}.m3u8`))
-                    .on('start', () => {
-                    resetStallTimeout();
-                    // Apply Idle I/O priority — FFmpeg only reads/writes disk
-                    // when NO other process (e.g. video streaming) needs the disk.
-                    // This prevents HDD I/O saturation from blocking playback.
-                    try {
-                        const proc = cmd._ffmpegProc;
-                        if (proc?.pid) {
-                            (0, child_process_1.execSync)(`ionice -c 3 -p ${proc.pid}`, { stdio: 'ignore' });
-                            console.log(`🎬 [FFmpeg] ionice Idle class applied to PID ${proc.pid}`);
-                        }
-                    }
-                    catch (e) {
-                        // ionice not available (non-Linux env), silently skip
-                    }
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                    '-master_pl_name', 'master.m3u8',
+                    '-var_stream_map', varStreamMap,
+                    '-max_muxing_queue_size', '1024',
+                ])
+                    .output(path_1.default.join(resolvedOutputFolder, 'stream_%v.m3u8'))
+                    .on('start', resetStall)
+                    .on('progress', (p) => {
+                    resetStall();
+                    if (p.percent && onProgress)
+                        onProgress(Math.min(Math.round(p.percent), 99));
                 })
-                    .on('progress', (progress) => {
-                    resetStallTimeout();
-                    // Actualizar timemark para el watchdog
-                    if (progress.timemark && progress.timemark !== lastTimemark) {
-                        lastTimemark = progress.timemark;
-                        lastTimemarkAt = Date.now();
-                    }
-                    if (progress.percent) {
-                        taskProgress[taskIndex] = progress.percent;
-                        reportProgress();
-                    }
-                })
-                    .on('end', () => {
-                    cleanup();
-                    taskProgress[taskIndex] = 100;
-                    reportProgress();
-                    resolve(true);
-                })
+                    .on('end', () => { cleanup(); if (onProgress)
+                    onProgress(100); resolve(true); })
                     .on('error', (err, _stdout, stderr) => {
                     cleanup();
-                    const errorMessage = `FFmpeg Error [${profile.name}]: ${err.message}${stderr ? `\nSTDERR: ${stderr}` : ''}`;
-                    console.error(errorMessage);
-                    reject(new Error(errorMessage));
+                    reject(new Error("FFmpeg copy error: " + err.message + (stderr ? "\n" + stderr : "")));
                 })
                     .run();
             });
+            // Detect audio tracks for the database
+            for (let i = 0; i < audioStreams.length; i++) {
+                const s = audioStreams[i];
+                audioTracks.push({
+                    index: i,
+                    language: s.tags?.language || `audio${i}`,
+                    name: s.tags?.title || `Audio ${i + 1}`,
+                    codec: canCopyAudio ? (s.codec_name || 'aac') : 'aac',
+                    playlistUrl: `stream_${i + 1}.m3u8`
+                });
+            }
         }
-        // 2. Process Audio Streams (Sequential to save resources)
-        for (let i = 0; i < audioStreams.length; i++) {
-            const stream = audioStreams[i];
-            const taskIndex = profiles.length + i;
-            const lang = stream.tags?.language || `audio${i}`;
-            const title = stream.tags?.title || `Audio ${i + 1} (${lang})`;
-            console.log(`🔊 [FFmpeg] Extracting Audio ${title}...`);
+        else {
+            // ══════════════════════════════════════════════════════════════════
+            // SLOW PATH: full re-encode (only for incompatible codecs like VP9, AV1, etc.)
+            // ══════════════════════════════════════════════════════════════════
+            console.log(`🐢 [FFmpeg] Using SLOW PATH (re-encode) — source codec "${videoCodec}" is not HLS-compatible`);
+            let fpsNum = 24;
+            let fpsValue = '24';
+            const frameRateStr = (videoStream?.r_frame_rate && videoStream.r_frame_rate !== '0/0')
+                ? videoStream.r_frame_rate
+                : (videoStream?.avg_frame_rate && videoStream.avg_frame_rate !== '0/0' ? videoStream.avg_frame_rate : null);
+            if (frameRateStr) {
+                const [num, den] = frameRateStr.split('/').map(Number);
+                if (num && den) {
+                    fpsNum = num / den;
+                    fpsValue = frameRateStr;
+                }
+            }
+            const gopSize = Math.round(fpsNum * 2);
             await new Promise((resolve, reject) => {
                 let stallTimeout;
-                let hardTimeout;
                 let lastTimemark = '';
-                let lastTimemarkAt = Date.now();
-                let timemarkWatchdog;
                 const cmd = (0, fluent_ffmpeg_1.default)(resolvedInputPath)
                     .renice(19)
-                    .inputOptions([
-                    '-analyzeduration', '100M',
-                    '-probesize', '100M',
-                    '-nostdin'
-                ]);
-                const cleanup = () => {
+                    .inputOptions(['-analyzeduration', '100M', '-probesize', '100M', '-nostdin']);
+                const cleanup = () => { clearTimeout(stallTimeout); };
+                const resetStall = () => {
                     clearTimeout(stallTimeout);
-                    clearTimeout(hardTimeout);
-                    clearInterval(timemarkWatchdog);
+                    stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado por 20 min.')); }, 20 * 60 * 1000);
                 };
-                const resetStallTimeout = () => {
-                    if (stallTimeout)
-                        clearTimeout(stallTimeout);
-                    stallTimeout = setTimeout(() => {
-                        cleanup();
-                        cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] La extracción de audio se atascó (20 min sin actividad).`));
-                    }, 20 * 60 * 1000);
-                };
-                // Watchdog: mata FFmpeg si el timemark no avanza en 10 minutos
-                timemarkWatchdog = setInterval(() => {
-                    if (lastTimemark && Date.now() - lastTimemarkAt > 10 * 60 * 1000) {
-                        console.warn(`[FFmpeg] ⚠️ Watchdog audio: timemark congelado en ${lastTimemark} por 10 min. Cancelando.`);
-                        cleanup();
-                        cmd.kill('SIGKILL');
-                        reject(new Error(`[Timeout] Audio FFmpeg sin progreso real por 10 min (congelado en ${lastTimemark}). Cancelado.`));
+                const mapOptions = ['-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio';
+                if (audioStreams.length === 0) {
+                    varStreamMap = 'v:0';
+                }
+                else {
+                    for (let i = 0; i < audioStreams.length; i++) {
+                        mapOptions.push('-map', `0:a:${i}`);
+                        const lang = audioStreams[i].tags?.language || `unk${i}`;
+                        const name = audioStreams[i].tags?.title || `Audio_${i + 1}`;
+                        const safeName = name.replace(/[,="' ]/g, '_');
+                        varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                     }
-                }, 60 * 1000);
-                hardTimeout = setTimeout(() => {
-                    cleanup();
-                    cmd.kill('SIGKILL');
-                    reject(new Error(`[Timeout] La extracción de audio excedió las 4 horas permitidas.`));
-                }, 4 * 60 * 60 * 1000);
+                }
                 cmd
                     .outputOptions([
-                    '-vn',
-                    '-map', `0:a:${i}`,
-                    '-c:a', 'aac',
-                    '-b:a', '192k',
-                    '-ac', '2',
+                    ...mapOptions,
+                    '-c:v', 'h264',
+                    '-preset', 'veryfast',
+                    '-threads', '0', // Use all available CPU threads
+                    '-profile:v', 'main',
+                    '-level', '4.0',
+                    '-vf', 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                    '-pix_fmt', 'yuv420p',
+                    '-r', fpsValue,
+                    '-g', gopSize.toString(),
+                    '-keyint_min', gopSize.toString(),
+                    '-sc_threshold', '0',
+                    '-b:v', '2500k', '-maxrate', '3500k', '-bufsize', '5000k',
+                    '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
                     '-hls_time', '6',
+                    '-hls_list_size', '0',
                     '-hls_playlist_type', 'vod',
-                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, `audio_${lang}_%03d.ts`)
+                    '-hls_flags', 'independent_segments',
+                    '-hls_segment_type', 'mpegts',
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                    '-master_pl_name', 'master.m3u8',
+                    '-var_stream_map', varStreamMap,
+                    '-max_muxing_queue_size', '1024',
                 ])
-                    .output(path_1.default.join(resolvedOutputFolder, `audio_${lang}.m3u8`))
+                    .output(path_1.default.join(resolvedOutputFolder, 'stream_%v.m3u8'))
                     .on('start', () => {
-                    resetStallTimeout();
+                    resetStall();
                     try {
                         const proc = cmd._ffmpegProc;
                         if (proc?.pid)
                             (0, child_process_1.execSync)(`ionice -c 3 -p ${proc.pid}`, { stdio: 'ignore' });
                     }
-                    catch (e) { }
+                    catch { }
                 })
-                    .on('progress', (progress) => {
-                    resetStallTimeout();
-                    // Actualizar timemark para el watchdog
-                    if (progress.timemark && progress.timemark !== lastTimemark) {
-                        lastTimemark = progress.timemark;
-                        lastTimemarkAt = Date.now();
+                    .on('progress', (p) => {
+                    resetStall();
+                    if (p.timemark && p.timemark !== lastTimemark) {
+                        lastTimemark = p.timemark;
                     }
-                    if (progress.percent) {
-                        taskProgress[taskIndex] = progress.percent;
-                        reportProgress();
-                    }
+                    if (p.percent && onProgress)
+                        onProgress(Math.round(p.percent));
                 })
-                    .on('end', () => {
-                    cleanup();
-                    audioTracks.push({
-                        index: i,
-                        language: lang,
-                        name: title,
-                        codec: 'aac',
-                        playlistUrl: `audio_${lang}.m3u8`
-                    });
-                    taskProgress[taskIndex] = 100;
-                    reportProgress();
-                    resolve(true);
-                })
-                    .on('error', (err) => {
-                    cleanup();
-                    console.error(`Error during FFmpeg audio ${lang}: ${err.message}`);
-                    reject(err);
-                })
+                    .on('end', () => { cleanup(); if (onProgress)
+                    onProgress(100); resolve(true); })
+                    .on('error', (err, _stdout, stderr) => { cleanup(); reject(new Error("FFmpeg encode error: " + err.message + (stderr ? "\n" + stderr : ""))); })
                     .run();
             });
+            for (let i = 0; i < audioStreams.length; i++) {
+                const s = audioStreams[i];
+                audioTracks.push({ index: i, language: s.tags?.language || `audio${i}`, name: s.tags?.title || `Audio ${i + 1}`, codec: 'aac', playlistUrl: `stream_${i + 1}.m3u8` });
+            }
         }
-        // 3. Generate Master Playlist with Audio Groups
-        // HLS version 6 is required for alternate audio renditions (EXT-X-MEDIA)
-        let masterContent = '#EXTM3U\n#EXT-X-VERSION:6\n\n';
-        if (hasMultipleAudio) {
-            // Add Audio Media Tags (only when audio is in separate tracks)
-            audioTracks.forEach((track, idx) => {
-                masterContent += `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="${track.name}",LANGUAGE="${track.language}",DEFAULT=${idx === 0 ? 'YES' : 'NO'},AUTOSELECT=YES,URI="${track.playlistUrl}"\n`;
-            });
-            masterContent += '\n';
-            // Video variants with audio group reference
-            // BANDWIDTH must include audio bitrate (192k = 192000 bps) per HLS spec
-            const audioBandwidth = 192000;
-            profiles.forEach(p => {
-                const res = p.resolution.replace(':', 'x');
-                const totalBandwidth = p.bandwidth + audioBandwidth;
-                masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${totalBandwidth},RESOLUTION=${res},CODECS="avc1.4d401f,mp4a.40.2",AUDIO="audio"\n${p.name}.m3u8\n`;
-            });
-        }
-        else {
-            // No separate audio tracks — audio is muxed into the video variant
-            profiles.forEach(p => {
-                const res = p.resolution.replace(':', 'x');
-                masterContent += `#EXT-X-STREAM-INF:BANDWIDTH=${p.bandwidth},RESOLUTION=${res},CODECS="avc1.4d401f,mp4a.40.2"\n${p.name}.m3u8\n`;
-            });
-        }
-        fs_1.default.writeFileSync(playlistPath, masterContent);
         return { path: playlistPath, audioTracks };
     }
     /**

@@ -103,19 +103,30 @@ exports.io = io;
 // Import worker and events to start them
 const queue_service_1 = require("./services/queue.service");
 const fs_1 = __importDefault(require("fs"));
-if (env_1.env.ENABLE_WORKER) {
+// ─── Manual PM2 Cache Bypass ────────────────────────────────────────────────
+// If PM2 cached ENABLE_WORKER=true, but the physical .env file says false,
+// we forcefully disable it here to prevent Cerebro from stealing jobs.
+let isWorkerEnabled = env_1.env.ENABLE_WORKER;
+try {
+    if (fs_1.default.existsSync('.env')) {
+        const envFile = fs_1.default.readFileSync('.env', 'utf-8');
+        if (envFile.includes('ENABLE_WORKER=false') || envFile.includes('ENABLE_WORKER="false"')) {
+            isWorkerEnabled = false;
+        }
+    }
+}
+catch (e) { }
+if (isWorkerEnabled) {
     try {
-        // Auto-disable if the physical disks are not mounted on this node (e.g. Cerebro)
-        fs_1.default.accessSync(env_1.env.MEDIA_PATH, fs_1.default.constants.R_OK);
         require('./workers/video.worker');
         console.log(`[Worker] Video processing worker ENABLED (Mode: ${env_1.env.WORKER_MODE})`);
     }
     catch (err) {
-        console.log(`[Worker] Auto-disabled video worker because MEDIA_PATH (${env_1.env.MEDIA_PATH}) is not accessible on this node.`);
+        console.log(`[Worker] Failed to initialize video worker:`, err);
     }
 }
 else {
-    console.log('[Worker] Video processing worker DISABLED on this node');
+    console.log('[Worker] Video processing worker DISABLED on this node (read from .env / process)');
 }
 // Listen to BullMQ queue progress and emit to clients
 queue_service_1.videoQueueEvents.on('progress', ({ jobId, data }) => {

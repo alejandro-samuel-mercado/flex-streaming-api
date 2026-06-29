@@ -34,13 +34,16 @@ exports.streamingRouter.get('/hls/:videoFileId/*', (async (req, res, next) => {
         let filePath = req.params[0]; // Everything after videoFileId/
         let token = req.query.token;
         // Mobile path-token support: /hls/videoFileId/TOKEN/playlist.m3u8
-        // If token is not in query, check if the first segment of the path is a token
-        if (!token && filePath.includes('/')) {
+        // ExoPlayer resolves relative inner-playlist URLs against the base URL.
+        // If the base URL is /TOKEN/master.m3u8, the inner URL becomes /TOKEN/1080p.m3u8?token=TOKEN
+        // We must ALWAYS strip the token from the path if it's present!
+        if (filePath.includes('/')) {
             const parts = filePath.split('/');
-            // Tokens are usually long strings, filenames are like master.m3u8 or segment_1.ts
-            // We assume the first part is a token if it doesn't look like a standard HLS filename
+            // Tokens are usually long strings (HMACs or JWTs)
             if (parts[0].length > 20) {
-                token = parts.shift();
+                const pathToken = parts.shift();
+                if (!token)
+                    token = pathToken;
                 filePath = parts.join('/');
             }
         }
