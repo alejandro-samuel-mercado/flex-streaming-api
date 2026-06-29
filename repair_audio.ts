@@ -122,10 +122,6 @@ async function run() {
             
             await prisma.$executeRawUnsafe(`UPDATE "video_qualities" SET "playlistUrl" = '/api/stream/hls/${file.id}/master.m3u8' WHERE "videoFileId" = '${file.id}'`);
             
-            if (audioStreams.length > 0) {
-                await prisma.$executeRawUnsafe(`UPDATE "audio_tracks" SET "playlistUrl" = 'stream_' || ("trackIndex" + 1) || '.m3u8' WHERE "videoFileId" = '${file.id}'`);
-            }
-            
             console.log(`  [LISTO] Base de datos actualizada.`);
             
         } catch (e: any) {
