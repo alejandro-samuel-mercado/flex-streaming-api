@@ -95,6 +95,7 @@ async function run() {
                     ])
                     .outputOption('-var_stream_map', varStreamMap)
                     .output(path.join(file.hlsPath!, 'stream_%v.m3u8'))
+                    .on('start', (cmd) => console.log('  FFmpeg CMD:', cmd))
                     .on('end', () => res(true))
                     .on('error', (err, stdout, stderr) => {
                         console.error('  FFmpeg error:', err.message);
