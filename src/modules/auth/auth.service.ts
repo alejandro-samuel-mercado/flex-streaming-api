@@ -87,6 +87,10 @@ export async function login(input: LoginInput) {
       include: { user: true },
     });
 
+    if (endUser && endUser.deletedAt) {
+      throw new AppError(401, 'Account has been deleted', 'INVALID_CREDENTIALS');
+    }
+
     if (endUser) {
       // If endUser exists but has no linked User record, we treat it as a virtual user for JWT
       // Or we can check password against endUser.passwordHash
