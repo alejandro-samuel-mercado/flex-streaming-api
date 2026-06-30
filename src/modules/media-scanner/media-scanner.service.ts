@@ -380,6 +380,30 @@ export class MediaScannerService {
   static async importFile(filePath: string, contentType: 'MOVIE' | 'SERIES' = 'MOVIE', episode?: ScannedFile['episode']): Promise<ImportResult> {
     const fileName = path.basename(filePath);
 
+    // If it's an empty directory, immediately register as FAILED so it shows up in the panel's "Videos Fallidos" view.
+    try {
+      const stat = await fs.promises.stat(filePath);
+      if (stat.isDirectory()) {
+        const entries = await fs.promises.readdir(filePath);
+        if (entries.length === 0) {
+          const alreadyFailed = await prisma.videoFile.findFirst({ where: { originalPath: filePath, status: 'FAILED' } });
+          if (!alreadyFailed) {
+            await prisma.videoFile.create({
+              data: {
+                originalPath: filePath,
+                status: 'FAILED',
+                errorMessage: 'Carpeta de serie vacía o sin videos compatibles. Sube los archivos para procesarla.',
+                fileSize: 0,
+              }
+            });
+          }
+          return { filePath, fileName, success: false, tmdbMatch: false, error: 'Carpeta vacía' };
+        }
+      }
+    } catch (e) {
+      // Ignorar si no se puede leer
+    }
+
     const existingVideo = await prisma.videoFile.findFirst({ 
       where: { 
         originalPath: filePath,
