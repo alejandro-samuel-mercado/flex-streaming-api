@@ -88,12 +88,22 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     status: true,
                     type: true,
                     planId: true,
+                    startDate: true,
                     endDate: true,
                     maxDevices: true,
                     plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
                 },
             });
             if (!account) return next(new Error('Account not found'));
+
+            if (account.plan && account.startDate && account.endDate) {
+                const start = account.startDate.getTime();
+                const end = account.endDate.getTime();
+                const totalDays = Math.max(0, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+                account.plan.durationDays = totalDays;
+                account.plan.bonusDays = 0;
+            }
+
             // Shape the response to match the regular user structure
             // End-users don't have profiles (they access content directly)
             return ok(res, {
@@ -107,6 +117,7 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     status: account.status,
                     type: account.type,
                     planId: account.planId,
+                    startDate: account.startDate,
                     endDate: account.endDate,
                     maxDevices: account.maxDevices,
                     plan: account.plan ?? null,
@@ -134,6 +145,7 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                         status: true,
                         type: true,
                         planId: true,
+                        startDate: true,
                         endDate: true,
                         maxDevices: true,
                         plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } }
@@ -141,6 +153,15 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                 }
             },
         });
+
+        if (user && user.endUserAccount && user.endUserAccount.startDate && user.endUserAccount.endDate && user.endUserAccount.plan) {
+            const start = user.endUserAccount.startDate.getTime();
+            const end = user.endUserAccount.endDate.getTime();
+            const totalDays = Math.max(0, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+            user.endUserAccount.plan.durationDays = totalDays;
+            user.endUserAccount.plan.bonusDays = 0;
+        }
+
         ok(res, user);
     } catch (err) {
         next(err);
