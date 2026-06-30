@@ -101,7 +101,7 @@ export class AutoScannerWorker {
         moviePath || undefined,
         seriesPath || undefined
       );
-      const newFiles = files.filter(f => !f.alreadyImported);
+      const newFiles = files.filter(f => !f.alreadyImported && f.extension !== 'VACÍA');
 
       console.log(`🔍 [AutoScanner] Found ${files.length} total, ${newFiles.length} new`);
 
