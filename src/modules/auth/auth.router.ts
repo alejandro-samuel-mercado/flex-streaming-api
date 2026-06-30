@@ -91,10 +91,11 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
                     startDate: true,
                     endDate: true,
                     maxDevices: true,
+                    deletedAt: true,
                     plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
                 },
             });
-            if (!account) return next(new Error('Account not found'));
+            if (!account || account.deletedAt) return res.status(401).json({ success: false, error: 'Account has been deleted', code: 'UNAUTHORIZED' });
 
             if (account.plan && account.startDate && account.endDate) {
                 const start = account.startDate.getTime();
