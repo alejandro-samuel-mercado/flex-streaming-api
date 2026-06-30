@@ -17,9 +17,13 @@ async function run() {
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
       const batch = files.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map(async f => {
-        if (!f.alreadyImported && f.extension !== 'VACÍA') {
-          console.log(`⏳ Encolando Serie/Episodio: ${f.fileName}...`);
-          await MediaScannerService.importFile(f.filePath, 'SERIES', f.episode);
+        if (!f.alreadyImported) {
+          if (f.extension === 'VACÍA') {
+            console.log(`⚠️  Saltando carpeta vacía: ${f.fileName} (Faltan videos)`);
+          } else {
+            console.log(`⏳ Encolando Serie/Episodio: ${f.fileName}...`);
+            await MediaScannerService.importFile(f.filePath, 'SERIES', f.episode);
+          }
         }
       }));
     }
