@@ -114,7 +114,7 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
         const where: any = { deletedAt: null };
 
         if (role === 'END_USER') {
-            const endUserWhere: any = {};
+            const endUserWhere: any = { deletedAt: null };
             
             if (search) {
                 endUserWhere.OR = [
