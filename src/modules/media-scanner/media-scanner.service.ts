@@ -253,11 +253,13 @@ export class MediaScannerService {
   private static async _scanSeriesRecursive(
     dirPath: string, results: ScannedFile[], importedPaths: Set<string>,
     seriesFolderName: string, currentDepth: number, maxDepth: number
-  ): Promise<void> {
-    if (currentDepth > maxDepth) return;
+  ): Promise<boolean> {
+    if (currentDepth > maxDepth) return false;
     let entries: fs.Dirent[];
     try { entries = await fs.promises.readdir(dirPath, { withFileTypes: true }); }
-    catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return; }
+    catch (err: any) { console.warn(`[MediaScanner] Cannot read ${dirPath}: ${err.message}`); return false; }
+
+    let foundMedia = false;
 
     let count = 0;
     for (const entry of entries) {
@@ -287,14 +289,30 @@ export class MediaScannerService {
               episodeNumber: seInfo?.episode ?? 1,
               tmdbSeriesId,
               seriesFolderName: seriesFolderName || entry.name
+            });
+            foundMedia = true;
+          } else {
+            // Go deeper. At depth 0 this is the series root folder name.
+            const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
+            const subFound = await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
+            if (subFound) {
+              foundMedia = true;
+            } else if (currentDepth === 0) {
+              // It's a root series folder and nothing was found inside! It is empty!
+              const stat = await fs.promises.stat(fullPath).catch(() => ({ mtime: new Date(), size: 0 }));
+              results.push({
+                fileName: entry.name,
+                cleanName: this.cleanFileName(entry.name),
+                filePath: fullPath,
+                fileSize: 0,
+                extension: 'VACÍA',
+                lastModified: stat.mtime,
+                alreadyImported: false,
+                contentType: 'SERIES'
+              });
             }
-          });
-        } else {
-          // Go deeper. At depth 0 this is the series root folder name.
-          const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
-          await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
-        }
-      } else if (entry.isFile() && currentDepth > 0) {
+          }
+        } else if (entry.isFile() && currentDepth > 0) {
         // Raw video file inside a series subdirectory — needs FFmpeg processing
         const ext = path.extname(entry.name).toLowerCase();
         if (VIDEO_EXTENSIONS.has(ext)) {
@@ -319,10 +337,12 @@ export class MediaScannerService {
                 seriesFolderName: seriesFolderName || path.basename(dirPath)
               }
             });
+            foundMedia = true;
           } catch { /* skip unreadable files */ }
         }
       }
     }
+    return foundMedia;
   }
 
   /** Find index.m3u8 / video.m3u8 / master.m3u8 up to 2 levels deep inside a folder. */
