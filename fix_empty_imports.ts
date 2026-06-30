@@ -1,3 +1,4 @@
+import './src/shared/config/env';
 import { prisma } from './src/shared/config/prisma';
 import fs from 'fs';
 
