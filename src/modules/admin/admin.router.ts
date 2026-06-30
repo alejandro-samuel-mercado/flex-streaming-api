@@ -316,7 +316,7 @@ adminRouter.put('/settings', (async (req: AuthenticatedRequest, res: Response, n
 adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
         // ─── Fetch All Active/Pending (No limit) + History (50 last) ───
-        const [activeVideos, historyVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
+        const [activeVideos, completedVideos, failedVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
             prisma.videoFile.findMany({
                 where: { status: { in: ['PROCESSING', 'PENDING', 'QUEUED'] } },
                 orderBy: { createdAt: 'desc' },
@@ -328,7 +328,17 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
                 },
             }),
             prisma.videoFile.findMany({
-                where: { status: { in: ['COMPLETED', 'FAILED'] } },
+                where: { status: 'COMPLETED' },
+                orderBy: { updatedAt: 'desc' },
+                take: 100, 
+                include: {
+                    content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+                    episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+                    qualities: { select: { resolution: true } },
+                },
+            }),
+            prisma.videoFile.findMany({
+                where: { status: 'FAILED' },
                 orderBy: { updatedAt: 'desc' },
                 take: 100, 
                 include: {
@@ -343,7 +353,7 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
             prisma.videoFile.count({ where: { status: { in: ['PENDING', 'QUEUED'] } } })
         ]);
 
-        const videos = [...activeVideos, ...historyVideos];
+        const videos = [...activeVideos, ...completedVideos, ...failedVideos];
         const stats = {
             totalCompleted,
             totalFailed,
