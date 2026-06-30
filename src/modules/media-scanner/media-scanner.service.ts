@@ -289,10 +289,11 @@ export class MediaScannerService {
               episodeNumber: seInfo?.episode ?? 1,
               tmdbSeriesId,
               seriesFolderName: seriesFolderName || entry.name
-            });
-            foundMedia = true;
-          } else {
-            // Go deeper. At depth 0 this is the series root folder name.
+            }
+          });
+          foundMedia = true;
+        } else {
+          // Go deeper. At depth 0 this is the series root folder name.
             const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
             const subFound = await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
             if (subFound) {
