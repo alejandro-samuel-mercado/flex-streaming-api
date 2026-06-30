@@ -1,5 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { prisma } from './src/shared/config/prisma';
 
 async function main() {
     console.log("Buscando contenido eliminado (en papelera) o huérfano...");
