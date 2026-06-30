@@ -454,8 +454,13 @@ export class EndUsersService {
 
   static async togglePause(accountId: string, userId: string, userRole: UserRole) {
     const account = await prisma.endUserAccount.findUnique({ where: { id: accountId } });
-    if (!account || account.deletedAt) {
+    if (!account) {
       throw new AppError(404, 'End user account not found', 'NOT_FOUND');
+    }
+
+    if (account.deletedAt) {
+      await prisma.endUserAccount.update({ where: { id: accountId }, data: { deletedAt: null } });
+      account.deletedAt = null;
     }
 
     if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
