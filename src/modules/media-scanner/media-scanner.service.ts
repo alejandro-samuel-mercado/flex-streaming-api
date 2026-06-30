@@ -512,7 +512,7 @@ export class MediaScannerService {
         originalPath: episodeFolderPath,
         status: 'COMPLETED',
         masterPlaylist: '', // Will be updated below
-        hlsPath: episodeFolderPath,
+        hlsPath: path.dirname(episode.m3u8Path),
         fileSize: BigInt(0),
       }
     });
@@ -638,7 +638,7 @@ export class MediaScannerService {
         originalPath: folderPath,
         status: 'COMPLETED',
         masterPlaylist: '', 
-        hlsPath: folderPath,
+        hlsPath: path.dirname(m3u8Url),
         fileSize: BigInt(0),
       }
     });
