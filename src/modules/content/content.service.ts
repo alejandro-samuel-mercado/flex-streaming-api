@@ -62,17 +62,15 @@ export class ContentService {
             { deletedAt: null }
         ];
 
-        // 2. Status condition
         if (status) {
             // Admin pasando un status explícito: respetar lo que pide
             conditions.push({ status: status as ContentStatus });
         } else if (isPublic) {
             // Llamada pública sin filtro de status: solo mostrar contenido listo
             conditions.push({ status: { in: ['READY', 'ACTIVE'] } });
-        } else {
-            // Llamada de admin sin filtro de status: mostrar todo excepto eliminados lógicamente
-            conditions.push({ status: { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING', 'DRAFT'] } });
         }
+        // Si es Admin y no hay filtro de status explícito, no aplicamos ningún filtro de status
+        // para que pueda ver todo (ERROR, INACTIVE, UPCOMING, etc.)
 
         // 2b. En llamadas públicas, filtrar por contenido que tenga video disponible
         if (isPublic) {
