@@ -15,7 +15,7 @@ streamingRouter.post('/request-access', authenticate as RequestHandler, (async (
     }
 
     const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-    const access = await StreamingService.requestAccess(req.user!.id, contentId, ip, episodeId);
+    const access = await StreamingService.requestAccess(req.user!.id, req.user!.role, contentId, ip, episodeId);
     ok(res, access);
   } catch (err: any) {
     if (err.message.includes('No video stream') || err.message.includes('not found')) {

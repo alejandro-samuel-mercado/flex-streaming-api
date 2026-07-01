@@ -114,7 +114,14 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
         const where: any = { deletedAt: null };
 
         if (role === 'END_USER') {
-            const endUserWhere: any = { deletedAt: null };
+            const showDeleted = req.query.showDeleted === 'true';
+            const endUserWhere: any = {};
+            
+            if (showDeleted) {
+                endUserWhere.deletedAt = { not: null };
+            } else {
+                endUserWhere.deletedAt = null;
+            }
             
             if (search) {
                 endUserWhere.OR = [
@@ -122,7 +129,6 @@ adminRouter.get('/users', (async (req: AuthenticatedRequest, res: Response, next
                     { managedBy: { username: { contains: search, mode: 'insensitive' } } },
                     { managedBy: { name: { contains: search, mode: 'insensitive' } } }
                 ];
-                delete endUserWhere.deletedAt; // Permitir encontrar eliminados al buscar
             }
 
             const [users, total] = await Promise.all([

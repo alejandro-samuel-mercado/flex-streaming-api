@@ -35,7 +35,19 @@ export class StreamingService {
      * Generates a signed streaming token for a content item.
      * Uses HMAC signed URLs instead of JWT for better security.
      */
-    static async requestAccess(_userId: string, contentId: string, ip: string, episodeId?: string) {
+    static async requestAccess(_userId: string, role: string, contentId: string, ip: string, episodeId?: string) {
+        if (role === 'END_USER' || role === 'CLIENT') {
+            const endUser = await prisma.endUserAccount.findUnique({ where: { id: _userId }, select: { deletedAt: true, status: true } });
+            if (!endUser || endUser.deletedAt || !['ACTIVE', 'DEMO'].includes(endUser.status)) {
+                throw new Error('Your account is no longer active. Playback is not allowed.');
+            }
+        } else {
+            const sysUser = await prisma.user.findUnique({ where: { id: _userId }, select: { deletedAt: true, isActive: true } });
+            if (!sysUser || sysUser.deletedAt || !sysUser.isActive) {
+                throw new Error('Your account is no longer active.');
+            }
+        }
+
         let videoFile;
 
         if (episodeId) {
