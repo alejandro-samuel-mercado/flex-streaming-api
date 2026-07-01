@@ -31,7 +31,7 @@ export const authenticate = async (req: AuthenticatedRequest, _res: Response, ne
 
     // Instant session invalidation check
     if (payload.role === 'END_USER' || (payload.role as string) === 'CLIENT') {
-       const user = await prisma.endUserAccount.findUnique({ where: { id: payload.sub }, select: { deletedAt: true, status: true } });
+       const user = await prisma.endUserAccount.findFirst({ where: { userId: payload.sub }, select: { deletedAt: true, status: true } });
        if (!user || user.deletedAt || !['ACTIVE', 'DEMO'].includes(user.status)) {
            next(new AppError(401, 'Account inactive or deleted', 'UNAUTHORIZED'));
            return;
@@ -84,7 +84,7 @@ export const optionalAuth = async (req: AuthenticatedRequest, _res: Response, ne
     // For optional auth, we don't strictly block if DB check fails, we just don't set req.user
     // But we still want to not authenticate deleted users.
     if (payload.role === 'END_USER' || (payload.role as string) === 'CLIENT') {
-       const user = await prisma.endUserAccount.findUnique({ where: { id: payload.sub }, select: { deletedAt: true, status: true } });
+       const user = await prisma.endUserAccount.findFirst({ where: { userId: payload.sub }, select: { deletedAt: true, status: true } });
        if (user && !user.deletedAt && ['ACTIVE', 'DEMO'].includes(user.status)) {
            req.user = { id: payload.sub, phone: payload.phone, role: payload.role };
        }
