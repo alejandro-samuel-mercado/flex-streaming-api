@@ -37,7 +37,7 @@ export class StreamingService {
      */
     static async requestAccess(_userId: string, role: string, contentId: string, ip: string, episodeId?: string) {
         if (role === 'END_USER' || role === 'CLIENT') {
-            const endUser = await prisma.endUserAccount.findUnique({ where: { id: _userId }, select: { deletedAt: true, status: true } });
+            const endUser = await prisma.endUserAccount.findFirst({ where: { userId: _userId }, select: { deletedAt: true, status: true } });
             if (!endUser || endUser.deletedAt || !['ACTIVE', 'DEMO'].includes(endUser.status)) {
                 throw new Error('Your account is no longer active. Playback is not allowed.');
             }
