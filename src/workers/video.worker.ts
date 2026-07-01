@@ -205,12 +205,12 @@ export const videoWorker = new Worker(
       });
 
       if (content) {
-        // If it's a movie or series/anime, it should be READY since video is done
+        // Auto-publish: mark as ACTIVE as soon as video is done
         await prisma.content.update({
           where: { id: realContentId },
-          data: { status: 'READY' }
+          data: { status: 'ACTIVE' }
         });
-        job.log(`Content ${realContentId} marked as READY (video processing complete)`);
+        job.log(`Content ${realContentId} marked as ACTIVE (auto-published on completion)`);
         
         // Log warnings about missing data but DON'T block the status
         const hasDescription = content.translations.some((t: any) => t.description && t.description.trim().length > 0);
@@ -314,7 +314,7 @@ export const videoWorker = new Worker(
         // 2. NEVER mark content as ERROR — reset to PENDING so it stays visible and retryable
         const errContentId = existsInitial?.contentId || contentId;
         await prisma.content.updateMany({
-          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING', 'ACTIVE', 'READY'] } },
           data: { status: 'PENDING' }
         });
 
@@ -382,7 +382,7 @@ videoWorker.on('failed', async (job, err) => {
       const errContentId = job.data.contentId;
       if (errContentId) {
         await prisma.content.updateMany({
-          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
+          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING', 'ACTIVE', 'READY'] } },
           data: { status: 'PENDING' }
         });
       }
