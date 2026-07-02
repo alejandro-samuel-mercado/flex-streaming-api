@@ -192,44 +192,57 @@ export const videoWorker = new Worker(
       }
 
       const jobType = job.data.type || 'MOVIE';
+      const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
 
-      // ─── Determine content status: READY if video is done ─────
+      // ─── Determine content status ──────────────────────────────────────────
       const realContentId = existsInitial.contentId || contentId;
       const content = await prisma.content.findUnique({
         where: { id: realContentId },
-        include: {
-          translations: true,
-          thumbnails: true,
-          genres: true
-        }
+        include: { translations: true, thumbnails: true, genres: true }
       });
 
       if (content) {
-        // Auto-publish: mark as ACTIVE as soon as video is done
-        await prisma.content.update({
-          where: { id: realContentId },
-          data: { status: 'ACTIVE' }
-        });
-        job.log(`Content ${realContentId} marked as ACTIVE (auto-published on completion)`);
-        
-        // Log warnings about missing data but DON'T block the status
+        const isSeriesType = SERIES_TYPES.includes(content.type);
+
+        if (!isSeriesType) {
+          // PELÍCULA / TRAILER: marcar ACTIVE inmediatamente al terminar
+          await prisma.content.update({ where: { id: realContentId }, data: { status: 'ACTIVE' } });
+          job.log(`Content ${realContentId} marked as ACTIVE`);
+        } else {
+          // SERIE: solo marcar ACTIVE cuando TODOS los episodios tengan VF COMPLETED
+          const allEpisodes = await prisma.episode.findMany({
+            where: { season: { contentId: realContentId } },
+            include: { videoFiles: { where: { status: 'COMPLETED' } } }
+          });
+          const totalEpisodes = allEpisodes.length;
+          const completedEpisodes = allEpisodes.filter(ep => ep.videoFiles.length > 0).length;
+
+          if (totalEpisodes > 0 && completedEpisodes === totalEpisodes) {
+            await prisma.content.update({ where: { id: realContentId }, data: { status: 'ACTIVE' } });
+            job.log(`Serie ${realContentId} marcada ACTIVE — todos los episodios completos (${completedEpisodes}/${totalEpisodes})`);
+          } else {
+            // Mantener en PROCESSING mientras haya episodios pendientes
+            await prisma.content.updateMany({
+              where: { id: realContentId, status: { notIn: ['ACTIVE'] } },
+              data: { status: 'PROCESSING' }
+            });
+            job.log(`Serie ${realContentId} en PROCESSING — ${completedEpisodes}/${totalEpisodes} episodios completos`);
+          }
+        }
+
+        // Log warnings sobre metadata faltante
         const hasDescription = content.translations.some((t: any) => t.description && t.description.trim().length > 0);
         const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
         const hasGenres = content.genres.length > 0;
-        
         if (!hasDescription || !hasPoster || !hasGenres) {
           const missing = [];
           if (!hasDescription) missing.push('sinopsis');
           if (!hasPoster) missing.push('poster');
           if (!hasGenres) missing.push('géneros');
-          job.log(`Warning: Content ${contentId} is READY but missing metadata: ${missing.join(', ')}`);
+          job.log(`Warning: Content ${realContentId} missing metadata: ${missing.join(', ')}`);
         }
       } else if (jobType === 'TRAILER') {
-          // If it's a trailer, update the trailerUrl field
-          await prisma.content.update({
-              where: { id: contentId },
-              data: { trailerUrl: masterPlaylistUrl }
-          });
+        await prisma.content.update({ where: { id: contentId }, data: { trailerUrl: masterPlaylistUrl } });
       }
 
       // Update the content poster only if we actually need to/generated it
@@ -242,12 +255,8 @@ export const videoWorker = new Worker(
             type: 'POSTER'
           }
         });
-
         if (existingPoster) {
-          await prisma.thumbnail.update({
-            where: { id: existingPoster.id },
-            data: { url: posterUrl }
-          });
+          await prisma.thumbnail.update({ where: { id: existingPoster.id }, data: { url: posterUrl } });
         } else {
           await prisma.thumbnail.create({
             data: {
@@ -262,14 +271,19 @@ export const videoWorker = new Worker(
         }
       }
 
-      // ─── Delete original file to save space ───────────────────────────────
+      // ─── Borrar original solo cuando sea seguro ───────────────────────────
+      // PELÍCULAS: borrar siempre al completar (ya está en HLS)
+      // SERIES: borrar solo si TODA la serie está completa (para permitir reintentos)
       try {
-        if (fs.existsSync(videoPath)) {
+        const isSafeToDelete = !content || !SERIES_TYPES.includes(content.type);
+        if (isSafeToDelete && fs.existsSync(videoPath)) {
           fs.unlinkSync(videoPath);
-          job.log(`Original video file deleted to save space: ${videoPath}`);
+          job.log(`Original eliminado: ${videoPath}`);
+        } else if (!isSafeToDelete) {
+          job.log(`Original conservado (serie incompleta): ${videoPath}`);
         }
       } catch (delErr: any) {
-        job.log(`Warning: Failed to delete original video file: ${delErr.message}`);
+        job.log(`Warning: no se pudo eliminar original: ${delErr.message}`);
       }
 
       await onProgress(100);
