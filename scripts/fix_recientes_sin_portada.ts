@@ -108,7 +108,7 @@ async function run() {
             try {
                 await prisma.content.update({
                     where: { id: c.id },
-                    data: { tmdbId: String(details.tmdbId), status: 'ACTIVE' }
+                    data: { tmdbId: String(details.tmdbId) }
                 });
                 console.log(`   🚀 ¡Reparado con éxito! Metadata y portadas agregadas.`);
                 arreglados++;
