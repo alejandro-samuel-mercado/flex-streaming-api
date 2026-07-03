@@ -22,7 +22,14 @@ async function run() {
     for (const c of contents) {
         const hasPoster = c.thumbnails.some(t => t.type === 'POSTER');
         let targetStatus = c.status;
-        const isSeries = ['SERIES', 'ANIME'].includes(c.type) || (c.type === 'DOCUMENTARY' && c.seasons.length > 0);
+        let targetType = c.type;
+        const isSeries = ['SERIES', 'ANIME', 'NOVELA', 'REALITY_SHOW'].includes(c.type) || c.seasons.length > 0;
+
+        // CRITICAL FIX: Frontend ONLY renders videos for type === 'MOVIE'.
+        // If a Documentary/Kids/Family film has no seasons, it MUST be a MOVIE.
+        if (!isSeries && targetType !== 'MOVIE') {
+            targetType = 'MOVIE';
+        }
 
         if (!hasPoster) {
             targetStatus = 'PENDING';
@@ -52,14 +59,14 @@ async function run() {
             }
         }
 
-        console.log(`[DEBUG] Slug: ${c.slug} | Type: ${c.type} | isSeries: ${isSeries} | currentStatus: ${c.status} | targetStatus: ${targetStatus} | completedEpisodes: ${isSeries ? c.seasons.reduce((acc, s) => acc + s.episodes.filter(e => e.videoFiles.some(v => v.status === 'COMPLETED')).length, 0) : 'N/A'} | hasCompletedVideo: ${!isSeries ? c.videoFiles.some(v => v.status === 'COMPLETED') : 'N/A'}`);
+        console.log(`[DEBUG] Slug: ${c.slug} | Type: ${c.type} -> ${targetType} | isSeries: ${isSeries} | currentStatus: ${c.status} | targetStatus: ${targetStatus} | completedEpisodes: ${isSeries ? c.seasons.reduce((acc, s) => acc + s.episodes.filter(e => e.videoFiles.some(v => v.status === 'COMPLETED')).length, 0) : 'N/A'} | hasCompletedVideo: ${!isSeries ? c.videoFiles.some(v => v.status === 'COMPLETED') : 'N/A'}`);
 
-        if (c.status !== targetStatus) {
+        if (c.status !== targetStatus || c.type !== targetType) {
             await prisma.content.update({
                 where: { id: c.id },
-                data: { status: targetStatus }
+                data: { status: targetStatus, type: targetType }
             });
-            console.log(`   🛠️  Corregido: "${c.slug}" pasó de ${c.status} a ${targetStatus}`);
+            console.log(`   🛠️  Corregido: "${c.slug}" | Estado: ${c.status}->${targetStatus} | Tipo: ${c.type}->${targetType}`);
             fixedCount++;
         }
     }
