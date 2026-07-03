@@ -20,11 +20,21 @@ async function run() {
         });
 
         const brokenContents = contents.filter(c => {
-            const hasPoster = c.thumbnails.some((t: any) => t.type === 'POSTER');
             const hasDescription = c.translations.some((t: any) => t.description && t.description.trim().length > 0);
             const hasTmdbId = c.tmdbId && c.tmdbId.trim().length > 0;
             
-            return !hasPoster || !hasDescription || !hasTmdbId;
+            let hasValidPoster = false;
+            const posterRecord = c.thumbnails.find((t: any) => t.type === 'POSTER');
+            
+            if (posterRecord) {
+                // Verificar si el archivo físico realmente existe en el disco
+                const expectedPath = path.join(env.MEDIA_PATH, 'thumbnails', c.id, 'poster.jpg');
+                if (fs.existsSync(expectedPath)) {
+                    hasValidPoster = true;
+                }
+            }
+            
+            return !hasValidPoster || !hasDescription || !hasTmdbId;
         });
 
         if (brokenContents.length === 0) {
@@ -68,7 +78,8 @@ async function run() {
                 });
             }
 
-            // 4. Descargar imágenes
+            // 4. Limpiar portadas viejas/rotas y descargar nuevas
+            await prisma.thumbnail.deleteMany({ where: { contentId: c.id } });
             const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', c.id);
             if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
 
