@@ -426,7 +426,7 @@ export class MediaScannerService {
       }
 
       const cleanName = this.cleanFileName(fileName);
-      const tmdbResult = await TMDBService.searchWithFallback(cleanName);
+      const tmdbResult = await TMDBService.searchWithFallback(cleanName, 'es-ES', 'movie');
       if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
         return await this._importWithTMDB(filePath, fileName, tmdbResult.bestMatch, 'MOVIE');
       } else {
@@ -567,7 +567,7 @@ export class MediaScannerService {
        // Mock the search result to force the TMDB flow to use this exact ID
        tmdbResult = { bestMatch: { id: explicitTmdbId }, confidence: 1 };
     } else {
-       tmdbResult = await TMDBService.searchWithFallback(cleanName);
+       tmdbResult = await TMDBService.searchWithFallback(cleanName, 'es-ES', 'movie');
     }
 
     let contentId: string;
@@ -694,7 +694,7 @@ export class MediaScannerService {
           }
         } else {
           const seriesName = this.cleanFileName(episode.seriesFolderName);
-          const tmdbResult = await TMDBService.searchWithFallback(seriesName).catch(() => ({ bestMatch: null, confidence: 0 }));
+          const tmdbResult = await TMDBService.searchWithFallback(seriesName, 'es-ES', 'tv').catch(() => ({ bestMatch: null, confidence: 0 }));
           if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
             const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
             const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');

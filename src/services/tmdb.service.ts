@@ -197,7 +197,8 @@ export class TMDBService {
    */
   static async searchWithFallback(
     query: string,
-    lang: string = 'es-ES'
+    lang: string = 'es-ES',
+    forceType?: 'movie' | 'tv' | 'multi'
   ): Promise<{ results: TMDBSearchResult[]; bestMatch: TMDBSearchResult | null; confidence: number }> {
     try {
       const variations = this.generateQueryVariations(query);
@@ -205,15 +206,21 @@ export class TMDBService {
 
       // Search each variation, collecting unique results
       for (const variation of variations) {
-        // Try multi search first
-        let results = await this.search(variation, 'multi', lang);
+        let results;
+        
+        if (forceType) {
+          results = await this.search(variation, forceType, lang);
+        } else {
+          // Try multi search first
+          results = await this.search(variation, 'multi', lang);
 
-        // If no results, try movie and tv separately
-        if (!results || results.length === 0) {
-          results = await this.search(variation, 'movie', lang);
-        }
-        if (!results || results.length === 0) {
-          results = await this.search(variation, 'tv', lang);
+          // If no results, try movie and tv separately
+          if (!results || results.length === 0) {
+            results = await this.search(variation, 'movie', lang);
+          }
+          if (!results || results.length === 0) {
+            results = await this.search(variation, 'tv', lang);
+          }
         }
 
         if (results && results.length > 0) {
