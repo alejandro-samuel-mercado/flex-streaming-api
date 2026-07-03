@@ -10,11 +10,13 @@ async function run() {
     console.log('🔍 Buscando contenidos recientes (últimas 6 horas) que están ACTIVOS o LISTOS pero NO tienen portada...');
     
     const timeLimit = new Date();
-    timeLimit.setHours(timeLimit.getHours() - 6);
+    // Busca todo lo creado en las últimas 2 horas (cubriendo la hora y media que mencionas)
+    timeLimit.setHours(timeLimit.getHours() - 2);
 
     try {
         const contents = await prisma.content.findMany({
             where: {
+                createdAt: { gte: timeLimit },
                 status: { in: ['ACTIVE', 'READY'] }
             },
             include: { 
