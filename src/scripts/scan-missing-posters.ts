@@ -16,19 +16,29 @@ async function run() {
     }
   });
 
-  // Filtramos los que realmente no tienen portada (ya sea en DB o en disco)
+  // Filtramos los que realmente no tienen portada válida
   const contents = allContents.filter(item => {
     const poster = item.thumbnails.find(t => t.type === 'POSTER');
     
-    // Si no está en DB o no tiene URL
-    if (!poster || !poster.url) return true;
+    // Si no está en DB o no tiene URL o la URL incluye "null" (error de importación viejo)
+    if (!poster || !poster.url || poster.url.includes('null')) return true;
 
-    // Si es una ruta local, verificamos que el archivo físico exista
+    // Si es una ruta local, verificamos que el archivo físico exista y no esté corrupto
     if (poster.url.startsWith('/media/')) {
       const fileName = poster.url.split('/').pop() || 'poster.jpg';
       const physicalPath = path.join(env.MEDIA_PATH, 'thumbnails', item.id, fileName);
       if (!fs.existsSync(physicalPath)) {
         return true; // Falta en el disco
+      }
+      
+      // Verificar si el archivo está vacío o corrupto (menos de 1KB)
+      try {
+        const stats = fs.statSync(physicalPath);
+        if (stats.size < 1024) {
+          return true; // Archivo muy pequeño (0 bytes o error HTML guardado como imagen)
+        }
+      } catch (e) {
+        return true;
       }
     }
 
