@@ -50,8 +50,7 @@ async function main() {
               type: 'MOVIE',
               status: 'COMPLETED',
               originalPath: 'RESTORED_BY_SCRIPT',
-              hlsPath: folderPath,
-              quality: '1080p'
+              hlsPath: folderPath
             }
           });
           await prisma.content.update({ where: { id: content.id }, data: { status: 'ACTIVE' } });
@@ -73,8 +72,7 @@ async function main() {
                   type: 'EPISODE',
                   status: 'COMPLETED',
                   originalPath: 'RESTORED_BY_SCRIPT',
-                  hlsPath: folderPath,
-                  quality: '1080p'
+                  hlsPath: folderPath
                 }
               });
               restoredEpisodes++;
