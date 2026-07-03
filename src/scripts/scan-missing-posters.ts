@@ -8,18 +8,31 @@ async function run() {
   console.log('🚀 Iniciando escaneo de portadas (POSTER) faltantes...');
   console.log('------------------------------------------------------------------------');
 
-  // Buscamos películas y series que NO tengan un thumbnail de tipo POSTER
-  const contents = await prisma.content.findMany({
-    where: {
-      thumbnails: {
-        none: {
-          type: 'POSTER'
-        }
-      }
-    },
+  // Buscamos TODOS los contenidos para verificar tanto en DB como en disco físico
+  const allContents = await prisma.content.findMany({
     include: {
+      thumbnails: true,
       translations: { where: { language: 'es' }, take: 1 }
     }
+  });
+
+  // Filtramos los que realmente no tienen portada (ya sea en DB o en disco)
+  const contents = allContents.filter(item => {
+    const poster = item.thumbnails.find(t => t.type === 'POSTER');
+    
+    // Si no está en DB o no tiene URL
+    if (!poster || !poster.url) return true;
+
+    // Si es una ruta local, verificamos que el archivo físico exista
+    if (poster.url.startsWith('/media/')) {
+      const fileName = poster.url.split('/').pop() || 'poster.jpg';
+      const physicalPath = path.join(env.MEDIA_PATH, 'thumbnails', item.id, fileName);
+      if (!fs.existsSync(physicalPath)) {
+        return true; // Falta en el disco
+      }
+    }
+
+    return false;
   });
 
   const total = contents.length;
