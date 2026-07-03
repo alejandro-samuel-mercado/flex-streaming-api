@@ -14,8 +14,8 @@ export const videoWorker = new Worker(
   QUEUE_NAME,
   async (job: Job) => {
     const { videoFileId, contentId, videoPath } = job.data;
-    
-    const outputFolder = path.join(env.MEDIA_PATH, 'hls', contentId);
+    // FIX: Usamos videoFileId en lugar de contentId para HLS para evitar que los episodios de una misma serie se sobreescriban entre sí
+    const outputFolder = path.join(env.MEDIA_PATH, 'hls', videoFileId);
 
     const onProgress = async (percent: number) => {
       try {
