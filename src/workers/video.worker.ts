@@ -195,7 +195,17 @@ export const videoWorker = new Worker(
       const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
 
       // ─── Determine content status ──────────────────────────────────────────
-      const realContentId = existsInitial.contentId || contentId;
+      // For EPISODE type: resolve real series Content ID via episode→season chain
+      let realContentId: string | null = existsInitial.contentId;
+      if (!realContentId && existsInitial.episodeId) {
+        const epRecord = await prisma.episode.findUnique({
+          where: { id: existsInitial.episodeId },
+          include: { season: { select: { contentId: true } } }
+        });
+        realContentId = epRecord?.season?.contentId ?? null;
+      }
+      if (!realContentId) realContentId = contentId; // legacy fallback
+
       const content = await prisma.content.findUnique({
         where: { id: realContentId },
         include: { translations: true, thumbnails: true, genres: true }
@@ -209,7 +219,7 @@ export const videoWorker = new Worker(
           await prisma.content.update({ where: { id: realContentId }, data: { status: 'ACTIVE' } });
           job.log(`Content ${realContentId} marked as ACTIVE`);
         } else {
-          // SERIE: solo marcar ACTIVE cuando TODOS los episodios tengan VF COMPLETED
+          // SERIE: marcar ACTIVE en cuanto haya al menos 1 episodio completo
           const allEpisodes = await prisma.episode.findMany({
             where: { season: { contentId: realContentId } },
             include: { videoFiles: { where: { status: 'COMPLETED' } } }
@@ -217,16 +227,15 @@ export const videoWorker = new Worker(
           const totalEpisodes = allEpisodes.length;
           const completedEpisodes = allEpisodes.filter(ep => ep.videoFiles.length > 0).length;
 
-          if (totalEpisodes > 0 && completedEpisodes === totalEpisodes) {
+          if (completedEpisodes > 0) {
             await prisma.content.update({ where: { id: realContentId }, data: { status: 'ACTIVE' } });
-            job.log(`Serie ${realContentId} marcada ACTIVE — todos los episodios completos (${completedEpisodes}/${totalEpisodes})`);
+            job.log(`Serie ${realContentId} ACTIVE — ${completedEpisodes}/${totalEpisodes} eps completos`);
           } else {
-            // Mantener en PROCESSING mientras haya episodios pendientes
             await prisma.content.updateMany({
               where: { id: realContentId, status: { notIn: ['ACTIVE'] } },
               data: { status: 'PROCESSING' }
             });
-            job.log(`Serie ${realContentId} en PROCESSING — ${completedEpisodes}/${totalEpisodes} episodios completos`);
+            job.log(`Serie ${realContentId} PROCESSING — ${completedEpisodes}/${totalEpisodes} eps completos`);
           }
         }
 
@@ -325,12 +334,37 @@ export const videoWorker = new Worker(
           });
         }
 
-        // 2. NEVER mark content as ERROR — reset to PENDING so it stays visible and retryable
-        const errContentId = existsInitial?.contentId || contentId;
-        await prisma.content.updateMany({
-          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING', 'ACTIVE', 'READY'] } },
-          data: { status: 'PENDING' }
-        });
+        // 2. Resolver el contentId real (para episodios, navegar episode→season→content)
+        let errContentId: string | null = existsInitial?.contentId ?? null;
+        if (!errContentId && existsInitial?.episodeId) {
+          const epRecord = await prisma.episode.findUnique({
+            where: { id: existsInitial.episodeId },
+            include: { season: { select: { contentId: true } } }
+          });
+          errContentId = epRecord?.season?.contentId ?? null;
+        }
+        if (!errContentId) errContentId = contentId;
+
+        if (errContentId) {
+          // Verificar si aún quedan episodios con video COMPLETED
+          const completedLeft = await prisma.videoFile.count({
+            where: {
+              status: 'COMPLETED',
+              OR: [
+                { contentId: errContentId },
+                { episode: { season: { contentId: errContentId } } }
+              ]
+            }
+          });
+          if (completedLeft === 0) {
+            // No hay ningún video funcionando → bajar a PENDING
+            await prisma.content.updateMany({
+              where: { id: errContentId },
+              data: { status: 'PENDING' }
+            });
+          }
+          // Si quedan videos OK, dejar el status como está (no bajar una serie entera por 1 episodio fallido)
+        }
 
       } catch (dbErr: any) {
         job.log(`Warning: could not update status after failure: ${dbErr.message}`);
@@ -392,13 +426,38 @@ videoWorker.on('failed', async (job, err) => {
         console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (transient error).`);
       }
 
-      // Reset content from ERROR/PROCESSING back to PENDING — never permanently block content
-      const errContentId = job.data.contentId;
+      // Resolver el contentId real para el handler externo (episode→season→content)
+      let errContentId: string | null = null;
+      try {
+        const vf = await prisma.videoFile.findUnique({ where: { id: job.data.videoFileId } });
+        if (vf?.contentId) {
+          errContentId = vf.contentId;
+        } else if (vf?.episodeId) {
+          const ep = await prisma.episode.findUnique({
+            where: { id: vf.episodeId },
+            include: { season: { select: { contentId: true } } }
+          });
+          errContentId = ep?.season?.contentId ?? null;
+        }
+      } catch (_) {}
+
       if (errContentId) {
-        await prisma.content.updateMany({
-          where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING', 'ACTIVE', 'READY'] } },
-          data: { status: 'PENDING' }
+        // Solo bajar a PENDING si no quedan videos funcionando
+        const completedLeft = await prisma.videoFile.count({
+          where: {
+            status: 'COMPLETED',
+            OR: [
+              { contentId: errContentId },
+              { episode: { season: { contentId: errContentId } } }
+            ]
+          }
         });
+        if (completedLeft === 0) {
+          await prisma.content.updateMany({
+            where: { id: errContentId },
+            data: { status: 'PENDING' }
+          });
+        }
       }
     } catch (dbErr: any) {
       console.error(`[VideoWorker] Failed to update database status on job failure: ${dbErr.message}`);
