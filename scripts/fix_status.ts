@@ -52,6 +52,8 @@ async function run() {
             }
         }
 
+        console.log(`[DEBUG] Slug: ${c.slug} | Type: ${c.type} | isSeries: ${isSeries} | currentStatus: ${c.status} | targetStatus: ${targetStatus} | completedEpisodes: ${isSeries ? c.seasons.reduce((acc, s) => acc + s.episodes.filter(e => e.videoFiles.some(v => v.status === 'COMPLETED')).length, 0) : 'N/A'} | hasCompletedVideo: ${!isSeries ? c.videoFiles.some(v => v.status === 'COMPLETED') : 'N/A'}`);
+
         if (c.status !== targetStatus) {
             await prisma.content.update({
                 where: { id: c.id },
