@@ -13,9 +13,6 @@ async function run() {
     
     try {
         const contents = await prisma.content.findMany({
-            where: {
-                status: { in: ['ACTIVE', 'READY'] }
-            },
             include: { 
                 translations: true,
                 thumbnails: true
@@ -24,7 +21,10 @@ async function run() {
 
         const brokenContents = contents.filter(c => {
             const hasPoster = c.thumbnails.some((t: any) => t.type === 'POSTER');
-            return !hasPoster;
+            const hasDescription = c.translations.some((t: any) => t.description && t.description.trim().length > 0);
+            const hasTmdbId = c.tmdbId && c.tmdbId.trim().length > 0;
+            
+            return !hasPoster || !hasDescription || !hasTmdbId;
         });
 
         if (brokenContents.length === 0) {
@@ -91,10 +91,10 @@ async function run() {
                 } catch (e) {}
             }
 
-            // Actualizar tmdbId
+            // Actualizar tmdbId y activar
             await prisma.content.update({
                 where: { id: c.id },
-                data: { tmdbId: String(details.tmdbId) }
+                data: { tmdbId: String(details.tmdbId), status: 'ACTIVE' }
             });
 
             console.log(`   🚀 ¡Reparado con éxito! Metadata y portadas agregadas.`);
