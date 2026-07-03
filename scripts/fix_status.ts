@@ -22,7 +22,7 @@ async function run() {
     for (const c of contents) {
         const hasPoster = c.thumbnails.some(t => t.type === 'POSTER');
         let targetStatus = c.status;
-        const isSeries = ['SERIES', 'ANIME'].includes(c.type);
+        const isSeries = ['SERIES', 'ANIME'].includes(c.type) || (c.type === 'DOCUMENTARY' && c.seasons.length > 0);
 
         if (!hasPoster) {
             targetStatus = 'PENDING';
