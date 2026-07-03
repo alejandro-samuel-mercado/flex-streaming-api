@@ -13,6 +13,8 @@ async function run() {
     
     try {
         const contents = await prisma.content.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 200, // SOLO LOS ULTIMOS 200 SUBIDOS
             include: { 
                 translations: true,
                 thumbnails: true
