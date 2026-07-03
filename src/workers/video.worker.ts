@@ -218,7 +218,7 @@ export const videoWorker = new Worker(
 
         if (content) {
           const isSeriesType = SERIES_TYPES.includes(content.type);
-          const hasPoster = content.thumbnails.length > 0;
+          const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
           const targetStatus = hasPoster ? 'ACTIVE' : 'PENDING';
 
           if (!isSeriesType) {
@@ -251,7 +251,7 @@ export const videoWorker = new Worker(
 
           // Log warnings sobre metadata faltante
           const hasDescription = content.translations.some((t: any) => t.description && t.description.trim().length > 0);
-          const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
+          // hasPoster ya está declarado arriba
           const hasGenres = content.genres.length > 0;
           if (!hasDescription || !hasPoster || !hasGenres) {
             const missing = [];
