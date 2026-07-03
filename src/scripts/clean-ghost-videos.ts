@@ -38,7 +38,7 @@ async function main() {
     // Si el archivo maestro NO existe en el disco duro, es un video fantasma
     if (!fs.existsSync(masterPath) && !fs.existsSync(streamPath)) {
       ghostCount++;
-      const title = video.episode ? `Episodio ${video.episode.episodeNumber}` : (video.content?.slug || 'Película');
+      const title = video.episode ? `Episodio ${video.episode.number}` : (video.content?.slug || 'Película');
       console.log(`❌ [FANTASMA DETECTADO] ID: ${video.id} | ${title} | Ruta rota: ${resolvedRoot}`);
       
       // Eliminar el registro falso de la base de datos para que el Panel te permita resubirlo
