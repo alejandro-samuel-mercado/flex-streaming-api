@@ -73,7 +73,8 @@ contentRouter.get('/:id', optionalAuth as RequestHandler, (async (req, res, next
     console.log(`[DEBUG] User Role: "${(req as any).user?.role || 'GUEST'}"`);
 
     // 2. Fetch from DB
-    const data = await ContentService.getContentById(req.params.id, lang);
+    const isAdmin = (req as any).user?.role === 'ADMIN';
+    const data = await ContentService.getContentById(req.params.id, lang, isAdmin);
     if (!data) {
       console.log(`[DEBUG] Content NOT FOUND in DB for id: "${req.params.id}"`);
       res.status(404).json({ success: false, error: 'Content not found' });

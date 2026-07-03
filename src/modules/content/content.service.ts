@@ -207,7 +207,7 @@ export class ContentService {
         return { data: dataWithCounts, total, page, limit };
     }
 
-    static async getContentById(idOrSlug: string, lang: string = 'es') {
+    static async getContentById(idOrSlug: string, lang: string = 'es', isAdmin: boolean = false) {
         return prisma.content.findFirst({
             where: {
                 OR: [
@@ -232,6 +232,9 @@ export class ContentService {
                     include: {
                         translations: true,
                         episodes: {
+                            where: isAdmin ? undefined : {
+                                videoFiles: { some: { status: 'COMPLETED' } }
+                            },
                             include: {
                                 translations: true,
                                 thumbnails: true,
