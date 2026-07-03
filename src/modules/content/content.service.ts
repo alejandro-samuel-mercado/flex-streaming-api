@@ -62,7 +62,20 @@ export class ContentService {
             { deletedAt: null }
         ];
 
-        if (status) {
+        if (status === 'WITH_ERRORS') {
+            // Filtro especial: series con al menos un episodio fallido
+            conditions.push({
+                seasons: {
+                    some: {
+                        episodes: {
+                            some: {
+                                videoFiles: { some: { status: 'FAILED' } }
+                            }
+                        }
+                    }
+                }
+            });
+        } else if (status) {
             // Admin pasando un status explícito: respetar lo que pide
             conditions.push({ status: status as ContentStatus });
         } else if (isPublic) {
@@ -168,16 +181,25 @@ export class ContentService {
             prisma.content.count({ where }),
         ]);
 
-        // Attach episode count for series to show in the admin list
+        // Attach episode/failed counts for all series types
+        const SERIES_TYPES_LIST = ['SERIES','ANIME','ANIMATION','NOVELA','REALITY_SHOW','DOCUMENTARY','KIDS','FAMILY'];
         const dataWithCounts = await Promise.all(data.map(async (item) => {
-            if (item.type === 'SERIES' || item.type === 'ANIME') {
-                const count = await prisma.episode.count({
-                    where: { 
-                        season: { contentId: item.id },
-                        videoFiles: { some: { status: 'COMPLETED' } }
-                    }
-                });
-                return { ...item, episodeCount: count };
+            if (SERIES_TYPES_LIST.includes(item.type)) {
+                const [episodeCount, failedCount] = await Promise.all([
+                    prisma.episode.count({
+                        where: {
+                            season: { contentId: item.id },
+                            videoFiles: { some: { status: 'COMPLETED' } }
+                        }
+                    }),
+                    prisma.videoFile.count({
+                        where: {
+                            status: 'FAILED',
+                            episode: { season: { contentId: item.id } }
+                        }
+                    })
+                ]);
+                return { ...item, episodeCount, failedCount };
             }
             return item;
         }));
