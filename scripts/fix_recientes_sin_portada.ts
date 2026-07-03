@@ -9,15 +9,11 @@ dotenv.config();
 const prisma = new PrismaClient();
 
 async function run() {
-    console.log('🔍 Buscando contenidos de la última hora y media sin portada para REPARARLOS con TMDB...');
+    console.log('🔍 Buscando TODOS los contenidos sin portada para REPARARLOS con TMDB...');
     
-    const timeLimit = new Date();
-    timeLimit.setMinutes(timeLimit.getMinutes() - 90); // Hora y media
-
     try {
         const contents = await prisma.content.findMany({
             where: {
-                createdAt: { gte: timeLimit },
                 status: { in: ['ACTIVE', 'READY'] }
             },
             include: { 
