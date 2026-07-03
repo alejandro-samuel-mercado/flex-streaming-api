@@ -92,13 +92,21 @@ async function run() {
             }
 
             // Actualizar tmdbId y activar
-            await prisma.content.update({
-                where: { id: c.id },
-                data: { tmdbId: String(details.tmdbId), status: 'ACTIVE' }
-            });
-
-            console.log(`   🚀 ¡Reparado con éxito! Metadata y portadas agregadas.`);
-            arreglados++;
+            try {
+                await prisma.content.update({
+                    where: { id: c.id },
+                    data: { tmdbId: String(details.tmdbId), status: 'ACTIVE' }
+                });
+                console.log(`   🚀 ¡Reparado con éxito! Metadata y portadas agregadas.`);
+                arreglados++;
+            } catch (updateErr: any) {
+                if (updateErr.code === 'P2002') {
+                    console.log(`   ⚠️ Ya existe otro contenido con este TMDB ID. Pasando a PENDIENTE para revisión manual.`);
+                    await prisma.content.update({ where: { id: c.id }, data: { status: 'PENDING' } });
+                } else {
+                    console.log(`   ❌ Error guardando los cambios: ${updateErr.message}`);
+                }
+            }
         }
 
         console.log(`\n🎉 Listo! ${arreglados} contenidos fueron reparados y poblados con TMDB.`);
