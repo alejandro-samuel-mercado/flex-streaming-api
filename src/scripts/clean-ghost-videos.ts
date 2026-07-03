@@ -17,7 +17,7 @@ async function main() {
   console.log(`📌 Se encontraron ${videoFiles.length} videos marcados como COMPLETADOS en la base de datos.`);
 
   let ghostCount = 0;
-  const affectedSeriesIds = new Set<string>();
+  const affectedContentIds = new Set<string>();
 
   for (const video of videoFiles) {
     if (!video.hlsPath) continue;
@@ -47,7 +47,7 @@ async function main() {
       });
 
       if (video.contentId) {
-        affectedSeriesIds.add(video.contentId);
+        affectedContentIds.add(video.contentId);
       }
     }
   }
@@ -55,31 +55,39 @@ async function main() {
   console.log('\n--------------------------------------------------');
   console.log(`🧹 Limpieza completada. Se eliminaron ${ghostCount} videos fantasma.`);
 
-  // Actualizar el estado de las series afectadas (si se quedaron sin episodios, pasarlas a PENDING)
-  if (affectedSeriesIds.size > 0) {
-    console.log(`🔄 Recalculando estado de ${affectedSeriesIds.size} series afectadas...`);
-    for (const contentId of Array.from(affectedSeriesIds)) {
-      const completedEpisodes = await prisma.episode.count({
-        where: {
-          season: { contentId },
-          videoFiles: { some: { status: 'COMPLETED' } }
-        }
-      });
-
+  // Actualizar el estado de los contenidos afectados (Películas o Series a PENDING)
+  if (affectedContentIds.size > 0) {
+    console.log(`🔄 Recalculando estado de ${affectedContentIds.size} contenidos (Series/Películas) afectados...`);
+    for (const contentId of Array.from(affectedContentIds)) {
       const content = await prisma.content.findUnique({
         where: { id: contentId },
         include: { thumbnails: true }
       });
 
       if (content) {
+        let validVideosCount = 0;
+        
+        if (content.type === 'MOVIE') {
+          validVideosCount = await prisma.videoFile.count({
+            where: { contentId, status: 'COMPLETED' }
+          });
+        } else {
+          validVideosCount = await prisma.episode.count({
+            where: {
+              season: { contentId },
+              videoFiles: { some: { status: 'COMPLETED' } }
+            }
+          });
+        }
+
         const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
-        const targetStatus = (completedEpisodes > 0 && hasPoster) ? 'ACTIVE' : 'PENDING';
+        const targetStatus = (validVideosCount > 0 && hasPoster) ? 'ACTIVE' : 'PENDING';
         
         await prisma.content.update({
           where: { id: contentId },
           data: { status: targetStatus }
         });
-        console.log(`   - Serie ${content.slug} actualizada a: ${targetStatus} (${completedEpisodes} eps válidos).`);
+        console.log(`   - ${content.type === 'MOVIE' ? 'Película' : 'Serie'} "${content.slug}" actualizada a: ${targetStatus} (${validVideosCount} videos válidos).`);
       }
     }
   }
