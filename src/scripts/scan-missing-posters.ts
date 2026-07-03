@@ -23,6 +23,11 @@ async function run() {
     // Si no está en DB o no tiene URL o la URL incluye "null" (error de importación viejo)
     if (!poster || !poster.url || poster.url.includes('null')) return true;
 
+    // Si es una ruta externa (http) y no se guardó localmente, obligar a descargarla
+    if (poster.url.startsWith('http')) {
+      return true;
+    }
+
     // Si es una ruta local, verificamos que el archivo físico exista y no esté corrupto
     if (poster.url.startsWith('/media/')) {
       const fileName = poster.url.split('/').pop() || 'poster.jpg';
@@ -46,10 +51,10 @@ async function run() {
   });
 
   const total = contents.length;
-  console.log(`📌 Encontrados ${total} contenidos sin portada (POSTER).`);
+  console.log(`📌 Encontrados ${total} contenidos sin portada (POSTER) válida o que requieren descarga local.`);
 
   if (total === 0) {
-    console.log('✅ Todos los contenidos tienen portada. No hay nada que hacer.');
+    console.log('✅ Todos los contenidos tienen portada válida. No hay nada que hacer.');
     return;
   }
 
@@ -86,8 +91,19 @@ async function run() {
         }
       }
 
-      // Obtenemos los detalles de TMDB
-      const details = await TMDBService.getFullDetails(tmdbId, mediaType);
+      // Obtenemos los detalles de TMDB, con fallback si el tipo está invertido (Película registrada como Serie o viceversa)
+      let details;
+      try {
+        details = await TMDBService.getFullDetails(tmdbId, mediaType);
+      } catch (err: any) {
+        if (err?.response?.status === 404) {
+          console.log(`   🔄 TMDB devolvió 404 para ${mediaType}, intentando con el formato alternativo...`);
+          const altType = mediaType === 'movie' ? 'tv' : 'movie';
+          details = await TMDBService.getFullDetails(tmdbId, altType);
+        } else {
+          throw err; // Otro error diferente a 404
+        }
+      }
 
       const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', item.id);
       if (!fs.existsSync(mediaFolder)) {
