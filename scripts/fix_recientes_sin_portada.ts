@@ -1,17 +1,18 @@
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
+import { TMDBService } from '../src/services/tmdb.service';
+import fs from 'fs';
+import path from 'path';
+import { env } from '../src/shared/config/env';
 
-// Cargar variables de entorno desde el archivo .env
 dotenv.config();
-
 const prisma = new PrismaClient();
 
 async function run() {
-    console.log('🔍 Buscando contenidos recientes (últimas 6 horas) que están ACTIVOS o LISTOS pero NO tienen portada...');
+    console.log('🔍 Buscando contenidos de la última hora y media sin portada para REPARARLOS con TMDB...');
     
     const timeLimit = new Date();
-    // Busca todo lo creado en las últimas 2 horas (cubriendo la hora y media que mencionas)
-    timeLimit.setHours(timeLimit.getHours() - 2);
+    timeLimit.setMinutes(timeLimit.getMinutes() - 90); // Hora y media
 
     try {
         const contents = await prisma.content.findMany({
@@ -27,29 +28,84 @@ async function run() {
 
         const brokenContents = contents.filter(c => {
             const hasPoster = c.thumbnails.some((t: any) => t.type === 'POSTER');
-            return !hasPoster; // Si no tiene poster, lo marcamos como roto
+            return !hasPoster;
         });
 
         if (brokenContents.length === 0) {
-            console.log('✅ Ningún contenido activo o listo tiene problemas con la portada.');
+            console.log('✅ Ningún contenido reciente necesita arreglo.');
             process.exit(0);
         }
 
-        console.log(`⚠️ Se encontraron ${brokenContents.length} contenidos publicados sin metadata. Revirtiendo a PENDIENTE...`);
+        console.log(`⚠️ Se encontraron ${brokenContents.length} contenidos sin metadata. Descargando datos de TMDB...`);
 
+        const baseUrl = env.BACKEND_URL.replace(/\/$/, '');
         let arreglados = 0;
+
         for (const c of brokenContents) {
             const title = c.translations[0]?.title || c.slug;
-            console.log(`   - Revirtiendo: "${title}" (ID: ${c.id})`);
+            console.log(`\n⏳ Reparando: "${title}" (ID: ${c.id}, Tipo: ${c.type})`);
             
+            // 1. Buscar en TMDB
+            const forceType = (c.type === 'SERIES' || c.type === 'ANIME' || c.type === 'DOCUMENTARY') ? 'tv' : 'movie';
+            const searchTitle = title.replace(/-/g, ' '); // Limpiar slug si no hay titulo
+            
+            const tmdbResult = await TMDBService.searchWithFallback(searchTitle, 'es-ES', forceType).catch(() => ({ bestMatch: null }));
+            
+            if (!tmdbResult.bestMatch) {
+                console.log(`   ❌ No se encontró coincidencia en TMDB para "${searchTitle}". Pasando a PENDIENTE.`);
+                await prisma.content.update({ where: { id: c.id }, data: { status: 'PENDING' } });
+                continue;
+            }
+
+            // 2. Obtener detalles completos
+            const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, forceType);
+            
+            // 3. Actualizar la sinopsis
+            if (c.translations.length > 0) {
+                await prisma.contentTranslation.update({
+                    where: { contentId_language: { contentId: c.id, language: 'es' } },
+                    data: { title: details.title, description: details.synopsis }
+                });
+            } else {
+                await prisma.contentTranslation.create({
+                    data: { contentId: c.id, language: 'es', title: details.title, description: details.synopsis }
+                });
+            }
+
+            // 4. Descargar imágenes
+            const mediaFolder = path.join(env.MEDIA_PATH, 'thumbnails', c.id);
+            if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
+
+            if (details.posterPath) {
+                try {
+                    await TMDBService.downloadImage(details.posterPath, path.join(mediaFolder, 'poster.jpg'));
+                    await prisma.thumbnail.create({ 
+                        data: { contentId: c.id, type: 'POSTER', url: `${baseUrl}/media/thumbnails/${c.id}/poster.jpg`, width: 500, height: 750 } 
+                    });
+                    console.log('   ✅ Portada descargada.');
+                } catch (e) { console.log('   ❌ Error bajando portada.'); }
+            }
+
+            if (details.backdropPath) {
+                try {
+                    await TMDBService.downloadImage(details.backdropPath, path.join(mediaFolder, 'backdrop.jpg'));
+                    await prisma.thumbnail.create({ 
+                        data: { contentId: c.id, type: 'BACKDROP', url: `${baseUrl}/media/thumbnails/${c.id}/backdrop.jpg`, width: 1920, height: 1080 } 
+                    });
+                } catch (e) {}
+            }
+
+            // Actualizar tmdbId
             await prisma.content.update({
                 where: { id: c.id },
-                data: { status: 'PENDING' }
+                data: { tmdbId: String(details.tmdbId) }
             });
+
+            console.log(`   🚀 ¡Reparado con éxito! Metadata y portadas agregadas.`);
             arreglados++;
         }
 
-        console.log(`\n🎉 Listo! ${arreglados} contenidos fueron devueltos al estado PENDIENTE.`);
+        console.log(`\n🎉 Listo! ${arreglados} contenidos fueron reparados y poblados con TMDB.`);
         process.exit(0);
     } catch (err) {
         console.error('❌ Error ejecutando el script:', err);
