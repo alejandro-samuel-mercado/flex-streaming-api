@@ -15,22 +15,28 @@ async function run() {
     try {
         const contents = await prisma.content.findMany({
             where: {
-                createdAt: { gte: timeLimit },
-                status: { in: ['ACTIVE', 'READY'] },
-                thumbnails: { none: {} } // No tiene portadas
+                status: { in: ['ACTIVE', 'READY'] }
             },
-            include: { translations: true }
+            include: { 
+                translations: true,
+                thumbnails: true
+            }
         });
 
-        if (contents.length === 0) {
-            console.log('✅ No se encontraron contenidos con este problema.');
+        const brokenContents = contents.filter(c => {
+            const hasPoster = c.thumbnails.some((t: any) => t.type === 'POSTER');
+            return !hasPoster; // Si no tiene poster, lo marcamos como roto
+        });
+
+        if (brokenContents.length === 0) {
+            console.log('✅ Ningún contenido activo o listo tiene problemas con la portada.');
             process.exit(0);
         }
 
-        console.log(`⚠️ Se encontraron ${contents.length} contenidos publicados por error sin metadata. Revirtiendo a PENDIENTE...`);
+        console.log(`⚠️ Se encontraron ${brokenContents.length} contenidos publicados sin metadata. Revirtiendo a PENDIENTE...`);
 
         let arreglados = 0;
-        for (const c of contents) {
+        for (const c of brokenContents) {
             const title = c.translations[0]?.title || c.slug;
             console.log(`   - Revirtiendo: "${title}" (ID: ${c.id})`);
             
