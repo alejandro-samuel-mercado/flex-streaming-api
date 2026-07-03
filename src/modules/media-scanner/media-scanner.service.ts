@@ -592,7 +592,7 @@ export class MediaScannerService {
              const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
              const content = await prisma.content.create({
                data: {
-                 type: 'MOVIE', status: 'READY', slug,
+                 type: 'MOVIE', status: 'PENDING', slug,
                  translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
                }
              });
@@ -605,7 +605,7 @@ export class MediaScannerService {
             const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
             const content = await prisma.content.create({
               data: {
-                type: 'MOVIE', status: 'READY', slug, tmdbId: String(details.tmdbId),
+                type: 'MOVIE', status: 'PENDING', slug, tmdbId: String(details.tmdbId),
                 translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] }
               }
             });
@@ -624,7 +624,7 @@ export class MediaScannerService {
       const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
       const content = await prisma.content.create({
         data: {
-          type: 'MOVIE', status: 'READY', slug,
+          type: 'MOVIE', status: 'PENDING', slug,
           translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
         }
       });

@@ -116,7 +116,7 @@ export class FFmpegService {
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
-                        '-master_pl_name', path.join(resolvedOutputFolder, 'master.m3u8'),
+                        '-master_pl_name', 'master.m3u8',
                         '-max_muxing_queue_size', '1024',
                     ])
                     .outputOption('-var_stream_map', varStreamMap)
@@ -215,7 +215,7 @@ export class FFmpegService {
                         '-hls_flags', 'independent_segments',
                         '-hls_segment_type', 'mpegts',
                         '-hls_segment_filename', path.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
-                        '-master_pl_name', path.join(resolvedOutputFolder, 'master.m3u8'),
+                        '-master_pl_name', 'master.m3u8',
                         '-max_muxing_queue_size', '1024',
                     ])
                     .outputOption('-var_stream_map', varStreamMap)

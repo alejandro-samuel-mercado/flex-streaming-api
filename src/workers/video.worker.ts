@@ -218,11 +218,13 @@ export const videoWorker = new Worker(
 
         if (content) {
           const isSeriesType = SERIES_TYPES.includes(content.type);
+          const hasPoster = content.thumbnails.length > 0;
+          const targetStatus = hasPoster ? 'ACTIVE' : 'PENDING';
 
           if (!isSeriesType) {
-            // PELÍCULA / TRAILER: marcar ACTIVE inmediatamente al terminar
-            await prisma.content.update({ where: { id: rcId }, data: { status: 'ACTIVE' } });
-            job.log(`Content ${rcId} marked as ACTIVE`);
+            // PELÍCULA / TRAILER
+            await prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
+            job.log(`Content ${rcId} marked as ${targetStatus} (hasPoster: ${hasPoster})`);
           } else {
             // SERIE: contar episodios con video COMPLETED
             const completedEpisodes = await prisma.episode.count({
@@ -236,8 +238,8 @@ export const videoWorker = new Worker(
             });
 
             if (completedEpisodes > 0) {
-              await prisma.content.update({ where: { id: rcId }, data: { status: 'ACTIVE' } });
-              job.log(`Serie ${rcId} ACTIVE — ${completedEpisodes}/${totalEpisodes} eps completos`);
+              await prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
+              job.log(`Serie ${rcId} ${targetStatus} — ${completedEpisodes}/${totalEpisodes} eps completos (hasPoster: ${hasPoster})`);
             } else {
               await prisma.content.updateMany({
                 where: { id: rcId, status: { notIn: ['ACTIVE'] } },
