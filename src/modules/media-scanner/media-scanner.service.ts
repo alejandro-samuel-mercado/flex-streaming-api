@@ -745,6 +745,15 @@ export class MediaScannerService {
       episode.episodeNumber
     );
 
+    // Skip if this episode already has a COMPLETED video — protect finished content
+    const existingCompletedVF = await prisma.videoFile.findFirst({
+      where: { episodeId: episodeRecord.id, status: 'COMPLETED' }
+    });
+    if (existingCompletedVF) {
+      console.log(`⏭️  [MediaScanner] Skipping S${episode.season}E${episode.episodeNumber} of "${episode.seriesFolderName}" — already has a COMPLETED video.`);
+      return { filePath, fileName, success: true, contentId, tmdbMatch };
+    }
+
     // Create VideoFile as QUEUED and enqueue for FFmpeg
     const videoFile = await prisma.videoFile.create({
       data: {
@@ -778,9 +787,24 @@ export class MediaScannerService {
     const creationPromise = (async () => {
         // 1. Double check existence by TMDB ID (safety)
         const existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
-        if (existing) return existing.id;
+        if (existing) {
+          // If already ACTIVE, never overwrite metadata — protect manual edits
+          if (existing.status === 'ACTIVE') return existing.id;
+          return existing.id;
+        }
 
-        // 2. Double check existence by title and type
+        // 2. Check by imdbId to avoid unique constraint crash
+        if (details.imdbId) {
+            const existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId } });
+            if (existingByImdb) {
+                // Link tmdbId if missing, but don't overwrite metadata if ACTIVE
+                if (!existingByImdb.tmdbId)
+                    await prisma.content.update({ where: { id: existingByImdb.id }, data: { tmdbId: String(details.tmdbId) } });
+                return existingByImdb.id;
+            }
+        }
+
+        // 3. Double check existence by title and type
         const existingByTitle = await prisma.content.findFirst({
             where: {
                 translations: { some: { title: { equals: details.title, mode: 'insensitive' } } },
