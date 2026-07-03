@@ -63,13 +63,16 @@ export class ContentService {
         ];
 
         if (status === 'WITH_ERRORS') {
-            // Filtro especial: series con al menos un episodio fallido
+            // Filtro especial: series con al menos un episodio fallido o sin videos
             conditions.push({
                 seasons: {
                     some: {
                         episodes: {
                             some: {
-                                videoFiles: { some: { status: 'FAILED' } }
+                                OR: [
+                                    { videoFiles: { some: { status: 'FAILED' } } },
+                                    { videoFiles: { none: {} } }
+                                ]
                             }
                         }
                     }
@@ -185,7 +188,7 @@ export class ContentService {
         const SERIES_TYPES_LIST = ['SERIES','ANIME','ANIMATION','NOVELA','REALITY_SHOW','DOCUMENTARY','KIDS','FAMILY'];
         const dataWithCounts = await Promise.all(data.map(async (item) => {
             if (SERIES_TYPES_LIST.includes(item.type)) {
-                const [episodeCount, failedCount] = await Promise.all([
+                const [episodeCount, failedCount, emptyEpisodesCount] = await Promise.all([
                     prisma.episode.count({
                         where: {
                             season: { contentId: item.id },
@@ -197,9 +200,15 @@ export class ContentService {
                             status: 'FAILED',
                             episode: { season: { contentId: item.id } }
                         }
+                    }),
+                    prisma.episode.count({
+                        where: {
+                            season: { contentId: item.id },
+                            videoFiles: { none: {} }
+                        }
                     })
                 ]);
-                return { ...item, episodeCount, failedCount };
+                return { ...item, episodeCount, failedCount, emptyEpisodesCount };
             }
             return item;
         }));
