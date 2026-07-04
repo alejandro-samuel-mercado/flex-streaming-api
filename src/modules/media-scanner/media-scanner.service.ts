@@ -601,20 +601,7 @@ export class MediaScannerService {
           }
 
           if (details) {
-            const baseSlug = details.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
-            const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
-            const content = await prisma.content.create({
-              data: {
-                type: 'MOVIE', status: 'PENDING', slug, tmdbId: String(details.tmdbId),
-                translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] }
-              }
-            });
-            contentId = content.id;
-            
-            if (details.posterPath) {
-               const posterUrl = `https://image.tmdb.org/t/p/w500${details.posterPath}`;
-               await prisma.thumbnail.create({ data: { contentId, type: 'POSTER', url: posterUrl, width: 500, height: 750 } });
-            }
+            contentId = await this._createSeriesContent(details);
           }
         }
       }
