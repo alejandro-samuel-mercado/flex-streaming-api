@@ -11,6 +11,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import * as readline from 'readline';
 
