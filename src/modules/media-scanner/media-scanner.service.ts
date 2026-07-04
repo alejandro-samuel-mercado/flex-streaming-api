@@ -269,7 +269,7 @@ export class MediaScannerService {
 
       if (entry.isDirectory()) {
         // Check if this folder is a pre-processed HLS episode (has index.m3u8)
-        const m3u8Path = await this._findM3u8(fullPath);
+        const m3u8Path = await this._findM3u8(fullPath, 0, 0);
         if (m3u8Path) {
           const parentDirName = path.basename(dirPath);
           let seasonMatch = parentDirName.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Ss](\d+)/);
@@ -357,9 +357,9 @@ export class MediaScannerService {
     return foundMedia;
   }
 
-  /** Find index.m3u8 / video.m3u8 / master.m3u8 up to 2 levels deep inside a folder. */
-  private static async _findM3u8(dirPath: string, depth = 0): Promise<string | null> {
-    if (depth > 2) return null;
+  /** Find index.m3u8 / video.m3u8 / master.m3u8 up to maxDepth levels deep inside a folder. */
+  private static async _findM3u8(dirPath: string, depth = 0, maxDepth = 2): Promise<string | null> {
+    if (depth > maxDepth) return null;
     let entries: string[];
     try { entries = await fs.promises.readdir(dirPath); }
     catch { return null; }
@@ -370,14 +370,14 @@ export class MediaScannerService {
       }
     }
 
-    // Not found at this level — check subfolders (only 1 extra level to avoid deep traversal)
-    if (depth < 2) {
+    // Not found at this level — check subfolders
+    if (depth < maxDepth) {
       for (const name of entries) {
         const sub = path.join(dirPath, name);
         try {
           const stat = await fs.promises.stat(sub);
           if (stat.isDirectory()) {
-            const found = await this._findM3u8(sub, depth + 1);
+            const found = await this._findM3u8(sub, depth + 1, maxDepth);
             if (found) return found;
           }
         } catch { /* skip */ }
