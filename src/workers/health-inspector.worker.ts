@@ -162,9 +162,14 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
     return { newStatus: 'PENDING', reason: `tiene episodios pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
   }
 
-  // Tiene episodios, portada y título pero falta descripción o géneros → PENDING (incompleto)
-  if (!hasDescription || !hasGenres) {
-    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasDescription && 'sinopsis', !hasGenres && 'géneros'].filter(Boolean).join(', ')}` };
+  // Tiene episodios, portada y título pero falta descripción → PENDING
+  if (!hasDescription) {
+    return { newStatus: 'PENDING', reason: 'incompleto: falta sinopsis' };
+  }
+
+  // Tiene lo esencial, pero le faltan géneros
+  if (!hasGenres) {
+    return { newStatus: 'ACTIVE', reason: `activo con ${episodesWithVideoOnDisk} episodio(s) pero sin géneros` };
   }
 
   // Al menos 1 episodio real en disco con todos los datos → ACTIVE
