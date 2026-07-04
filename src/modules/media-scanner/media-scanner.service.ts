@@ -271,7 +271,18 @@ export class MediaScannerService {
         // Check if this folder is a pre-processed HLS episode (has index.m3u8)
         const m3u8Path = await this._findM3u8(fullPath);
         if (m3u8Path) {
-          const seInfo = parseSeasonEpisode(entry.name);
+          const parentDirName = path.basename(dirPath);
+          let seasonMatch = parentDirName.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Ss](\d+)/);
+          let episodeMatch = entry.name.match(/[Ee]p(?:isodio)?\s*(\d+)/i) || entry.name.match(/[Ee](\d+)/) || entry.name.match(/(?:^|[^a-zA-Z0-9])(\d{1,3})(?:[^a-zA-Z0-9]|$)/);
+          
+          let seInfo = parseSeasonEpisode(entry.name) || parseSeasonEpisodeFromFilename(entry.name);
+          if (seasonMatch && episodeMatch) {
+            seInfo = { season: parseInt(seasonMatch[1], 10), episode: parseInt(episodeMatch[1], 10) };
+          } else if (seasonMatch && seInfo) {
+            seInfo.season = parseInt(seasonMatch[1], 10);
+          } else if (episodeMatch && seInfo) {
+            seInfo.episode = parseInt(episodeMatch[1], 10);
+          }
           const tmdbSeriesId = parseTmdbId(seriesFolderName || entry.name);
           const stat = await fs.promises.stat(fullPath);
           results.push({
