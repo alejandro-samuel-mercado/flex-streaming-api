@@ -11,21 +11,20 @@ async function run() {
         const files = await MediaScannerService.scanDirectories(moviePath, undefined);
         console.log(`[MediaScanner] Escaneo completo: ${files.length} archivos de películas encontrados.`);
 
-        // Importar en lotes para no sobrecargar
-        const BATCH_SIZE = 50;
-        for (let i = 0; i < files.length; i += BATCH_SIZE) {
-            const batch = files.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map(async f => {
-                if (!f.alreadyImported) {
-                    if (f.extension === 'VACÍA') {
-                        console.log(`⚠️  Registrando carpeta vacía como Fallida: ${f.fileName} (Falta video)`);
-                        await MediaScannerService.importFile(f.filePath, 'MOVIE');
-                    } else {
-                        console.log(`⏳ Encolando Película: ${f.fileName}...`);
-                        await MediaScannerService.importFile(f.filePath, 'MOVIE');
-                    }
+        // Importar secuencialmente para no sobrecargar la API de TMDB (Evita Error 429 Too Many Requests)
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            if (!f.alreadyImported) {
+                if (f.extension === 'VACÍA') {
+                    console.log(`⚠️  Registrando carpeta vacía como Fallida: ${f.fileName} (Falta video)`);
+                    await MediaScannerService.importFile(f.filePath, 'MOVIE');
+                } else {
+                    console.log(`⏳ [${i + 1}/${files.length}] Encolando Película: ${f.fileName}...`);
+                    await MediaScannerService.importFile(f.filePath, 'MOVIE');
+                    // Pausa de 200ms entre llamadas para no saturar a TMDB
+                    await new Promise(resolve => setTimeout(resolve, 200));
                 }
-            }));
+            }
         }
 
         console.log('✅ ¡Escaneo de Películas Finalizado!');
