@@ -658,6 +658,12 @@ export class MediaScannerService {
       }
     });
 
+    // Ensure the movie is marked as READY so the Health Inspector can activate it
+    await prisma.content.updateMany({
+      where: { id: contentId, status: 'PENDING' },
+      data: { status: 'READY' }
+    });
+
     return { filePath: folderPath, fileName: folderName, success: true, contentId: contentId!, tmdbMatch };
   }
 
