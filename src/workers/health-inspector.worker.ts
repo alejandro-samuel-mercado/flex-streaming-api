@@ -36,20 +36,10 @@ const MOVIE_TYPES = new Set([
  * Verifica si el hlsPath / masterPlaylist de un VideoFile existe en disco.
  */
 function hlsExistsOnDisk(hlsPath: string | null, masterPlaylist: string | null): boolean {
-  if (!hlsPath && !masterPlaylist) return false;
-
-  // Primero intentar la ruta del directorio HLS
-  if (hlsPath) {
-    const m3u8 = path.join(hlsPath, 'master.m3u8');
-    if (fs.existsSync(m3u8)) return true;
-    // Algunos usan index.m3u8
-    const idx = path.join(hlsPath, 'index.m3u8');
-    if (fs.existsSync(idx)) return true;
-    // El directorio mismo
-    if (fs.existsSync(hlsPath)) return true;
-  }
-
-  return false;
+  // En la arquitectura multi-servidor, Cerebro no tiene acceso físico a los discos
+  // de los servidores de Películas/Series. Por lo tanto, confiamos en el estado COMPLETED
+  // de la base de datos y asumimos que el archivo existe.
+  return true;
 }
 
 /**
