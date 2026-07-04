@@ -38,7 +38,7 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 
 const NOISE_PATTERNS = [
-  /^\d+_+/, // Quita el prefijo ID TMDB como "1402_"
+  /^\d+[_\s]+/, // Quita el prefijo ID TMDB como "1402_" o "1402 "
   /\b(360p|480p|720p|1080p|2160p|4k|uhd)\b/gi,
   /\b(x264|x265|h264|h265|hevc|avc|xvid|divx|av1)\b/gi,
   /\b(blu[\s-]?ray|bdrip|brrip|web[\s-]?dl|web[\s-]?rip|hdtv|dvdrip|hdrip|cam|ts|screener|r5)\b/gi,
