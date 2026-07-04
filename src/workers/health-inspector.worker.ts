@@ -100,13 +100,8 @@ async function inspectMovie(contentId: string): Promise<{ newStatus: ContentStat
   }
 
   // Sin portada, título o descripción → PENDING (datos mínimos faltantes)
-  if (!hasPoster || !hasTitle) {
-    return { newStatus: 'PENDING', reason: `faltan datos mínimos: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
-  }
-
-  // Tiene video, portada y título pero falta descripción o géneros → INCOMPLETE
-  if (!hasDescription || !hasGenres) {
-    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasDescription && 'sinopsis', !hasGenres && 'géneros'].filter(Boolean).join(', ')}` };
+  if (!hasPoster || !hasTitle || !hasDescription || !hasGenres) {
+    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título', !hasDescription && 'sinopsis', !hasGenres && 'géneros'].filter(Boolean).join(', ')}` };
   }
 
   // Todo completo → ACTIVE
