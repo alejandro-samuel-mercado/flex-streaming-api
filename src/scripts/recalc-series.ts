@@ -1,11 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ContentType } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('🚀 Iniciando re-cálculo de estado de las Series...');
   
-  const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
+  const SERIES_TYPES: ContentType[] = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
 
   // Obtener todas las series
   const series = await prisma.content.findMany({

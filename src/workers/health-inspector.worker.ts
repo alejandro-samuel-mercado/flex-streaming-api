@@ -16,7 +16,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PrismaClient, ContentStatus } from '@prisma/client';
-import { env } from '../shared/config/env';
+
 
 const prisma = new PrismaClient();
 
