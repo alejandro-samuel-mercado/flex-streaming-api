@@ -4,7 +4,7 @@ const prisma = new PrismaClient();
 async function run() {
     console.log('🧹 Eliminando películas que se escanearon accidentalmente como series...');
     const fakeMovies = await prisma.content.findMany({
-        where: { type: 'MOVIE', seasons: { some: {} } },
+        where: { type: 'MOVIE', seasons: { some: {} }, isPinned: false },
         select: { id: true, slug: true }
     });
 

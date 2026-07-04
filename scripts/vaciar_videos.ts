@@ -28,26 +28,36 @@ async function vaciarVideos() {
   console.log('');
   console.log('🗑️  Borrando videos, audios y subtítulos...');
 
+  const pinned = await prisma.content.findMany({ where: { isPinned: true }, select: { id: true } });
+  const pinnedIds = pinned.map(p => p.id);
+  const contentFilter = pinnedIds.length > 0 ? { contentId: { notIn: pinnedIds } } : {};
+  const seasonFilter = pinnedIds.length > 0 ? { season: { contentId: { notIn: pinnedIds } } } : {};
+
+  const pinnedVideoFiles = pinnedIds.length > 0 ? await prisma.videoFile.findMany({ where: { contentId: { in: pinnedIds } }, select: { id: true } }) : [];
+  const pinnedVideoIds = pinnedVideoFiles.map(v => v.id);
+  const videoFilter = pinnedVideoIds.length > 0 ? { videoFileId: { notIn: pinnedVideoIds } } : {};
+
   // Borrar historial (depende de video/episodio)
-  await prisma.watchHistory.deleteMany({});
-  await prisma.watchSession.deleteMany({});
+  await prisma.watchHistory.deleteMany({ where: contentFilter });
+  await prisma.watchSession.deleteMany({ where: contentFilter });
 
   // Borrar archivos multimedia
-  await prisma.subtitleTrack.deleteMany({});
-  await prisma.audioTrack.deleteMany({});
-  await prisma.videoQuality.deleteMany({});
+  await prisma.subtitleTrack.deleteMany({ where: videoFilter });
+  await prisma.audioTrack.deleteMany({ where: videoFilter });
+  await prisma.videoQuality.deleteMany({ where: videoFilter });
   
   // Borrar los archivos de video en sí
-  await prisma.videoFile.deleteMany({});
+  await prisma.videoFile.deleteMany({ where: contentFilter });
 
   // Borrar episodios y temporadas (las series quedarán vacías)
-  await prisma.episodeTranslation.deleteMany({});
-  await prisma.episode.deleteMany({});
-  await prisma.seasonTranslation.deleteMany({});
-  await prisma.season.deleteMany({});
+  await prisma.episodeTranslation.deleteMany({ where: seasonFilter });
+  await prisma.episode.deleteMany({ where: seasonFilter });
+  await prisma.seasonTranslation.deleteMany({ where: contentFilter });
+  await prisma.season.deleteMany({ where: contentFilter });
 
   // Poner todo el contenido (series y películas) en PENDING ya que no tienen video
   const result = await prisma.content.updateMany({
+    where: { isPinned: false },
     data: { status: 'PENDING' }
   });
 

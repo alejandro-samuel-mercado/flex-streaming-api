@@ -7,12 +7,13 @@ async function cleanNumericTitles() {
   
   // Buscar todas las traducciones en español
   const translations = await prisma.contentTranslation.findMany({
-    where: { language: 'es' }
+    where: { language: 'es' },
+    include: { content: true }
   });
 
-  // Filtrar las que tienen títulos puramente numéricos
+  // Filtrar las que tienen títulos puramente numéricos y que NO estén fijadas
   const numericIds = translations
-    .filter(t => /^\d+$/.test(t.title))
+    .filter(t => /^\d+$/.test(t.title) && !t.content.isPinned)
     .map(t => t.contentId);
 
   if (numericIds.length === 0) {

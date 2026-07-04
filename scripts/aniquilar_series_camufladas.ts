@@ -14,7 +14,8 @@ async function run() {
       OR: [
         { type: 'MOVIE' },
         { episodeId: null }
-      ]
+      ],
+      content: { isPinned: false }
     },
     include: { content: true }
   });

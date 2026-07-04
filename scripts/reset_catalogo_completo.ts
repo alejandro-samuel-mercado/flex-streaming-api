@@ -72,73 +72,82 @@ async function resetCatalogo() {
   console.log('');
   console.log('🗑️  Borrando en orden para respetar foreign keys...');
 
+  const pinned = await prisma.content.findMany({ where: { isPinned: true }, select: { id: true } });
+  const pinnedIds = pinned.map(p => p.id);
+  const contentFilter = pinnedIds.length > 0 ? { contentId: { notIn: pinnedIds } } : {};
+  const contentSeasonFilter = pinnedIds.length > 0 ? { season: { contentId: { notIn: pinnedIds } } } : {};
+  
+  const pinnedVideoFiles = pinnedIds.length > 0 ? await prisma.videoFile.findMany({ where: { contentId: { in: pinnedIds } }, select: { id: true } }) : [];
+  const pinnedVideoIds = pinnedVideoFiles.map(v => v.id);
+  const videoFilter = pinnedVideoIds.length > 0 ? { videoFileId: { notIn: pinnedVideoIds } } : {};
+
   // Borrar en orden correcto (de hijos a padres)
   console.log('   Borrando historial de reproducción...');
-  await prisma.watchHistory.deleteMany({});
-  await prisma.watchSession.deleteMany({});
+  await prisma.watchHistory.deleteMany({ where: contentFilter });
+  await prisma.watchSession.deleteMany({ where: contentFilter });
 
   console.log('   Borrando favoritos y listas...');
-  await prisma.favorite.deleteMany({});
-  await prisma.myList.deleteMany({});
-  await prisma.like.deleteMany({});
+  await prisma.favorite.deleteMany({ where: contentFilter });
+  await prisma.myList.deleteMany({ where: contentFilter });
+  await prisma.like.deleteMany({ where: contentFilter });
 
   console.log('   Borrando reseñas y comentarios...');
-  await prisma.review.deleteMany({});
-  await prisma.comment.deleteMany({});
+  await prisma.review.deleteMany({ where: contentFilter });
+  await prisma.comment.deleteMany({}); // No contentId usually or requires special care, skipping contentFilter if not directly on comment
 
   console.log('   Borrando pistas de subtítulos...');
-  await prisma.subtitleTrack.deleteMany({});
+  await prisma.subtitleTrack.deleteMany({ where: videoFilter });
 
   console.log('   Borrando pistas de audio...');
-  await prisma.audioTrack.deleteMany({});
+  await prisma.audioTrack.deleteMany({ where: videoFilter });
 
   console.log('   Borrando calidades de video...');
-  await prisma.videoQuality.deleteMany({});
+  await prisma.videoQuality.deleteMany({ where: videoFilter });
 
   console.log('   Borrando archivos de video...');
-  await prisma.videoFile.deleteMany({});
+  await prisma.videoFile.deleteMany({ where: contentFilter });
 
   console.log('   Borrando miniaturas...');
-  await prisma.thumbnail.deleteMany({});
+  await prisma.thumbnail.deleteMany({ where: contentFilter });
 
   console.log('   Borrando traducciones de episodios...');
-  await prisma.episodeTranslation.deleteMany({});
+  await prisma.episodeTranslation.deleteMany({ where: contentSeasonFilter });
 
   console.log('   Borrando episodios...');
-  await prisma.episode.deleteMany({});
+  await prisma.episode.deleteMany({ where: contentSeasonFilter });
 
   console.log('   Borrando traducciones de temporadas...');
-  await prisma.seasonTranslation.deleteMany({});
+  await prisma.seasonTranslation.deleteMany({ where: contentFilter });
 
   console.log('   Borrando temporadas...');
-  await prisma.season.deleteMany({});
+  await prisma.season.deleteMany({ where: contentFilter });
 
   console.log('   Borrando géneros de contenido...');
-  await prisma.contentGenre.deleteMany({});
+  await prisma.contentGenre.deleteMany({ where: contentFilter });
 
   console.log('   Borrando tags de contenido...');
-  await prisma.contentTag.deleteMany({});
+  await prisma.contentTag.deleteMany({ where: contentFilter });
 
   console.log('   Borrando actores de contenido...');
-  await prisma.contentActor.deleteMany({});
+  await prisma.contentActor.deleteMany({ where: contentFilter });
 
   console.log('   Borrando directores de contenido...');
-  await prisma.contentDirector.deleteMany({});
+  await prisma.contentDirector.deleteMany({ where: contentFilter });
 
   console.log('   Borrando traducciones de contenido...');
-  await prisma.contentTranslation.deleteMany({});
+  await prisma.contentTranslation.deleteMany({ where: contentFilter });
 
   console.log('   Borrando items de recomendaciones...');
-  await prisma.recommendationItem.deleteMany({});
+  await prisma.recommendationItem.deleteMany({}); // skipping
 
   console.log('   Borrando rentals...');
-  await prisma.rental.deleteMany({});
+  await prisma.rental.deleteMany({}); // skipping
 
   console.log('   Borrando anuncios y targets...');
-  await prisma.adTarget.deleteMany({});
+  await prisma.adTarget.deleteMany({ where: contentFilter });
 
   console.log('   Borrando contenido principal...');
-  await prisma.content.deleteMany({});
+  await prisma.content.deleteMany({ where: { isPinned: false } });
 
   // Resetear el estado del auto-scanner
   await prisma.siteConfig.deleteMany({
