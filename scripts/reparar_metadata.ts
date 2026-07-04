@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { TMDBService } from './src/services/tmdb.service';
-import { env } from './src/shared/config/env';
+import { TMDBService } from '../src/services/tmdb.service';
+import { env } from '../src/shared/config/env';
 import path from 'path';
 import fs from 'fs';
 
