@@ -407,7 +407,7 @@ exports.adminRouter.get('/videos/rejected-imports', (async (_req, res, next) => 
             orderBy: { createdAt: 'desc' },
             take: 100
         });
-        (0, api_response_1.ok)(res, { data: rejected });
+        (0, api_response_1.ok)(res, rejected);
     }
     catch (err) {
         next(err);

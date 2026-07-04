@@ -404,7 +404,7 @@ adminRouter.get('/videos/rejected-imports', (async (_req: AuthenticatedRequest, 
             orderBy: { createdAt: 'desc' },
             take: 100
         });
-        ok(res, { data: rejected });
+        ok(res, rejected);
     } catch (err) { next(err); }
 }) as RequestHandler);
 
