@@ -8,7 +8,7 @@ async function deduplicate() {
     // Agrupar por contentId
     const movies = await prisma.videoFile.groupBy({
         by: ['contentId'],
-        where: { type: 'MOVIE', contentId: { not: null } },
+        where: { type: 'MOVIE', contentId: { not: null }, content: { isPinned: false } },
         _count: { id: true }
     });
     
@@ -35,7 +35,7 @@ async function deduplicate() {
     // Agrupar por episodeId
     const episodes = await prisma.videoFile.groupBy({
         by: ['episodeId'],
-        where: { type: 'EPISODE', episodeId: { not: null } },
+        where: { type: 'EPISODE', episodeId: { not: null }, episode: { season: { content: { isPinned: false } } } },
         _count: { id: true }
     });
     

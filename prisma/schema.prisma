@@ -250,6 +250,7 @@ model Content {
   budget      BigInt?
   revenue     BigInt?
   isAdult     Boolean       @default(false)
+  isPinned    Boolean       @default(false)
   subtitleLangs String[]
   platformId  String?
   trailerUrl  String?

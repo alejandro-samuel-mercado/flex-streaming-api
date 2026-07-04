@@ -608,6 +608,10 @@ export class MediaScannerService {
       const match = tmdbResult.bestMatch;
       const existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
       if (existing) {
+        if (existing.isPinned) {
+            console.log(`📌 [MediaScanner] Skipping "${folderName}" — Content is PINNED (locked).`);
+            return { filePath: folderPath, fileName: folderName, success: true, tmdbMatch: true };
+        }
         contentId = existing.id;
         const alreadyHasVideo = await prisma.videoFile.findFirst({
             where: { contentId, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
@@ -733,6 +737,10 @@ export class MediaScannerService {
         if (episode.tmdbSeriesId) {
           const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
           if (existing) {
+            if (existing.isPinned) {
+                console.log(`📌 [MediaScanner] Skipping Series "${episode.tmdbSeriesId}" — Content is PINNED.`);
+                // Note: We return existing.id, and we will protect VideoFile creation further down
+            }
             tmdbMatch = true;
             return existing.id;
           }

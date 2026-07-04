@@ -106,6 +106,10 @@ contentRouter.post('/', authenticate as RequestHandler, requireRole('ADMIN') as 
 
 contentRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
+    const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+    if (content?.isPinned) {
+      return res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser modificado.' });
+    }
     const data = await ContentService.updateContent(req.params.id, req.body);
     ok(res, data);
   } catch (err) { next(err); }
@@ -113,10 +117,25 @@ contentRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') a
 
 contentRouter.delete('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
+    const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+    if (content?.isPinned) {
+      return res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser borrado.' });
+    }
     const { invalidateCache } = await import('../../shared/middleware/cache.middleware');
     await invalidateCache(`*/content/${req.params.id}*`);
     await invalidateCache(`*catalog*`);
     await ContentService.deleteContent(req.params.id);
     ok(res, { deleted: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+contentRouter.patch('/:id/pin', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { isPinned } = req.body;
+    const content = await prisma.content.update({
+      where: { id: req.params.id },
+      data: { isPinned }
+    });
+    ok(res, content);
   } catch (err) { next(err); }
 }) as RequestHandler);
