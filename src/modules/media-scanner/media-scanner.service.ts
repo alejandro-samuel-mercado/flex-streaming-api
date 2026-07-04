@@ -631,8 +631,11 @@ export class MediaScannerService {
           try {
              details = await TMDBService.getFullDetails(match.id, 'movie');
           } catch (err: any) {
+             // Si falla como película, intentamos verificar si es una serie
              try {
-               details = await TMDBService.getFullDetails(match.id, 'tv');
+               await TMDBService.getFullDetails(match.id, 'tv');
+               console.log(`[MediaScanner] ⚠️ Ignorando ${cleanName}: Es una SERIE, pero se intentó escanear como PELÍCULA.`);
+               return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: false, error: 'Es una serie, use el escáner de series' };
              } catch (err2: any) {
                if (/^\d+$/.test(cleanName)) {
                  console.log(`[MediaScanner] Saltando carpeta puramente numérica sin metadata en TMDB: ${cleanName}`);
@@ -935,6 +938,13 @@ export class MediaScannerService {
 
   private static async _importWithTMDB(filePath: string, fileName: string, tmdbMatch: any, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
     const mediaType = tmdbMatch.media_type === 'tv' ? 'tv' : tmdbMatch.media_type === 'movie' ? 'movie' : (tmdbMatch.title ? 'movie' : 'tv');
+    
+    // Si el escáner es de películas, pero el resultado de TMDB es una serie, rechazar
+    if (contentType === 'MOVIE' && mediaType === 'tv') {
+      console.log(`[MediaScanner] ⚠️ Ignorando ${fileName}: Es una SERIE, pero se intentó escanear como PELÍCULA.`);
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Es una serie, use el escáner de series' };
+    }
+
     let details;
     try {
       details = await TMDBService.getFullDetails(tmdbMatch.id, mediaType as 'movie' | 'tv');
