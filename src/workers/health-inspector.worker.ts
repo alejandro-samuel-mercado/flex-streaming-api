@@ -111,6 +111,9 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
       translations: true,
       thumbnails: true,
       genres: true,
+      videoFiles: {
+        where: { status: 'COMPLETED' }
+      },
       seasons: {
         include: {
           episodes: {
@@ -145,6 +148,15 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
         if (hlsExistsOnDisk(vf.hlsPath, vf.masterPlaylist)) {
           episodesWithVideoOnDisk++;
         }
+      }
+    }
+  }
+
+  if (content.videoFiles && content.videoFiles.length > 0) {
+    for (const vf of content.videoFiles) {
+      totalCompletedVideos++;
+      if (hlsExistsOnDisk(vf.hlsPath, vf.masterPlaylist)) {
+        episodesWithVideoOnDisk++;
       }
     }
   }
