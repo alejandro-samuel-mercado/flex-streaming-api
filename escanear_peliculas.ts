@@ -17,10 +17,10 @@ async function run() {
             if (!f.alreadyImported) {
                 if (f.extension === 'VACÍA') {
                     console.log(`⚠️  Registrando carpeta vacía como Fallida: ${f.fileName} (Falta video)`);
-                    await MediaScannerService.importFile(f.filePath, 'MOVIE');
+                    await MediaScannerService.importFile(f.filePath, 'MOVIE', f.episode);
                 } else {
                     console.log(`⏳ [${i + 1}/${files.length}] Encolando Película: ${f.fileName}...`);
-                    await MediaScannerService.importFile(f.filePath, 'MOVIE');
+                    await MediaScannerService.importFile(f.filePath, 'MOVIE', f.episode);
                     // Pausa de 200ms entre llamadas para no saturar a TMDB
                     await new Promise(resolve => setTimeout(resolve, 200));
                 }
