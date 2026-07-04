@@ -99,9 +99,14 @@ async function inspectMovie(contentId: string): Promise<{ newStatus: ContentStat
     return { newStatus: 'PENDING', reason: 'HLS no encontrado en disco (enlace roto)' };
   }
 
-  // Sin portada, título o descripción → PENDING (datos mínimos faltantes)
-  if (!hasPoster || !hasTitle || !hasDescription || !hasGenres) {
-    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título', !hasDescription && 'sinopsis', !hasGenres && 'géneros'].filter(Boolean).join(', ')}` };
+  // Sin portada, título o descripción → PENDING (datos esenciales faltantes)
+  if (!hasPoster || !hasTitle || !hasDescription) {
+    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título', !hasDescription && 'sinopsis'].filter(Boolean).join(', ')}` };
+  }
+
+  // Tiene lo esencial, pero le faltan géneros u otras cosas menores
+  if (!hasGenres) {
+    return { newStatus: 'ACTIVE', reason: 'activo pero incompleto (sin géneros)' };
   }
 
   // Todo completo → ACTIVE
