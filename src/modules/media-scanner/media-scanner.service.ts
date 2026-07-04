@@ -604,7 +604,7 @@ export class MediaScannerService {
              } catch (err2: any) {
                if (/^\d+$/.test(cleanName)) {
                  console.log(`[MediaScanner] Saltando carpeta puramente numérica sin metadata en TMDB: ${cleanName}`);
-                 return { filePath: folderPath, fileName: folderName, success: false, error: 'Título numérico sin TMDB' };
+                 return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: false, error: 'Título numérico sin TMDB' };
                }
                // Fallback minimal (solo si el nombre era texto normal)
                const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
