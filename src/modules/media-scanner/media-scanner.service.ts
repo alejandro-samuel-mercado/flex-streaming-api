@@ -505,12 +505,37 @@ export class MediaScannerService {
       }
     });
 
+    // Auto-increment logic: if the parsed episode is 1, check if we need to auto-increment
+    let finalEpisodeNumber = episode.episodeNumber;
+    
+    // Si el parseador asumió que es el episodio 1 (probablemente porque la carpeta no tiene número)
+    if (finalEpisodeNumber === 1) {
+      // Buscar el último episodio registrado para esta temporada
+      const lastEpisode = await prisma.episode.findFirst({
+        where: { seasonId: season.id },
+        orderBy: { number: 'desc' },
+        include: { videoFiles: true }
+      });
+      
+      if (lastEpisode && lastEpisode.videoFiles.length > 0) {
+        // Si el último episodio registrado ya tiene un video que NO es este
+        const hasThisVideo = lastEpisode.videoFiles.some(vf => vf.originalPath === episodeFolderPath);
+        if (!hasThisVideo) {
+          // Es un video nuevo, asignarlo al siguiente número de episodio
+          finalEpisodeNumber = lastEpisode.number + 1;
+        } else {
+          // Es el mismo video, mantener su número
+          finalEpisodeNumber = lastEpisode.number;
+        }
+      }
+    }
+
     const episodeRecord = await prisma.episode.upsert({
-      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
+      where: { seasonId_number: { seasonId: season.id, number: finalEpisodeNumber } },
       update: {},
       create: {
         seasonId: season.id,
-        number: episode.episodeNumber,
+        number: finalEpisodeNumber,
       }
     });
 
