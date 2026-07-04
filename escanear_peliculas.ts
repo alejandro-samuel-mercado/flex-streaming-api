@@ -4,7 +4,7 @@ async function run() {
     console.log('🔍 Iniciando Escaneo de PELÍCULAS Manual...');
     try {
         // Escaneamos las peliculas usando el directorio configurado
-        const moviePath = process.env.MEDIA_SCAN_DIRS || '/home/media/movies';
+        const moviePath = process.env.MEDIA_SCAN_DIRS || '/home/media/peliculas';
         console.log(`Buscando en directorio: ${moviePath}`);
 
         // scanDirectories(moviePath, seriesPath) -> pasamos undefined a seriesPath
