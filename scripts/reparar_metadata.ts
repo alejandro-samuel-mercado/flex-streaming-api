@@ -38,11 +38,17 @@ async function run() {
         if (!hasGenres && details.genres && details.genres.length > 0) {
           for (const genreName of details.genres) {
             const slug = genreName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
-            let dbGenre = await prisma.genre.findUnique({ where: { slug } });
+            let dbGenre = await prisma.genre.findFirst({ where: { OR: [{ slug }, { name: genreName }] } });
             if (!dbGenre) {
-              dbGenre = await prisma.genre.create({ data: { name: genreName, slug } });
+              try {
+                dbGenre = await prisma.genre.create({ data: { name: genreName, slug } });
+              } catch {
+                dbGenre = await prisma.genre.findFirst({ where: { OR: [{ slug }, { name: genreName }] } });
+              }
             }
-            await prisma.contentGenre.create({ data: { contentId: content.id, genreId: dbGenre.id } }).catch(() => {});
+            if (dbGenre) {
+               await prisma.contentGenre.create({ data: { contentId: content.id, genreId: dbGenre.id } }).catch(() => {});
+            }
           }
           console.log(`  - Géneros reparados.`);
         }
