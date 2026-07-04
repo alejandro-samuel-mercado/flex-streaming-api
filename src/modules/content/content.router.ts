@@ -4,6 +4,9 @@ import { authenticate, requireRole, AuthenticatedRequest, optionalAuth } from '.
 import { ok, created, paginate } from '../../shared/utils/api-response';
 import { cacheMiddleware } from '../../shared/middleware/cache.middleware';
 import { z } from 'zod';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export const contentRouter = Router();
 console.log('🚀 [ContentRouter] Router loaded and routes defined');
@@ -108,7 +111,8 @@ contentRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') a
   try {
     const content = await prisma.content.findUnique({ where: { id: req.params.id } });
     if (content?.isPinned) {
-      return res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser modificado.' });
+      res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser modificado.' });
+      return;
     }
     const data = await ContentService.updateContent(req.params.id, req.body);
     ok(res, data);
@@ -119,7 +123,8 @@ contentRouter.delete('/:id', authenticate as RequestHandler, requireRole('ADMIN'
   try {
     const content = await prisma.content.findUnique({ where: { id: req.params.id } });
     if (content?.isPinned) {
-      return res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser borrado.' });
+      res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser borrado.' });
+      return;
     }
     const { invalidateCache } = await import('../../shared/middleware/cache.middleware');
     await invalidateCache(`*/content/${req.params.id}*`);
