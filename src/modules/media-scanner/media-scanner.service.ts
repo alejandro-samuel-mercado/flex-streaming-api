@@ -95,6 +95,7 @@ export class MediaScannerService {
 
   private static creatingContents = new Map<string, Promise<string>>();
   private static resolvingSeries = new Map<string, Promise<string | null>>();
+  private static resolvingMovies = new Map<string, Promise<string>>();
 
   static getSuggestedDirectories(): string[] {
     const dirs = env.MEDIA_SCAN_DIRS;
@@ -1051,50 +1052,66 @@ export class MediaScannerService {
       }
     }
 
-    const existingContent = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
-    let contentId: string;
-
-    if (existingContent) {
-      contentId = existingContent.id;
-      if (existingContent.deletedAt) {
-        await prisma.content.update({ where: { id: contentId }, data: { deletedAt: null, status: 'PENDING' } });
-      }
-    } else {
-      contentId = await this._createSeriesContent(details);
+    const movieKey = `tmdb-${details.tmdbId}`;
+    
+    if (!this.resolvingMovies.has(movieKey)) {
+      const resolveMovie = async () => {
+        const existingContent = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
+        if (existingContent) {
+          if (existingContent.deletedAt) {
+            await prisma.content.update({ where: { id: existingContent.id }, data: { deletedAt: null, status: 'PENDING' } });
+          }
+          return existingContent.id;
+        } else {
+          return await this._createSeriesContent(details); // Note: handles both series and movie creation
+        }
+      };
+      this.resolvingMovies.set(movieKey, resolveMovie().finally(() => this.resolvingMovies.delete(movieKey)));
     }
+
+    const contentId = await this.resolvingMovies.get(movieKey);
+    if (!contentId) throw new Error('Failed to resolve movie content ID');
 
     await this._createVideoAndEnqueue(contentId, filePath, contentType);
     return { filePath, fileName, success: true, contentId, tmdbMatch: true };
   }
 
   private static async _importMinimal(filePath: string, fileName: string, cleanName: string, contentType: 'MOVIE' | 'SERIES'): Promise<ImportResult> {
-    const existingByTitle = await prisma.content.findFirst({
-      where: {
-        translations: { some: { title: { equals: cleanName, mode: 'insensitive' } } },
-        type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
-        deletedAt: null
-      }
-    });
+    const lockKey = `minimal-${contentType}-${cleanName.toLowerCase()}`;
+    
+    if (!this.creatingContents.has(lockKey)) {
+      const resolveMinimal = async () => {
+        const existingByTitle = await prisma.content.findFirst({
+          where: {
+            translations: { some: { title: { equals: cleanName, mode: 'insensitive' } } },
+            type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
+            deletedAt: null
+          }
+        });
 
-    let contentId: string;
+        if (existingByTitle) {
+          return existingByTitle.id;
+        } else {
+          const slug = cleanName.toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+            + '-' + Math.random().toString(36).substring(2, 6);
 
-    if (existingByTitle) {
-      contentId = existingByTitle.id;
-    } else {
-      const slug = cleanName.toLowerCase()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
-        + '-' + Math.random().toString(36).substring(2, 6);
-
-      const content = await prisma.content.create({
-        data: {
-          type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
-          status: 'PENDING', slug,
-          translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
+          const content = await prisma.content.create({
+            data: {
+              type: contentType === 'SERIES' ? 'SERIES' : 'MOVIE',
+              status: 'PENDING', slug,
+              translations: { create: [{ language: 'es', title: cleanName, description: '' }] }
+            }
+          });
+          return content.id;
         }
-      });
-      contentId = content.id;
+      };
+      this.creatingContents.set(lockKey, resolveMinimal().finally(() => this.creatingContents.delete(lockKey)));
     }
+
+    const contentId = await this.creatingContents.get(lockKey);
+    if (!contentId) throw new Error('Failed to create minimal content');
 
     await this._createVideoAndEnqueue(contentId, filePath, contentType);
     return { filePath, fileName, success: true, contentId, tmdbMatch: false };
