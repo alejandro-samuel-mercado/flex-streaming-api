@@ -35,23 +35,14 @@ async function run() {
         const details = await TMDBService.getFullDetails(parseInt(content.tmdbId!), type);
 
         // 1. Reparar Géneros
-        if (!hasGenres && details.genres) {
-          const tmdbGenreIds = details.genres.map(g => g.id);
-          const genres = await prisma.genre.findMany({ where: { tmdbId: { in: tmdbGenreIds } } });
-          const missingTmdbIds = tmdbGenreIds.filter(id => !genres.some(g => g.tmdbId === id));
-          
-          for (const missingId of missingTmdbIds) {
-            const tmdbGenre = details.genres.find(g => g.id === missingId);
-            if (tmdbGenre) {
-              const slug = tmdbGenre.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-              try {
-                await prisma.genre.create({ data: { tmdbId: missingId, name: tmdbGenre.name, slug } });
-              } catch { /* ignore unique constraint */ }
+        if (!hasGenres && details.genres && details.genres.length > 0) {
+          for (const genreName of details.genres) {
+            const slug = genreName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-');
+            let dbGenre = await prisma.genre.findUnique({ where: { slug } });
+            if (!dbGenre) {
+              dbGenre = await prisma.genre.create({ data: { name: genreName, slug } });
             }
-          }
-          const allGenres = await prisma.genre.findMany({ where: { tmdbId: { in: tmdbGenreIds } } });
-          for (const g of allGenres) {
-            await prisma.contentGenre.create({ data: { contentId: content.id, genreId: g.id } }).catch(() => {});
+            await prisma.contentGenre.create({ data: { contentId: content.id, genreId: dbGenre.id } }).catch(() => {});
           }
           console.log(`  - Géneros reparados.`);
         }
