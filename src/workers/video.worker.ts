@@ -141,15 +141,15 @@ export const videoWorker = new Worker(
 
       await onProgress(5);
 
-      // Check if this content/episode already has an official high-quality poster (e.g. from TMDB)
-      const hasPoster = await prisma.thumbnail.findFirst({
-        where: {
-          OR: [
-            { contentId: existsInitial.contentId || undefined, type: 'POSTER' },
-            { episodeId: existsInitial.episodeId || undefined, type: 'POSTER' }
-          ]
-        }
-      });
+      // Para películas, verificar si ya tiene un póster de TMDB.
+      // Para episodios, siempre generamos la miniatura (STILL) desde el video.
+      let hasPoster = false;
+      if (jobType !== 'EPISODE') {
+        const existing = await prisma.thumbnail.findFirst({
+          where: { contentId: existsInitial.contentId || undefined, type: 'POSTER' }
+        });
+        hasPoster = !!existing;
+      }
 
       if (!hasPoster) {
         // Thumbnails con carpeta legible: thumbnails/peliculas/titulo--id/ o thumbnails/series/titulo--id/
@@ -339,30 +339,37 @@ export const videoWorker = new Worker(
         }
       } // end realContentId guard
 
-      // Update the content poster only if we actually need to/generated it
-      const hasPosterOnDisk = existsInitial && await prisma.thumbnail.findFirst({
-        where: {
-          contentId: existsInitial.contentId || undefined,
-          episodeId: existsInitial.episodeId || undefined,
-          type: 'POSTER'
-        }
-      });
-      if (!hasPosterOnDisk) {
-        const posterUrl = `/media/thumbnails/${contentId}/poster.jpg`;
-        const existingPoster = await prisma.thumbnail.findFirst({
-          where: {
-            contentId: existsInitial.contentId || undefined,
-            episodeId: existsInitial.episodeId || undefined,
-            type: 'POSTER'
-          }
+      // Update the content/episode thumbnail if we generated one
+      if (jobType === 'EPISODE') {
+        const stillUrl = `/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
+        const existingStill = await prisma.thumbnail.findFirst({
+          where: { episodeId: existsInitial.episodeId || undefined, type: 'STILL' }
         });
-        if (existingPoster) {
-          await prisma.thumbnail.update({ where: { id: existingPoster.id }, data: { url: posterUrl } });
+        if (existingStill) {
+          await prisma.thumbnail.update({ where: { id: existingStill.id }, data: { url: stillUrl } });
         } else {
           await prisma.thumbnail.create({
             data: {
-              contentId: existsInitial.contentId || null,
               episodeId: existsInitial.episodeId || null,
+              type: 'STILL',
+              url: stillUrl,
+              width: 1280,
+              height: 720
+            }
+          });
+        }
+      } else {
+        // PELICULAS
+        // Verificar si se generó miniatura, si no, es porque ya tenía un POSTER TMDB y se saltó
+        const hasPosterOnDisk = await prisma.thumbnail.findFirst({
+          where: { contentId: existsInitial.contentId || undefined, type: 'POSTER' }
+        });
+        
+        if (!hasPosterOnDisk) {
+          const posterUrl = `/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
+          await prisma.thumbnail.create({
+            data: {
+              contentId: existsInitial.contentId || null,
               type: 'POSTER',
               url: posterUrl,
               width: existsInitial.contentId ? 500 : 1280,

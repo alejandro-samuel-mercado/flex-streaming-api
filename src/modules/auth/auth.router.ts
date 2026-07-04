@@ -77,7 +77,7 @@ authRouter.get('/me', authenticate as RequestHandler, async (req: Request, res: 
         const { prisma } = await import('../../shared/config/prisma');
         const userId = authReq.user!.id;
 
-        // Handle virtual end-user accounts (their JWT sub is VIRTUAL_<accountId>)
+
         if (userId.startsWith('VIRTUAL_')) {
             const accountId = userId.replace('VIRTUAL_', '');
             const account = await prisma.endUserAccount.findUnique({

@@ -2,9 +2,9 @@ export declare class ActorsService {
     static getAllActors(page?: number, limit?: number, search?: string): Promise<{
         data: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             photoUrl: string | null;
             birthDate: Date | null;
             nationality: string | null;
@@ -31,9 +31,9 @@ export declare class ActorsService {
         })[];
     } & {
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -42,9 +42,9 @@ export declare class ActorsService {
     }) | null>;
     static createActor(data: any): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -53,9 +53,9 @@ export declare class ActorsService {
     }>;
     static updateActor(id: string, data: any): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -64,9 +64,9 @@ export declare class ActorsService {
     }>;
     static deleteActor(id: string): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -76,9 +76,9 @@ export declare class ActorsService {
     static getAllDirectors(page?: number, limit?: number, search?: string): Promise<{
         data: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             photoUrl: string | null;
             birthDate: Date | null;
             nationality: string | null;
@@ -103,9 +103,9 @@ export declare class ActorsService {
         })[];
     } & {
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -114,9 +114,9 @@ export declare class ActorsService {
     }) | null>;
     static createDirector(data: any): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -125,9 +125,9 @@ export declare class ActorsService {
     }>;
     static updateDirector(id: string, data: any): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;
@@ -136,9 +136,9 @@ export declare class ActorsService {
     }>;
     static deleteDirector(id: string): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         photoUrl: string | null;
         birthDate: Date | null;
         nationality: string | null;

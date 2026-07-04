@@ -91,7 +91,7 @@ export declare class TMDBService {
      *   "guerreras k-pop" → finds "Las guerreras K-Pop"
      *   "las guerras" → finds "Las guerreras K-Pop" (partial word match)
      */
-    static searchWithFallback(query: string, lang?: string): Promise<{
+    static searchWithFallback(query: string, lang?: string, forceType?: 'movie' | 'tv' | 'multi'): Promise<{
         results: TMDBSearchResult[];
         bestMatch: TMDBSearchResult | null;
         confidence: number;

@@ -8,11 +8,11 @@
 export declare class SubscriptionPlansService {
     static getActivePlans(): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -25,11 +25,11 @@ export declare class SubscriptionPlansService {
     }[]>;
     static getAllPlans(): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -42,11 +42,11 @@ export declare class SubscriptionPlansService {
     }[]>;
     static getById(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -71,11 +71,11 @@ export declare class SubscriptionPlansService {
         baseCredits?: number;
     }): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -100,11 +100,11 @@ export declare class SubscriptionPlansService {
         baseCredits?: number;
     }): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -117,11 +117,11 @@ export declare class SubscriptionPlansService {
     }>;
     static toggle(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;
@@ -134,11 +134,11 @@ export declare class SubscriptionPlansService {
     }>;
     static remove(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         creditCost: number;

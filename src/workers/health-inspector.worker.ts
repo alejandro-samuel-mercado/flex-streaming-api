@@ -161,12 +161,17 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
     }
   }
 
-  // Sin ningún episodio con video → PENDING
+  // Si la serie tiene episodios pero NINGUNO tiene video completado → PENDING
+  if (totalCompletedVideos === 0) {
+    return { newStatus: 'PENDING', reason: 'sin episodios procesados' };
+  }
+
+  // Sin ningún episodio físico con video en disco → PENDING
   if (episodesWithVideoOnDisk === 0) {
     if (totalCompletedVideos > 0) {
       return { newStatus: 'PENDING', reason: 'videos procesados pero HLS no encontrado en disco' };
     }
-    return { newStatus: 'PENDING', reason: 'sin episodios con video' };
+    return { newStatus: 'PENDING', reason: 'sin episodios físicos con video' };
   }
 
   // Tiene episodios pero faltan datos mínimos → PENDING
@@ -224,6 +229,36 @@ export async function runHealthInspection(): Promise<void> {
   const missingFiles = await markMissingVideoFiles();
   if (missingFiles > 0) {
     console.log(`[HealthInspector] ⚠️  ${missingFiles} VideoFile(s) marcados como FAILED (HLS no encontrado)`);
+  }
+
+  // Paso 1b: Barrido de series "fantasma" que están READY/ACTIVE pero no tienen ningún episodio con VideoFile COMPLETED
+  const emptySeries = await prisma.content.findMany({
+    where: {
+      type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
+      status: { in: ['READY', 'ACTIVE'] },
+      seasons: {
+        every: {
+          episodes: {
+            every: {
+              videoFiles: {
+                none: { status: 'COMPLETED' }
+              }
+            }
+          }
+        }
+      }
+    },
+    select: { id: true, status: true }
+  });
+
+  if (emptySeries.length > 0) {
+    console.log(`[HealthInspector] ⚠️  Encontradas ${emptySeries.length} series marcadas como ACTIVE pero sin episodios válidos. Bajando a PENDING...`);
+    for (const series of emptySeries) {
+      await prisma.content.update({
+        where: { id: series.id },
+        data: { status: 'PENDING' }
+      });
+    }
   }
 
   // Paso 2: Inspeccionar todo el contenido que NO está siendo procesado

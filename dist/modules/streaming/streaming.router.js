@@ -15,7 +15,7 @@ exports.streamingRouter.post('/request-access', auth_middleware_1.authenticate, 
             return;
         }
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
-        const access = await streaming_service_1.StreamingService.requestAccess(req.user.id, contentId, ip, episodeId);
+        const access = await streaming_service_1.StreamingService.requestAccess(req.user.id, req.user.role, contentId, ip, episodeId);
         (0, api_response_1.ok)(res, access);
     }
     catch (err) {

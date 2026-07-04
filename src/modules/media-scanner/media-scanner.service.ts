@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { prisma } from '../../shared/config/prisma';
-import { TMDBService, TMDBFullDetails } from '../../services/tmdb.service';
-import { addVideoJob } from '../../services/queue.service';
 import { env } from '../../shared/config/env';
+import { addVideoJob } from '../../services/queue.service';
+import { TMDBService, TMDBFullDetails } from '../../services/tmdb.service';
 
 export interface ScannedFile {
   fileName: string;
@@ -93,7 +93,7 @@ function parseSeasonEpisodeFromFilename(fileName: string): { season: number; epi
 export class MediaScannerService {
 
   private static creatingContents = new Map<string, Promise<string>>();
-  private static resolvingSeries = new Map<string, Promise<string>>();
+  private static resolvingSeries = new Map<string, Promise<string | null>>();
 
   static getSuggestedDirectories(): string[] {
     const dirs = env.MEDIA_SCAN_DIRS;
@@ -418,11 +418,23 @@ export class MediaScannerService {
 
     const existingVideo = await prisma.videoFile.findFirst({ 
       where: { 
-        originalPath: filePath,
-        status: { not: 'FAILED' }
+        originalPath: filePath
       } 
     });
     if (existingVideo) {
+      if (existingVideo.status === 'FAILED') {
+        // Retry failed processing jobs automatically if scanned again
+        await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { status: 'QUEUED' } });
+        try {
+          await addVideoJob({
+            videoFileId: existingVideo.id,
+            contentId: existingVideo.contentId || existingVideo.episodeId || '',
+            type: existingVideo.type,
+            videoPath: filePath
+          });
+        } catch (e) { /* skip if queue fails */ }
+        return { filePath, fileName, success: true, tmdbMatch: false };
+      }
       return { filePath, fileName, success: false, tmdbMatch: false, error: 'Este archivo ya fue importado' };
     }
 
@@ -505,37 +517,12 @@ export class MediaScannerService {
       }
     });
 
-    // Auto-increment logic: if the parsed episode is 1, check if we need to auto-increment
-    let finalEpisodeNumber = episode.episodeNumber;
-    
-    // Si el parseador asumió que es el episodio 1 (probablemente porque la carpeta no tiene número)
-    if (finalEpisodeNumber === 1) {
-      // Buscar el último episodio registrado para esta temporada
-      const lastEpisode = await prisma.episode.findFirst({
-        where: { seasonId: season.id },
-        orderBy: { number: 'desc' },
-        include: { videoFiles: true }
-      });
-      
-      if (lastEpisode && lastEpisode.videoFiles.length > 0) {
-        // Si el último episodio registrado ya tiene un video que NO es este
-        const hasThisVideo = lastEpisode.videoFiles.some(vf => vf.originalPath === episodeFolderPath);
-        if (!hasThisVideo) {
-          // Es un video nuevo, asignarlo al siguiente número de episodio
-          finalEpisodeNumber = lastEpisode.number + 1;
-        } else {
-          // Es el mismo video, mantener su número
-          finalEpisodeNumber = lastEpisode.number;
-        }
-      }
-    }
-
     const episodeRecord = await prisma.episode.upsert({
-      where: { seasonId_number: { seasonId: season.id, number: finalEpisodeNumber } },
+      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
       update: {},
       create: {
         seasonId: season.id,
-        number: finalEpisodeNumber,
+        number: episode.episodeNumber,
       }
     });
 
@@ -622,6 +609,13 @@ export class MediaScannerService {
       const existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
       if (existing) {
         contentId = existing.id;
+        const alreadyHasVideo = await prisma.videoFile.findFirst({
+            where: { contentId, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
+        });
+        if (alreadyHasVideo) {
+            console.log(`⏭️  [MediaScanner] Skipping "${folderName}" — already has a video file processing or completed.`);
+            return { filePath: folderPath, fileName: folderName, success: true, tmdbMatch: true };
+        }
       } else {
         const lockKey = `tmdb-${match.id}`;
         if (this.creatingContents.has(lockKey)) {
@@ -633,8 +627,19 @@ export class MediaScannerService {
           } catch (err: any) {
              // Si falla como película, intentamos verificar si es una serie
              try {
-               await TMDBService.getFullDetails(match.id, 'tv');
+               const tvDetails = await TMDBService.getFullDetails(match.id, 'tv');
                console.log(`[MediaScanner] ⚠️ Ignorando ${cleanName}: Es una SERIE, pero se intentó escanear como PELÍCULA.`);
+               await prisma.rejectedImport.create({
+                 data: {
+                   filePath: folderPath,
+                   fileName: folderName,
+                   reason: 'Es una serie, use el escáner de series',
+                   tmdbId: String(match.id),
+                   tmdbTitle: tvDetails.title || cleanName,
+                   tmdbType: 'tv',
+                   serverMode: env.WORKER_MODE || 'ALL'
+                 }
+               });
                return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: false, error: 'Es una serie, use el escáner de series' };
              } catch (err2: any) {
                if (/^\d+$/.test(cleanName)) {
@@ -681,6 +686,7 @@ export class MediaScannerService {
         masterPlaylist: '', 
         hlsPath: path.dirname(m3u8Url),
         fileSize: BigInt(0),
+        sourceNode: env.WORKER_MODE || 'ALL'
       }
     });
 
@@ -744,6 +750,12 @@ export class MediaScannerService {
           const tmdbResult = await TMDBService.searchWithFallback(seriesName, 'es-ES', 'tv').catch(() => ({ bestMatch: null, confidence: 0 }));
           if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
             const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
+            
+            if (mediaType === 'movie') {
+               console.warn(`[MediaScanner] ⚠️ Ignorando ${seriesName}: TMDB dice que es una PELÍCULA, pero se está subiendo como SERIE.`);
+               return null; // Return null to trigger fallback
+            }
+
             const details = await TMDBService.getFullDetails(tmdbResult.bestMatch.id, mediaType as 'movie' | 'tv');
             tmdbMatch = true;
             return await this._createSeriesContent(details);
@@ -752,10 +764,14 @@ export class MediaScannerService {
           }
         }
       };
-      this.resolvingSeries.set(seriesKey, resolveSeries().finally(() => this.resolvingSeries.delete(seriesKey)));
+      this.resolvingSeries.set(seriesKey, resolveSeries().catch(() => null).finally(() => this.resolvingSeries.delete(seriesKey)));
     }
 
-    contentId = await this.resolvingSeries.get(seriesKey)!;
+    const resolvedContentId = await this.resolvingSeries.get(seriesKey);
+    if (!resolvedContentId) {
+       return { filePath, fileName, success: false, tmdbMatch: false, error: 'Rechazado: El contenido es una película, no una serie.' };
+    }
+    contentId = resolvedContentId;
     // tmdbMatch state might be slightly off if resolved by another promise, but that's acceptable for the scan summary
 
     // Find or create the Season (with retry for concurrency on upsert)
@@ -792,9 +808,9 @@ export class MediaScannerService {
       episode.episodeNumber
     );
 
-    // Skip if this episode already has a COMPLETED video — protect finished content
+    // Skip if this episode already has a video processing or completed — protect finished content
     const existingCompletedVF = await prisma.videoFile.findFirst({
-      where: { episodeId: episodeRecord.id, status: 'COMPLETED' }
+      where: { episodeId: episodeRecord.id, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
     });
     if (existingCompletedVF) {
       console.log(`⏭️  [MediaScanner] Skipping S${episode.season}E${episode.episodeNumber} of "${episode.seriesFolderName}" — already has a COMPLETED video.`);
@@ -810,6 +826,7 @@ export class MediaScannerService {
         originalPath: filePath,
         status: 'QUEUED',
         fileSize: BigInt(fs.statSync(filePath).size),
+        sourceNode: env.WORKER_MODE || 'ALL'
       }
     });
 
@@ -942,7 +959,35 @@ export class MediaScannerService {
     // Si el escáner es de películas, pero el resultado de TMDB es una serie, rechazar
     if (contentType === 'MOVIE' && mediaType === 'tv') {
       console.log(`[MediaScanner] ⚠️ Ignorando ${fileName}: Es una SERIE, pero se intentó escanear como PELÍCULA.`);
+      await prisma.rejectedImport.create({
+        data: {
+          filePath: filePath,
+          fileName: fileName,
+          reason: 'Es una serie, use el escáner de series',
+          tmdbId: String(tmdbMatch.id),
+          tmdbTitle: tmdbMatch.name || tmdbMatch.title || fileName,
+          tmdbType: mediaType,
+          serverMode: env.WORKER_MODE || 'ALL'
+        }
+      });
       return { filePath, fileName, success: false, tmdbMatch: false, error: 'Es una serie, use el escáner de series' };
+    }
+
+    // Si el escáner es de series, pero el resultado de TMDB es una película, rechazar
+    if (contentType === 'SERIES' && mediaType === 'movie') {
+      console.log(`[MediaScanner] ⚠️ Ignorando ${fileName}: Es una PELÍCULA, pero se intentó escanear como SERIE.`);
+      await prisma.rejectedImport.create({
+        data: {
+          filePath: filePath,
+          fileName: fileName,
+          reason: 'Es una película, use el escáner de películas',
+          tmdbId: String(tmdbMatch.id),
+          tmdbTitle: tmdbMatch.title || tmdbMatch.name || fileName,
+          tmdbType: mediaType,
+          serverMode: env.WORKER_MODE || 'ALL'
+        }
+      });
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Es una película, use el escáner de películas' };
     }
 
     let details;
@@ -1167,7 +1212,8 @@ export class MediaScannerService {
         if (!fs.existsSync(mediaFolder)) fs.mkdirSync(mediaFolder, { recursive: true });
 
         const localStillPath = path.join(mediaFolder, 'still.jpg');
-        const virtualStillUrl = `/media/thumbnails/episodes/${episodeId}/still.jpg`;
+        const baseUrl = env.BACKEND_URL.replace(/\/$/, '');
+        const virtualStillUrl = `${baseUrl}/media/thumbnails/episodes/${episodeId}/still.jpg`;
 
         const existingThumb = await prisma.thumbnail.findFirst({
           where: { episodeId, type: 'STILL' }

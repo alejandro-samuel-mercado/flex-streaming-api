@@ -4,7 +4,7 @@ export declare class StreamingService {
      * Generates a signed streaming token for a content item.
      * Uses HMAC signed URLs instead of JWT for better security.
      */
-    static requestAccess(_userId: string, contentId: string, ip: string, episodeId?: string): Promise<{
+    static requestAccess(_userId: string, role: string, contentId: string, ip: string, episodeId?: string): Promise<{
         token: string;
         expiresIn: number;
         videoFileId: string;

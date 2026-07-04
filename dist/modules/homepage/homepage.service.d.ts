@@ -20,8 +20,8 @@ export declare class HomepageService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
@@ -71,8 +71,8 @@ export declare class HomepageService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
@@ -122,8 +122,8 @@ export declare class HomepageService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
@@ -173,8 +173,8 @@ export declare class HomepageService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             duration: number | null;
@@ -229,9 +229,9 @@ export declare class HomepageService {
             }[];
         } & {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             slug: string;
             logoUrl: string | null;
             isFeatured: boolean;
@@ -248,11 +248,11 @@ export declare class HomepageService {
         }[];
         plans: {
             id: string;
-            name: string;
-            isActive: boolean;
+            maxDevices: number;
             createdAt: Date;
             updatedAt: Date;
-            maxDevices: number;
+            name: string;
+            isActive: boolean;
             description: string | null;
             durationDays: number;
             price: Prisma.Decimal;

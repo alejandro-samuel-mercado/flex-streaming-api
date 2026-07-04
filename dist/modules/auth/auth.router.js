@@ -103,7 +103,6 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
         const authReq = req;
         const { prisma } = await Promise.resolve().then(() => __importStar(require('../../shared/config/prisma')));
         const userId = authReq.user.id;
-        // Handle virtual end-user accounts (their JWT sub is VIRTUAL_<accountId>)
         if (userId.startsWith('VIRTUAL_')) {
             const accountId = userId.replace('VIRTUAL_', '');
             const account = await prisma.endUserAccount.findUnique({
@@ -114,13 +113,22 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                     status: true,
                     type: true,
                     planId: true,
+                    startDate: true,
                     endDate: true,
                     maxDevices: true,
+                    deletedAt: true,
                     plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } },
                 },
             });
-            if (!account)
-                return next(new Error('Account not found'));
+            if (!account || account.deletedAt)
+                return res.status(401).json({ success: false, error: 'Account has been deleted', code: 'UNAUTHORIZED' });
+            if (account.plan && account.startDate && account.endDate) {
+                const start = account.startDate.getTime();
+                const end = account.endDate.getTime();
+                const totalDays = Math.max(0, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+                account.plan.durationDays = totalDays;
+                account.plan.bonusDays = 0;
+            }
             // Shape the response to match the regular user structure
             // End-users don't have profiles (they access content directly)
             return (0, api_response_1.ok)(res, {
@@ -134,6 +142,7 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                     status: account.status,
                     type: account.type,
                     planId: account.planId,
+                    startDate: account.startDate,
                     endDate: account.endDate,
                     maxDevices: account.maxDevices,
                     plan: account.plan ?? null,
@@ -160,6 +169,7 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                         status: true,
                         type: true,
                         planId: true,
+                        startDate: true,
                         endDate: true,
                         maxDevices: true,
                         plan: { select: { id: true, name: true, durationDays: true, bonusDays: true } }
@@ -167,6 +177,13 @@ exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, n
                 }
             },
         });
+        if (user && user.endUserAccount && user.endUserAccount.startDate && user.endUserAccount.endDate && user.endUserAccount.plan) {
+            const start = user.endUserAccount.startDate.getTime();
+            const end = user.endUserAccount.endDate.getTime();
+            const totalDays = Math.max(0, Math.ceil((end - start) / (1000 * 60 * 60 * 24)));
+            user.endUserAccount.plan.durationDays = totalDays;
+            user.endUserAccount.plan.bonusDays = 0;
+        }
         (0, api_response_1.ok)(res, user);
     }
     catch (err) {

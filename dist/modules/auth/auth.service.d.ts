@@ -10,9 +10,9 @@ import type { RegisterInput, LoginInput } from './auth.schemas';
 export declare function register(input: RegisterInput): Promise<{
     user: {
         id: string;
+        name: string | null;
         phone: string;
         role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
     };
     accessToken: string;
     refreshToken: string;
@@ -52,18 +52,18 @@ export declare function findOrCreateGoogleUser(googleProfile: {
 }): Promise<{
     user: {
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
-        googleId: string | null;
-        appleId: string | null;
         passwordHash: string | null;
-        isActive: boolean;
-        preferredLang: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        name: string | null;
+        phone: string;
+        googleId: string | null;
+        appleId: string | null;
+        role: import(".prisma/client").$Enums.UserRole;
+        isActive: boolean;
+        preferredLang: string | null;
         credits: number;
         parentId: string | null;
     };

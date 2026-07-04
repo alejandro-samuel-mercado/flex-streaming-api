@@ -132,7 +132,14 @@ exports.adminRouter.get('/users', (async (req, res, next) => {
         const search = req.query.search;
         const where = { deletedAt: null };
         if (role === 'END_USER') {
-            const endUserWhere = { deletedAt: null };
+            const showDeleted = req.query.showDeleted === 'true';
+            const endUserWhere = {};
+            if (showDeleted) {
+                endUserWhere.deletedAt = { not: null };
+            }
+            else {
+                endUserWhere.deletedAt = null;
+            }
             if (search) {
                 endUserWhere.OR = [
                     { username: { contains: search, mode: 'insensitive' } },
@@ -318,7 +325,7 @@ exports.adminRouter.put('/settings', (async (req, res, next) => {
 exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
     try {
         // ─── Fetch All Active/Pending (No limit) + History (50 last) ───
-        const [activeVideos, historyVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
+        const [activeVideos, completedVideos, failedVideos, totalCompleted, totalFailed, totalProcessing, totalQueued] = await Promise.all([
             prisma_1.prisma.videoFile.findMany({
                 where: { status: { in: ['PROCESSING', 'PENDING', 'QUEUED'] } },
                 orderBy: { createdAt: 'desc' },
@@ -330,7 +337,17 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
                 },
             }),
             prisma_1.prisma.videoFile.findMany({
-                where: { status: { in: ['COMPLETED', 'FAILED'] } },
+                where: { status: 'COMPLETED' },
+                orderBy: { updatedAt: 'desc' },
+                take: 100,
+                include: {
+                    content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } },
+                    episode: { include: { season: { include: { content: { select: { id: true, slug: true, translations: { select: { title: true }, take: 1 } } } } } } },
+                    qualities: { select: { resolution: true } },
+                },
+            }),
+            prisma_1.prisma.videoFile.findMany({
+                where: { status: 'FAILED' },
                 orderBy: { updatedAt: 'desc' },
                 take: 100,
                 include: {
@@ -344,7 +361,7 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
             prisma_1.prisma.videoFile.count({ where: { status: 'PROCESSING' } }),
             prisma_1.prisma.videoFile.count({ where: { status: { in: ['PENDING', 'QUEUED'] } } })
         ]);
-        const videos = [...activeVideos, ...historyVideos];
+        const videos = [...activeVideos, ...completedVideos, ...failedVideos];
         const stats = {
             totalCompleted,
             totalFailed,
@@ -378,6 +395,19 @@ exports.adminRouter.get('/videos/status', (async (_req, res, next) => {
             return resVideo;
         }));
         (0, api_response_1.ok)(res, { videos: videosWithProgress, stats });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+// --- Rejected Imports Log ---
+exports.adminRouter.get('/videos/rejected-imports', (async (_req, res, next) => {
+    try {
+        const rejected = await prisma_1.prisma.rejectedImport.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 100
+        });
+        (0, api_response_1.ok)(res, { data: rejected });
     }
     catch (err) {
         next(err);

@@ -1,3 +1,4 @@
+import { env } from '../shared/config/env';
 import { prisma } from '../shared/config/prisma';
 import { MediaScannerService } from '../modules/media-scanner/media-scanner.service';
 import type { Server as SocketIOServer } from 'socket.io';
@@ -77,16 +78,11 @@ export class AutoScannerWorker {
       let moviePath  = cfg['AUTO_SCAN_MOVIE_PATH']  || cfg['AUTO_SCAN_PATH'] || '';
       let seriesPath = cfg['AUTO_SCAN_SERIES_PATH'] || '';
 
-      // Override with local .env to allow split servers
-      const envDirs = process.env.MEDIA_SCAN_DIRS;
-      if (envDirs) {
-        if (envDirs.includes('peliculas') || envDirs.includes('movies')) {
-          seriesPath = ''; // Disable series scanning on this server
-          moviePath = envDirs;
-        } else if (envDirs.includes('series')) {
-          moviePath = '';  // Disable movies scanning on this server
-          seriesPath = envDirs;
-        }
+      // Separación estricta por WORKER_MODE (para servidores divididos)
+      if (env.WORKER_MODE === 'MOVIES') {
+        seriesPath = ''; // Solo películas en este servidor
+      } else if (env.WORKER_MODE === 'SERIES') {
+        moviePath = '';  // Solo series en este servidor
       }
 
       if (!moviePath && !seriesPath) {

@@ -151,20 +151,26 @@ class TMDBService {
      *   "guerreras k-pop" → finds "Las guerreras K-Pop"
      *   "las guerras" → finds "Las guerreras K-Pop" (partial word match)
      */
-    static async searchWithFallback(query, lang = 'es-ES') {
+    static async searchWithFallback(query, lang = 'es-ES', forceType) {
         try {
             const variations = this.generateQueryVariations(query);
             const allResultsMap = new Map(); // Dedup by TMDB id
             // Search each variation, collecting unique results
             for (const variation of variations) {
-                // Try multi search first
-                let results = await this.search(variation, 'multi', lang);
-                // If no results, try movie and tv separately
-                if (!results || results.length === 0) {
-                    results = await this.search(variation, 'movie', lang);
+                let results;
+                if (forceType) {
+                    results = await this.search(variation, forceType, lang);
                 }
-                if (!results || results.length === 0) {
-                    results = await this.search(variation, 'tv', lang);
+                else {
+                    // Try multi search first
+                    results = await this.search(variation, 'multi', lang);
+                    // If no results, try movie and tv separately
+                    if (!results || results.length === 0) {
+                        results = await this.search(variation, 'movie', lang);
+                    }
+                    if (!results || results.length === 0) {
+                        results = await this.search(variation, 'tv', lang);
+                    }
                 }
                 if (results && results.length > 0) {
                     for (const r of results) {

@@ -39,8 +39,24 @@ class ContentService {
         const conditions = [
             { deletedAt: null }
         ];
-        // 2. Status condition
-        if (status) {
+        if (status === 'WITH_ERRORS') {
+            // Filtro especial: series con al menos un episodio fallido o sin videos
+            conditions.push({
+                seasons: {
+                    some: {
+                        episodes: {
+                            some: {
+                                OR: [
+                                    { videoFiles: { some: { status: 'FAILED' } } },
+                                    { videoFiles: { none: {} } }
+                                ]
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        else if (status) {
             // Admin pasando un status explícito: respetar lo que pide
             conditions.push({ status: status });
         }
@@ -48,10 +64,8 @@ class ContentService {
             // Llamada pública sin filtro de status: solo mostrar contenido listo
             conditions.push({ status: { in: ['READY', 'ACTIVE'] } });
         }
-        else {
-            // Llamada de admin sin filtro de status: mostrar todo excepto eliminados lógicamente
-            conditions.push({ status: { in: ['READY', 'ACTIVE', 'PENDING', 'PROCESSING', 'UPLOADING', 'DRAFT'] } });
-        }
+        // Si es Admin y no hay filtro de status explícito, no aplicamos ningún filtro de status
+        // para que pueda ver todo (ERROR, INACTIVE, UPCOMING, etc.)
         // 2b. En llamadas públicas, filtrar por contenido que tenga video disponible
         if (isPublic) {
             conditions.push({
@@ -137,22 +151,37 @@ class ContentService {
             }),
             prisma_1.prisma.content.count({ where }),
         ]);
-        // Attach episode count for series to show in the admin list
+        // Attach episode/failed counts for all series types
+        const SERIES_TYPES_LIST = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
         const dataWithCounts = await Promise.all(data.map(async (item) => {
-            if (item.type === 'SERIES' || item.type === 'ANIME') {
-                const count = await prisma_1.prisma.episode.count({
-                    where: {
-                        season: { contentId: item.id },
-                        videoFiles: { some: { status: 'COMPLETED' } }
-                    }
-                });
-                return { ...item, episodeCount: count };
+            if (SERIES_TYPES_LIST.includes(item.type)) {
+                const [episodeCount, failedCount, emptyEpisodesCount] = await Promise.all([
+                    prisma_1.prisma.episode.count({
+                        where: {
+                            season: { contentId: item.id },
+                            videoFiles: { some: { status: 'COMPLETED' } }
+                        }
+                    }),
+                    prisma_1.prisma.videoFile.count({
+                        where: {
+                            status: 'FAILED',
+                            episode: { season: { contentId: item.id } }
+                        }
+                    }),
+                    prisma_1.prisma.episode.count({
+                        where: {
+                            season: { contentId: item.id },
+                            videoFiles: { none: {} }
+                        }
+                    })
+                ]);
+                return { ...item, episodeCount, failedCount, emptyEpisodesCount };
             }
             return item;
         }));
         return { data: dataWithCounts, total, page, limit };
     }
-    static async getContentById(idOrSlug, lang = 'es') {
+    static async getContentById(idOrSlug, lang = 'es', isAdmin = false) {
         return prisma_1.prisma.content.findFirst({
             where: {
                 OR: [
@@ -177,6 +206,9 @@ class ContentService {
                     include: {
                         translations: true,
                         episodes: {
+                            where: isAdmin ? undefined : {
+                                videoFiles: { some: { status: 'COMPLETED' } }
+                            },
                             include: {
                                 translations: true,
                                 thumbnails: true,

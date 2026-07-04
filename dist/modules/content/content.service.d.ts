@@ -35,8 +35,8 @@ export declare class ContentService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             originalTitle: string | null;
@@ -80,6 +80,8 @@ export declare class ContentService {
             }[];
         } | {
             episodeCount: number;
+            failedCount: number;
+            emptyEpisodesCount: number;
             type: import(".prisma/client").$Enums.ContentType;
             status: import(".prisma/client").$Enums.ContentStatus;
             platform: {
@@ -93,8 +95,8 @@ export declare class ContentService {
                 label: string;
             } | null;
             id: string;
-            createdAt: Date;
             country: string | null;
+            createdAt: Date;
             slug: string;
             releaseYear: number | null;
             originalTitle: string | null;
@@ -141,12 +143,12 @@ export declare class ContentService {
         page: number;
         limit: number;
     }>;
-    static getContentById(idOrSlug: string, lang?: string): Promise<({
+    static getContentById(idOrSlug: string, lang?: string, isAdmin?: boolean): Promise<({
         platform: {
             id: string;
-            name: string;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
             slug: string;
             logoUrl: string | null;
             isFeatured: boolean;
@@ -213,6 +215,7 @@ export declare class ContentService {
             fileSize: bigint | null;
             errorMessage: string | null;
             processingJobId: string | null;
+            sourceNode: string | null;
         })[];
         seasons: ({
             translations: {
@@ -256,6 +259,7 @@ export declare class ContentService {
                     fileSize: bigint | null;
                     errorMessage: string | null;
                     processingJobId: string | null;
+                    sourceNode: string | null;
                 })[];
                 thumbnails: {
                     type: import(".prisma/client").$Enums.ThumbnailType;
@@ -276,8 +280,8 @@ export declare class ContentService {
         } & {
             number: number;
             id: string;
-            year: number | null;
             createdAt: Date;
+            year: number | null;
             contentId: string;
             posterUrl: string | null;
         })[];
@@ -314,9 +318,9 @@ export declare class ContentService {
         actors: ({
             actor: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 photoUrl: string | null;
                 birthDate: Date | null;
                 nationality: string | null;
@@ -332,9 +336,9 @@ export declare class ContentService {
         directors: ({
             director: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 photoUrl: string | null;
                 birthDate: Date | null;
                 nationality: string | null;
@@ -349,10 +353,10 @@ export declare class ContentService {
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
         id: string;
+        country: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
-        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
@@ -391,8 +395,8 @@ export declare class ContentService {
             label: string;
         } | null;
         id: string;
-        createdAt: Date;
         country: string | null;
+        createdAt: Date;
         slug: string;
         releaseYear: number | null;
         originalTitle: string | null;
@@ -448,8 +452,8 @@ export declare class ContentService {
             label: string;
         } | null;
         id: string;
-        createdAt: Date;
         country: string | null;
+        createdAt: Date;
         slug: string;
         releaseYear: number | null;
         originalTitle: string | null;
@@ -505,8 +509,8 @@ export declare class ContentService {
             label: string;
         } | null;
         id: string;
-        createdAt: Date;
         country: string | null;
+        createdAt: Date;
         slug: string;
         releaseYear: number | null;
         originalTitle: string | null;
@@ -562,8 +566,8 @@ export declare class ContentService {
             label: string;
         } | null;
         id: string;
-        createdAt: Date;
         country: string | null;
+        createdAt: Date;
         slug: string;
         releaseYear: number | null;
         originalTitle: string | null;
@@ -610,10 +614,10 @@ export declare class ContentService {
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
         id: string;
+        country: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
-        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
@@ -674,6 +678,7 @@ export declare class ContentService {
             fileSize: bigint | null;
             errorMessage: string | null;
             processingJobId: string | null;
+            sourceNode: string | null;
         })[];
         genres: ({
             genre: {
@@ -708,9 +713,9 @@ export declare class ContentService {
         actors: ({
             actor: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 photoUrl: string | null;
                 birthDate: Date | null;
                 nationality: string | null;
@@ -726,9 +731,9 @@ export declare class ContentService {
         directors: ({
             director: {
                 id: string;
-                name: string;
                 createdAt: Date;
                 updatedAt: Date;
+                name: string;
                 photoUrl: string | null;
                 birthDate: Date | null;
                 nationality: string | null;
@@ -743,10 +748,10 @@ export declare class ContentService {
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
         id: string;
+        country: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
-        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;
@@ -776,10 +781,10 @@ export declare class ContentService {
         type: import(".prisma/client").$Enums.ContentType;
         status: import(".prisma/client").$Enums.ContentStatus;
         id: string;
+        country: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
-        country: string | null;
         slug: string;
         tmdbId: string | null;
         releaseYear: number | null;

@@ -28,21 +28,21 @@ export declare class EndUsersService {
                 durationDays: number;
             } | null;
             id: string;
-            password: string;
             username: string;
-            createdAt: Date;
+            password: string;
             startDate: Date | null;
             endDate: Date | null;
             maxDevices: number;
+            createdAt: Date;
             managedBy: {
                 id: string;
+                username: string | null;
+                name: string | null;
                 phone: string;
                 role: import(".prisma/client").$Enums.UserRole;
-                name: string | null;
-                username: string | null;
                 parent: {
-                    name: string | null;
                     username: string | null;
+                    name: string | null;
                 } | null;
             };
         }[];
@@ -60,19 +60,19 @@ export declare class EndUsersService {
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
-        password: string;
         username: string;
+        password: string;
         createdAt: Date;
     }>;
     static getById(accountId: string, userId: string, userRole: UserRole): Promise<{
         connectedDevicesCount: number;
         plan: {
             id: string;
-            name: string;
-            isActive: boolean;
+            maxDevices: number;
             createdAt: Date;
             updatedAt: Date;
-            maxDevices: number;
+            name: string;
+            isActive: boolean;
             description: string | null;
             durationDays: number;
             creditCost: number;
@@ -85,22 +85,22 @@ export declare class EndUsersService {
         } | null;
         managedBy: {
             id: string;
+            username: string | null;
+            name: string | null;
             phone: string;
             role: import(".prisma/client").$Enums.UserRole;
-            name: string | null;
-            username: string | null;
             parent: {
-                name: string | null;
                 username: string | null;
+                name: string | null;
             } | null;
         };
         connectedDevices: {
             platform: string | null;
             id: string;
+            createdAt: Date;
+            isActive: boolean;
             deviceName: string | null;
             deviceType: import(".prisma/client").$Enums.DeviceType;
-            isActive: boolean;
-            createdAt: Date;
             endUserAccountId: string;
             deviceToken: string;
             osVersion: string | null;
@@ -113,44 +113,44 @@ export declare class EndUsersService {
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
-        password: string;
         username: string;
+        password: string;
         passwordHash: string;
-        createdAt: Date;
-        updatedAt: Date;
-        deletedAt: Date | null;
-        userId: string | null;
         managedById: string;
+        userId: string | null;
         planId: string | null;
         startDate: Date | null;
         endDate: Date | null;
         country: string | null;
         notes: string | null;
         maxDevices: number;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
     }>;
     static changePassword(accountId: string, userId: string, userRole: UserRole, newPassword: string): Promise<{
         id: string;
-        password: string;
         username: string;
+        password: string;
     }>;
     static deleteAccount(accountId: string, userId: string, userRole: UserRole): Promise<{
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
-        password: string;
         username: string;
+        password: string;
         passwordHash: string;
-        createdAt: Date;
-        updatedAt: Date;
-        deletedAt: Date | null;
-        userId: string | null;
         managedById: string;
+        userId: string | null;
         planId: string | null;
         startDate: Date | null;
         endDate: Date | null;
         country: string | null;
         notes: string | null;
         maxDevices: number;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
     }>;
     static addPlan(accountId: string, userId: string, userRole: UserRole, planId: string): Promise<{
         plan: {
@@ -162,20 +162,20 @@ export declare class EndUsersService {
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
-        password: string;
         username: string;
+        password: string;
         passwordHash: string;
-        createdAt: Date;
-        updatedAt: Date;
-        deletedAt: Date | null;
-        userId: string | null;
         managedById: string;
+        userId: string | null;
         planId: string | null;
         startDate: Date | null;
         endDate: Date | null;
         country: string | null;
         notes: string | null;
         maxDevices: number;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
     }>;
     static togglePause(accountId: string, userId: string, userRole: UserRole): Promise<{
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
@@ -185,10 +185,10 @@ export declare class EndUsersService {
     static listDevices(accountId: string, userId: string, userRole: UserRole): Promise<{
         platform: string | null;
         id: string;
+        createdAt: Date;
+        isActive: boolean;
         deviceName: string | null;
         deviceType: import(".prisma/client").$Enums.DeviceType;
-        isActive: boolean;
-        createdAt: Date;
         endUserAccountId: string;
         deviceToken: string;
         osVersion: string | null;
@@ -214,8 +214,8 @@ export declare class EndUsersService {
         };
     } & {
         id: string;
-        endUserAccountId: string;
         planId: string;
+        endUserAccountId: string;
         creditsCost: number;
         daysAdded: number;
         appliedById: string;

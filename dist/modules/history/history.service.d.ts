@@ -92,9 +92,9 @@ export declare class HistoryService {
         data: ({
             profile: {
                 user: {
+                    name: string | null;
                     phone: string;
                     role: import(".prisma/client").$Enums.UserRole;
-                    name: string | null;
                 };
                 id: string;
                 name: string;

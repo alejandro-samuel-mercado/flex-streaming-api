@@ -7,9 +7,9 @@ export interface AuthenticatedRequest extends Request {
         role: UserRole;
     };
 }
-export declare function authenticate(req: AuthenticatedRequest, _res: Response, next: NextFunction): void;
+export declare const authenticate: (req: AuthenticatedRequest, _res: Response, next: NextFunction) => Promise<void>;
 export declare function requireRole(...roles: UserRole[]): (req: AuthenticatedRequest, _res: Response, next: NextFunction) => void;
-export declare function optionalAuth(req: AuthenticatedRequest, _res: Response, next: NextFunction): void;
+export declare const optionalAuth: (req: AuthenticatedRequest, _res: Response, next: NextFunction) => Promise<void>;
 export declare function requireAnyRole(...roles: UserRole[]): (req: AuthenticatedRequest, _res: Response, next: NextFunction) => void;
 export declare const requireAdmin: (req: AuthenticatedRequest, _res: Response, next: NextFunction) => void;
 export declare const requireSuperVendorOrAbove: (req: AuthenticatedRequest, _res: Response, next: NextFunction) => void;

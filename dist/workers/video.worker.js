@@ -13,9 +13,63 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const connection = new ioredis_1.default(env_1.env.REDIS_URL, { maxRetriesPerRequest: null });
 const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
+// ── Genera un slug legible por humanos a partir de un título ──────────────────
+function slugify(text) {
+    return (text || 'sin-titulo')
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '')
+        .substring(0, 60);
+}
+/**
+ * Construye la carpeta HLS con formato legible:
+ *   PELÍCULA: /home/peliplus_gran_disco/hls/peliculas/iron-man--cmr4xxx/
+ *   EPISODIO:  /home/peliplus_gran_disco/hls/series/breaking-bad--cmr5xxx/S01E01--cmryyy/
+ */
+async function buildOutputFolder(jobType, videoFileId, contentId, episodeId) {
+    if (jobType === 'EPISODE' && episodeId) {
+        // Resolver serie: episodio → temporada → contenido
+        const epRecord = await prisma_1.prisma.episode.findUnique({
+            where: { id: episodeId },
+            include: {
+                season: {
+                    include: {
+                        content: { include: { translations: true } }
+                    }
+                }
+            }
+        });
+        const seriesTitle = epRecord?.season?.content?.translations?.[0]?.title || epRecord?.season?.contentId || contentId;
+        const seriesSlug = slugify(seriesTitle);
+        const shortSeriesId = epRecord?.season?.contentId?.substring(0, 8) || contentId.substring(0, 8);
+        const seasonNum = String(epRecord?.season?.number || 1).padStart(2, '0');
+        const episodeNum = String(epRecord?.number || 1).padStart(2, '0');
+        const shortEpId = videoFileId.substring(0, 8);
+        // /hls/series/breaking-bad--cmr5xxx/S01E02--cmryyy/
+        return path_1.default.join(env_1.env.MEDIA_PATH, 'hls', 'series', `${seriesSlug}--${shortSeriesId}`, `S${seasonNum}E${episodeNum}--${shortEpId}`);
+    }
+    else {
+        // Película
+        const content = await prisma_1.prisma.content.findUnique({
+            where: { id: contentId },
+            include: { translations: true }
+        });
+        const movieTitle = content?.translations?.[0]?.title || contentId;
+        const movieSlug = slugify(movieTitle);
+        const shortId = contentId.substring(0, 8);
+        // /hls/peliculas/iron-man--cmr4xxx/
+        return path_1.default.join(env_1.env.MEDIA_PATH, 'hls', 'peliculas', `${movieSlug}--${shortId}`);
+    }
+}
 exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
     const { videoFileId, contentId, videoPath } = job.data;
-    const outputFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'hls', contentId);
+    const jobType = job.data.type || 'MOVIE';
+    // Buscar el episodeId si existe
+    const vfInitial = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId }, select: { episodeId: true } });
+    const episodeId = vfInitial?.episodeId ?? null;
+    // Construir carpeta de salida con formato legible por humanos
+    const outputFolder = await buildOutputFolder(jobType, videoFileId, contentId, episodeId);
     const onProgress = async (percent) => {
         try {
             await job.updateProgress(percent);
@@ -26,11 +80,11 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
         }
     };
     job.log(`Starting HLS processing for contentId: ${contentId}`);
+    job.log(`Output folder (legible): ${outputFolder}`);
     // ─── Worker Mode Filter ────────────────────────────────────────────────
     // When WORKER_MODE is set, this server only processes a specific type.
     // Server 2 (SERIES): skips MOVIE jobs, lets them wait for Server 3.
     // Server 3 (MOVIES): skips EPISODE jobs, lets them wait for Server 2.
-    const jobType = job.data.type || 'MOVIE';
     if (env_1.env.WORKER_MODE === 'MOVIES' && jobType === 'EPISODE') {
         job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only. Re-queuing.`);
         await job.moveToDelayed(Date.now() + 30000, job.token);
@@ -69,17 +123,19 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
             data: { status: 'PROCESSING' }
         });
         await onProgress(5);
-        // Check if this content/episode already has an official high-quality poster (e.g. from TMDB)
-        const hasPoster = await prisma_1.prisma.thumbnail.findFirst({
-            where: {
-                OR: [
-                    { contentId: existsInitial.contentId || undefined, type: 'POSTER' },
-                    { episodeId: existsInitial.episodeId || undefined, type: 'POSTER' }
-                ]
-            }
-        });
+        // Para películas, verificar si ya tiene un póster de TMDB.
+        // Para episodios, siempre generamos la miniatura (STILL) desde el video.
+        let hasPoster = false;
+        if (jobType !== 'EPISODE') {
+            const existing = await prisma_1.prisma.thumbnail.findFirst({
+                where: { contentId: existsInitial.contentId || undefined, type: 'POSTER' }
+            });
+            hasPoster = !!existing;
+        }
         if (!hasPoster) {
-            const thumbnailFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', contentId);
+            // Thumbnails con carpeta legible: thumbnails/peliculas/titulo--id/ o thumbnails/series/titulo--id/
+            const thumbSubdir = jobType === 'EPISODE' ? path_1.default.join('series', contentId.substring(0, 8)) : path_1.default.join('peliculas', contentId.substring(0, 8));
+            const thumbnailFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'thumbnails', thumbSubdir);
             const thumbnailResult = await ffmpeg_service_1.FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
             job.log(`Thumbnail generated at ${thumbnailResult.path}`);
         }
@@ -88,7 +144,11 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
         }
         await onProgress(10);
         // ─── Extract embedded subtitles (MKV, MP4, etc.) ──────────────────
-        const subtitlesFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'subtitles', contentId);
+        // Subtítulos con carpeta legible separada por tipo
+        const subSubdir = jobType === 'EPISODE'
+            ? path_1.default.join('series', contentId.substring(0, 8), videoFileId.substring(0, 8))
+            : path_1.default.join('peliculas', contentId.substring(0, 8));
+        const subtitlesFolder = path_1.default.join(env_1.env.MEDIA_PATH, 'subtitles', subSubdir);
         let extractedSubs = [];
         try {
             extractedSubs = await ffmpeg_service_1.FFmpegService.extractSubtitles(videoPath, subtitlesFolder);
@@ -157,9 +217,13 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
         // ─── Save extracted subtitles to DB ────────────────────────────────
         if (extractedSubs.length > 0) {
             for (const sub of extractedSubs) {
-                // Copy subtitle file to the subtitles media folder and get relative URL
                 const subFileName = path_1.default.basename(sub.filePath);
-                const subUrl = `/media/subtitles/${contentId}/${subFileName}`;
+                // URL legible: /media/subtitles/peliculas/{contentId_corto}/sub_spa.vtt
+                //              /media/subtitles/series/{contentId_corto}/{videoFileId_corto}/sub_spa.vtt
+                const subUrlDir = jobType === 'EPISODE'
+                    ? `series/${contentId.substring(0, 8)}/${videoFileId.substring(0, 8)}`
+                    : `peliculas/${contentId.substring(0, 8)}`;
+                const subUrl = `/media/subtitles/${subUrlDir}/${subFileName}`;
                 await prisma_1.prisma.subtitleTrack.create({
                     data: {
                         videoFileId,
@@ -174,67 +238,112 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
             }
             job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
         }
-        const jobType = job.data.type || 'MOVIE';
-        // ─── Determine content status: READY if video is done ─────
-        const realContentId = existsInitial.contentId || contentId;
-        const content = await prisma_1.prisma.content.findUnique({
-            where: { id: realContentId },
-            include: {
-                translations: true,
-                thumbnails: true,
-                genres: true
-            }
-        });
-        if (content) {
-            // If it's a movie or series/anime, it should be READY since video is done
-            await prisma_1.prisma.content.update({
-                where: { id: realContentId },
-                data: { status: 'READY' }
+        const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
+        // ─── Determine content status ──────────────────────────────────────────
+        // For EPISODE type: resolve real series Content ID via episode→season chain
+        let realContentId = existsInitial.contentId;
+        if (!realContentId && existsInitial.episodeId) {
+            const epRecord = await prisma_1.prisma.episode.findUnique({
+                where: { id: existsInitial.episodeId },
+                include: { season: { select: { contentId: true } } }
             });
-            job.log(`Content ${realContentId} marked as READY (video processing complete)`);
-            // Log warnings about missing data but DON'T block the status
-            const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);
-            const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
-            const hasGenres = content.genres.length > 0;
-            if (!hasDescription || !hasPoster || !hasGenres) {
-                const missing = [];
-                if (!hasDescription)
-                    missing.push('sinopsis');
-                if (!hasPoster)
-                    missing.push('poster');
-                if (!hasGenres)
-                    missing.push('géneros');
-                job.log(`Warning: Content ${contentId} is READY but missing metadata: ${missing.join(', ')}`);
-            }
+            realContentId = epRecord?.season?.contentId ?? null;
         }
-        else if (jobType === 'TRAILER') {
-            // If it's a trailer, update the trailerUrl field
-            await prisma_1.prisma.content.update({
-                where: { id: contentId },
-                data: { trailerUrl: masterPlaylistUrl }
+        if (!realContentId)
+            realContentId = contentId; // legacy fallback
+        // Guard: si no pudimos resolver el contentId, no hay nada que actualizar
+        if (!realContentId) {
+            job.log(`Warning: could not resolve contentId for videoFile ${videoFileId} — skipping status update`);
+        }
+        else {
+            const rcId = realContentId; // narrowed to string for TS
+            const content = await prisma_1.prisma.content.findUnique({
+                where: { id: rcId },
+                include: { translations: true, thumbnails: true, genres: true }
             });
-        }
-        // Update the content poster only if we actually need to/generated it
-        if (!hasPoster) {
-            const posterUrl = `/media/thumbnails/${contentId}/poster.jpg`;
-            const existingPoster = await prisma_1.prisma.thumbnail.findFirst({
-                where: {
-                    contentId: existsInitial.contentId || undefined,
-                    episodeId: existsInitial.episodeId || undefined,
-                    type: 'POSTER'
+            if (content) {
+                const isSeriesType = SERIES_TYPES.includes(content.type);
+                const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
+                const targetStatus = hasPoster ? 'ACTIVE' : 'PENDING';
+                if (!isSeriesType) {
+                    // PELÍCULA / TRAILER
+                    await prisma_1.prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
+                    job.log(`Content ${rcId} marked as ${targetStatus} (hasPoster: ${hasPoster})`);
                 }
+                else {
+                    // SERIE: contar episodios con video COMPLETED
+                    const completedEpisodes = await prisma_1.prisma.episode.count({
+                        where: {
+                            season: { contentId: rcId },
+                            videoFiles: { some: { status: 'COMPLETED' } }
+                        }
+                    });
+                    const totalEpisodes = await prisma_1.prisma.episode.count({
+                        where: { season: { contentId: rcId } }
+                    });
+                    if (completedEpisodes > 0) {
+                        await prisma_1.prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
+                        job.log(`Serie ${rcId} ${targetStatus} — ${completedEpisodes}/${totalEpisodes} eps completos (hasPoster: ${hasPoster})`);
+                    }
+                    else {
+                        await prisma_1.prisma.content.updateMany({
+                            where: { id: rcId, status: { notIn: ['ACTIVE'] } },
+                            data: { status: 'PROCESSING' }
+                        });
+                        job.log(`Serie ${rcId} PROCESSING — ${completedEpisodes}/${totalEpisodes} eps completos`);
+                    }
+                }
+                // Log warnings sobre metadata faltante
+                const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);
+                // hasPoster ya está declarado arriba
+                const hasGenres = content.genres.length > 0;
+                if (!hasDescription || !hasPoster || !hasGenres) {
+                    const missing = [];
+                    if (!hasDescription)
+                        missing.push('sinopsis');
+                    if (!hasPoster)
+                        missing.push('poster');
+                    if (!hasGenres)
+                        missing.push('géneros');
+                    job.log(`Warning: Content ${rcId} missing metadata: ${missing.join(', ')}`);
+                }
+            }
+            else if (jobType === 'TRAILER') {
+                await prisma_1.prisma.content.update({ where: { id: contentId }, data: { trailerUrl: masterPlaylistUrl } });
+            }
+        } // end realContentId guard
+        // Update the content/episode thumbnail if we generated one
+        if (jobType === 'EPISODE') {
+            const stillUrl = `/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
+            const existingStill = await prisma_1.prisma.thumbnail.findFirst({
+                where: { episodeId: existsInitial.episodeId || undefined, type: 'STILL' }
             });
-            if (existingPoster) {
-                await prisma_1.prisma.thumbnail.update({
-                    where: { id: existingPoster.id },
-                    data: { url: posterUrl }
-                });
+            if (existingStill) {
+                await prisma_1.prisma.thumbnail.update({ where: { id: existingStill.id }, data: { url: stillUrl } });
             }
             else {
                 await prisma_1.prisma.thumbnail.create({
                     data: {
-                        contentId: existsInitial.contentId || null,
                         episodeId: existsInitial.episodeId || null,
+                        type: 'STILL',
+                        url: stillUrl,
+                        width: 1280,
+                        height: 720
+                    }
+                });
+            }
+        }
+        else {
+            // PELICULAS
+            // Verificar si se generó miniatura, si no, es porque ya tenía un POSTER TMDB y se saltó
+            const hasPosterOnDisk = await prisma_1.prisma.thumbnail.findFirst({
+                where: { contentId: existsInitial.contentId || undefined, type: 'POSTER' }
+            });
+            if (!hasPosterOnDisk) {
+                const posterUrl = `/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
+                await prisma_1.prisma.thumbnail.create({
+                    data: {
+                        contentId: existsInitial.contentId || null,
                         type: 'POSTER',
                         url: posterUrl,
                         width: existsInitial.contentId ? 500 : 1280,
@@ -243,16 +352,10 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
                 });
             }
         }
-        // ─── Delete original file to save space ───────────────────────────────
-        try {
-            if (fs_1.default.existsSync(videoPath)) {
-                fs_1.default.unlinkSync(videoPath);
-                job.log(`Original video file deleted to save space: ${videoPath}`);
-            }
-        }
-        catch (delErr) {
-            job.log(`Warning: Failed to delete original video file: ${delErr.message}`);
-        }
+        // ─── NUNCA borrar el original ──────────────────────────────────────
+        // Los videos originales SIEMPRE se conservan en /home/media/peliculas
+        // o /home/series por si es necesario reprocesar sin volver a subir.
+        job.log(`Original conservado en: ${videoPath} (no se borra para permitir reprocesamiento)`);
         await onProgress(100);
         return { success: true, path: hlsResult.path };
     }
@@ -293,12 +396,37 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
                     data: { status: 'FAILED', errorMessage: error.message }
                 });
             }
-            // 2. NEVER mark content as ERROR — reset to PENDING so it stays visible and retryable
-            const errContentId = existsInitial?.contentId || contentId;
-            await prisma_1.prisma.content.updateMany({
-                where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
-                data: { status: 'PENDING' }
-            });
+            // 2. Resolver el contentId real (para episodios, navegar episode→season→content)
+            let errContentId = existsInitial?.contentId ?? null;
+            if (!errContentId && existsInitial?.episodeId) {
+                const epRecord = await prisma_1.prisma.episode.findUnique({
+                    where: { id: existsInitial.episodeId },
+                    include: { season: { select: { contentId: true } } }
+                });
+                errContentId = epRecord?.season?.contentId ?? null;
+            }
+            if (!errContentId)
+                errContentId = contentId;
+            if (errContentId) {
+                // Verificar si aún quedan episodios con video COMPLETED
+                const completedLeft = await prisma_1.prisma.videoFile.count({
+                    where: {
+                        status: 'COMPLETED',
+                        OR: [
+                            { contentId: errContentId },
+                            { episode: { season: { contentId: errContentId } } }
+                        ]
+                    }
+                });
+                if (completedLeft === 0) {
+                    // No hay ningún video funcionando → bajar a PENDING
+                    await prisma_1.prisma.content.updateMany({
+                        where: { id: errContentId },
+                        data: { status: 'PENDING' }
+                    });
+                }
+                // Si quedan videos OK, dejar el status como está (no bajar una serie entera por 1 episodio fallido)
+            }
         }
         catch (dbErr) {
             job.log(`Warning: could not update status after failure: ${dbErr.message}`);
@@ -355,13 +483,39 @@ exports.videoWorker.on('failed', async (job, err) => {
                 });
                 console.log(`[VideoWorker] videoFile ${job.data.videoFileId} marked FAILED (transient error).`);
             }
-            // Reset content from ERROR/PROCESSING back to PENDING — never permanently block content
-            const errContentId = job.data.contentId;
+            // Resolver el contentId real para el handler externo (episode→season→content)
+            let errContentId = null;
+            try {
+                const vf = await prisma_1.prisma.videoFile.findUnique({ where: { id: job.data.videoFileId } });
+                if (vf?.contentId) {
+                    errContentId = vf.contentId;
+                }
+                else if (vf?.episodeId) {
+                    const ep = await prisma_1.prisma.episode.findUnique({
+                        where: { id: vf.episodeId },
+                        include: { season: { select: { contentId: true } } }
+                    });
+                    errContentId = ep?.season?.contentId ?? null;
+                }
+            }
+            catch (_) { }
             if (errContentId) {
-                await prisma_1.prisma.content.updateMany({
-                    where: { id: errContentId, status: { in: ['ERROR', 'PROCESSING'] } },
-                    data: { status: 'PENDING' }
+                // Solo bajar a PENDING si no quedan videos funcionando
+                const completedLeft = await prisma_1.prisma.videoFile.count({
+                    where: {
+                        status: 'COMPLETED',
+                        OR: [
+                            { contentId: errContentId },
+                            { episode: { season: { contentId: errContentId } } }
+                        ]
+                    }
                 });
+                if (completedLeft === 0) {
+                    await prisma_1.prisma.content.updateMany({
+                        where: { id: errContentId },
+                        data: { status: 'PENDING' }
+                    });
+                }
             }
         }
         catch (dbErr) {

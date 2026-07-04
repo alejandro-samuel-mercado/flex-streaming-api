@@ -1,11 +1,11 @@
 export declare class PlansService {
     static getActivePlans(): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
+        maxDevices: number;
         createdAt: Date;
         updatedAt: Date;
-        maxDevices: number;
+        name: string;
+        isActive: boolean;
         description: string | null;
         durationDays: number;
         price: import("@prisma/client/runtime/library").Decimal;

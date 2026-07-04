@@ -397,6 +397,17 @@ adminRouter.get('/videos/status', (async (_req: AuthenticatedRequest, res: Respo
     } catch (err) { next(err); }
 }) as RequestHandler);
 
+// --- Rejected Imports Log ---
+adminRouter.get('/videos/rejected-imports', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    try {
+        const rejected = await prisma.rejectedImport.findMany({
+            orderBy: { createdAt: 'desc' },
+            take: 100
+        });
+        ok(res, { data: rejected });
+    } catch (err) { next(err); }
+}) as RequestHandler);
+
 // --- Retry failed or stuck pending jobs ---
 adminRouter.post('/videos/retry-failed', (async (_req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {

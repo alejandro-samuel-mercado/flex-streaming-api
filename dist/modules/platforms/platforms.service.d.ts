@@ -1,9 +1,9 @@
 export declare class PlatformsService {
     static getAll(): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         slug: string;
         logoUrl: string | null;
         isFeatured: boolean;
@@ -22,10 +22,10 @@ export declare class PlatformsService {
             type: import(".prisma/client").$Enums.ContentType;
             status: import(".prisma/client").$Enums.ContentStatus;
             id: string;
+            country: string | null;
             createdAt: Date;
             updatedAt: Date;
             deletedAt: Date | null;
-            country: string | null;
             slug: string;
             tmdbId: string | null;
             releaseYear: number | null;
@@ -53,9 +53,9 @@ export declare class PlatformsService {
         })[];
     } & {
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         slug: string;
         logoUrl: string | null;
         isFeatured: boolean;
@@ -66,9 +66,9 @@ export declare class PlatformsService {
         logoUrl?: string;
     }): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         slug: string;
         logoUrl: string | null;
         isFeatured: boolean;
@@ -79,18 +79,18 @@ export declare class PlatformsService {
         logoUrl?: string;
     }): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         slug: string;
         logoUrl: string | null;
         isFeatured: boolean;
     }>;
     static delete(id: string): Promise<{
         id: string;
-        name: string;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
         slug: string;
         logoUrl: string | null;
         isFeatured: boolean;

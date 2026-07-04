@@ -392,8 +392,12 @@ class EndUsersService {
     }
     static async togglePause(accountId, userId, userRole) {
         const account = await prisma_1.prisma.endUserAccount.findUnique({ where: { id: accountId } });
-        if (!account || account.deletedAt) {
+        if (!account) {
             throw new error_handler_1.AppError(404, 'End user account not found', 'NOT_FOUND');
+        }
+        if (account.deletedAt) {
+            await prisma_1.prisma.endUserAccount.update({ where: { id: accountId }, data: { deletedAt: null } });
+            account.deletedAt = null;
         }
         if (!(await canAccessAccount(account.managedById, userId, userRole, true))) {
             throw new error_handler_1.AppError(403, 'You can only modify your own clients', 'FORBIDDEN');

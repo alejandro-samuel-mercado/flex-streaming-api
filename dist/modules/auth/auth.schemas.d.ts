@@ -4,13 +4,13 @@ export declare const registerSchema: z.ZodObject<{
     phone: z.ZodString;
     password: z.ZodString;
 }, "strip", z.ZodTypeAny, {
-    phone: string;
-    name: string;
     password: string;
+    name: string;
+    phone: string;
 }, {
-    phone: string;
-    name: string;
     password: string;
+    name: string;
+    phone: string;
 }>;
 export declare const loginSchema: z.ZodObject<{
     username: z.ZodString;
@@ -19,14 +19,14 @@ export declare const loginSchema: z.ZodObject<{
     deviceName: z.ZodOptional<z.ZodString>;
     deviceType: z.ZodOptional<z.ZodEnum<["TV", "MOBILE", "WEB"]>>;
 }, "strip", z.ZodTypeAny, {
-    password: string;
     username: string;
+    password: string;
     deviceId?: string | undefined;
     deviceName?: string | undefined;
     deviceType?: "TV" | "MOBILE" | "WEB" | undefined;
 }, {
-    password: string;
     username: string;
+    password: string;
     deviceId?: string | undefined;
     deviceName?: string | undefined;
     deviceType?: "TV" | "MOBILE" | "WEB" | undefined;

@@ -8,10 +8,10 @@ import { UserRole } from '@prisma/client';
 export declare class CreditPackagesService {
     static getActivePackages(): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -19,10 +19,10 @@ export declare class CreditPackagesService {
     }[]>;
     static getAllPackages(): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -30,10 +30,10 @@ export declare class CreditPackagesService {
     }[]>;
     static getById(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -47,10 +47,10 @@ export declare class CreditPackagesService {
         sortOrder?: number;
     }): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -64,10 +64,10 @@ export declare class CreditPackagesService {
         sortOrder?: number;
     }): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -75,10 +75,10 @@ export declare class CreditPackagesService {
     }>;
     static toggle(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -86,10 +86,10 @@ export declare class CreditPackagesService {
     }>;
     static remove(id: string): Promise<{
         id: string;
-        name: string;
-        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
+        name: string;
+        isActive: boolean;
         isPromo: boolean;
         baseCredits: number;
         sortOrder: number;
@@ -98,10 +98,10 @@ export declare class CreditPackagesService {
     static applyPackage(packageId: string, fromUserId: string, fromRole: UserRole, toUserId: string): Promise<{
         package: {
             id: string;
-            name: string;
-            isActive: boolean;
             createdAt: Date;
             updatedAt: Date;
+            name: string;
+            isActive: boolean;
             isPromo: boolean;
             baseCredits: number;
             sortOrder: number;

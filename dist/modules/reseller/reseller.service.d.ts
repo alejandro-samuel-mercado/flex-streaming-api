@@ -15,11 +15,11 @@ export declare class ResellerService {
         planId?: string;
     }): Promise<{
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
         createdAt: Date;
+        name: string | null;
+        phone: string;
+        role: import(".prisma/client").$Enums.UserRole;
         credits: number;
     }>;
     static createVendor(creatorId: string, creatorRole: UserRole, data: {
@@ -31,77 +31,77 @@ export declare class ResellerService {
         planId?: string;
     }): Promise<{
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
         createdAt: Date;
+        name: string | null;
+        phone: string;
+        role: import(".prisma/client").$Enums.UserRole;
         credits: number;
     }>;
     static listVendors(userId: string, userRole: UserRole): Promise<{
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
-        isActive: boolean;
         createdAt: Date;
-        credits: number;
-        parentId: string | null;
-        parent: {
-            id: string;
-            phone: string;
-            name: string | null;
-            username: string | null;
-        } | null;
         _count: {
             children: number;
             managedEndUsers: number;
         };
+        name: string | null;
+        phone: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        isActive: boolean;
+        credits: number;
+        parentId: string | null;
+        parent: {
+            id: string;
+            username: string | null;
+            name: string | null;
+            phone: string;
+        } | null;
     }[]>;
     static getVendorDetail(vendorId: string, requesterId: string, requesterRole: UserRole): Promise<{
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
-        isActive: boolean;
         createdAt: Date;
-        credits: number;
-        parentId: string | null;
-        parent: {
-            id: string;
-            phone: string;
-            name: string | null;
-            username: string | null;
-        } | null;
         _count: {
             children: number;
             managedEndUsers: number;
         };
+        name: string | null;
+        phone: string;
+        role: import(".prisma/client").$Enums.UserRole;
+        isActive: boolean;
+        credits: number;
+        parentId: string | null;
+        parent: {
+            id: string;
+            username: string | null;
+            name: string | null;
+            phone: string;
+        } | null;
     }>;
     static updateVendorStatus(vendorId: string, requesterId: string, requesterRole: UserRole, isActive: boolean): Promise<{
         id: string;
+        username: string | null;
+        name: string | null;
         phone: string;
         role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
-        username: string | null;
         isActive: boolean;
     }>;
     static deleteVendor(vendorId: string, requesterId: string, requesterRole: UserRole): Promise<{
         id: string;
-        phone: string;
-        role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
         username: string | null;
-        googleId: string | null;
-        appleId: string | null;
         passwordHash: string | null;
-        isActive: boolean;
-        preferredLang: string | null;
         createdAt: Date;
         updatedAt: Date;
         deletedAt: Date | null;
+        name: string | null;
+        phone: string;
+        googleId: string | null;
+        appleId: string | null;
+        role: import(".prisma/client").$Enums.UserRole;
+        isActive: boolean;
+        preferredLang: string | null;
         credits: number;
         parentId: string | null;
     }>;
@@ -114,9 +114,9 @@ export declare class ResellerService {
         transactions: {
             type: import(".prisma/client").$Enums.CreditTransactionType;
             id: string;
-            createdAt: Date;
             userId: string;
             planId: string | null;
+            createdAt: Date;
             description: string | null;
             amount: number;
             balanceBefore: number;
@@ -139,27 +139,27 @@ export declare class ResellerService {
         type: import(".prisma/client").$Enums.EndUserAccountType;
         status: import(".prisma/client").$Enums.EndUserAccountStatus;
         id: string;
-        password: string;
         username: string;
+        password: string;
         passwordHash: string;
-        createdAt: Date;
-        updatedAt: Date;
-        deletedAt: Date | null;
-        userId: string | null;
         managedById: string;
+        userId: string | null;
         planId: string | null;
         startDate: Date | null;
         endDate: Date | null;
         country: string | null;
         notes: string | null;
         maxDevices: number;
+        createdAt: Date;
+        updatedAt: Date;
+        deletedAt: Date | null;
     }>;
     static resetVendorPassword(vendorId: string, requesterId: string, requesterRole: UserRole, newPassword: string): Promise<{
         id: string;
+        username: string | null;
+        name: string | null;
         phone: string;
         role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
-        username: string | null;
     }>;
     static updateVendor(vendorId: string, requesterId: string, requesterRole: UserRole, data: {
         name?: string;
@@ -168,10 +168,10 @@ export declare class ResellerService {
         password?: string;
     }): Promise<{
         id: string;
+        username: string | null;
+        name: string | null;
         phone: string;
         role: import(".prisma/client").$Enums.UserRole;
-        name: string | null;
-        username: string | null;
         isActive: boolean;
     }>;
 }

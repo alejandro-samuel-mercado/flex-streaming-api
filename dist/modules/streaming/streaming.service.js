@@ -40,7 +40,19 @@ class StreamingService {
      * Generates a signed streaming token for a content item.
      * Uses HMAC signed URLs instead of JWT for better security.
      */
-    static async requestAccess(_userId, contentId, ip, episodeId) {
+    static async requestAccess(_userId, role, contentId, ip, episodeId) {
+        if (role === 'END_USER' || role === 'CLIENT') {
+            const endUser = await prisma_1.prisma.endUserAccount.findFirst({ where: { userId: _userId }, select: { deletedAt: true, status: true } });
+            if (!endUser || endUser.deletedAt || !['ACTIVE', 'DEMO'].includes(endUser.status)) {
+                throw new Error('Your account is no longer active. Playback is not allowed.');
+            }
+        }
+        else {
+            const sysUser = await prisma_1.prisma.user.findUnique({ where: { id: _userId }, select: { deletedAt: true, isActive: true } });
+            if (!sysUser || sysUser.deletedAt || !sysUser.isActive) {
+                throw new Error('Your account is no longer active.');
+            }
+        }
         let videoFile;
         if (episodeId) {
             // 1. Fetch from Episode
@@ -236,9 +248,19 @@ class StreamingService {
             console.warn(`[Streaming] 403: Blocked access attempt outside HLS root. Resolved: ${resolvedPath} | Root: ${hlsRoot}`);
             return { status: 403, headers: {}, stream: null };
         }
+        let isSynthesizedMaster = false;
+        let synthesizedContent = '';
         if (!fs_1.default.existsSync(resolvedPath)) {
-            console.log(`[Streaming] File not found: ${resolvedPath} (hlsRoot: ${hlsRoot})`);
-            return { status: 404, headers: {}, stream: null };
+            if (filePath === 'master.m3u8' && (fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_video.m3u8')) || fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_0.m3u8')))) {
+                console.log(`[Streaming] Synthesizing missing master.m3u8 in memory for ${videoFileId}`);
+                isSynthesizedMaster = true;
+                const vp = fs_1.default.existsSync(path_1.default.resolve(hlsRoot, 'stream_video.m3u8')) ? 'stream_video.m3u8' : 'stream_0.m3u8';
+                synthesizedContent = `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1280x720\n${vp}\n`;
+            }
+            else {
+                console.log(`[Streaming] File not found: ${resolvedPath} (hlsRoot: ${hlsRoot})`);
+                return { status: 404, headers: {}, stream: null };
+            }
         }
         // Whitelist only valid HLS file extensions
         const ext = path_1.default.extname(resolvedPath).toLowerCase();
@@ -258,11 +280,17 @@ class StreamingService {
             'Access-Control-Allow-Origin': '*',
         };
         if (ext === '.m3u8') {
-            // Read and immediately strip BOM if present to prevent ExoPlayer ParseException
-            let content = fs_1.default.readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, '').trim();
+            let content = '';
+            if (isSynthesizedMaster) {
+                content = synthesizedContent.trim();
+            }
+            else {
+                // Read and immediately strip BOM if present to prevent ExoPlayer ParseException
+                content = fs_1.default.readFileSync(resolvedPath, 'utf8').replace(/^\uFEFF/, '').trim();
+            }
             // Normalize line endings to \n to prevent \r from corrupting regex capture groups
             content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-            const actualFilename = path_1.default.basename(resolvedPath);
+            const actualFilename = isSynthesizedMaster ? 'master.m3u8' : path_1.default.basename(resolvedPath);
             // Ensure the file starts with #EXTM3U for strict players like ExoPlayer
             if (!content.startsWith('#EXTM3U')) {
                 content = '#EXTM3U\n' + content;
@@ -336,9 +364,42 @@ class StreamingService {
                 if (content.includes('AUDIO="audio"') && !content.includes('CODECS=')) {
                     content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
                 }
-                // 4. Ensure DEFAULT=YES is present on the first audio track
-                if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES')) {
+                // 4. Ensure DEFAULT=YES is present on the first audio track (only when no audioIndex override)
+                if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES') && audioIndex === null) {
                     content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
+                }
+                // 4b. CRITICAL: If audioIndex is specified, re-assign DEFAULT=YES to the correct track.
+                //     This works regardless of whether AUDIO= was already in the master or was injected above.
+                if (audioIndex !== null && !isNaN(audioIndex) && content.includes('TYPE=AUDIO')) {
+                    let trackCounter = -1;
+                    content = content.replace(/#EXT-X-MEDIA:TYPE=AUDIO([^\n]*)/g, (line) => {
+                        trackCounter++;
+                        // Remove existing DEFAULT/AUTOSELECT flags
+                        let newLine = line
+                            .replace(/,?DEFAULT=(YES|NO)/gi, '')
+                            .replace(/,?AUTOSELECT=(YES|NO)/gi, '');
+                        // Add correct DEFAULT flag based on audioIndex
+                        if (trackCounter === audioIndex) {
+                            newLine = newLine.replace('TYPE=AUDIO', 'TYPE=AUDIO');
+                            // Insert DEFAULT=YES,AUTOSELECT=YES before URI or at end
+                            if (newLine.includes(',URI=')) {
+                                newLine = newLine.replace(',URI=', ',DEFAULT=YES,AUTOSELECT=YES,URI=');
+                            }
+                            else {
+                                newLine += ',DEFAULT=YES,AUTOSELECT=YES';
+                            }
+                            console.log(`[Streaming] ✅ audioIndex=${audioIndex}: set DEFAULT=YES on track ${trackCounter}: ${newLine.substring(0, 80)}`);
+                        }
+                        else {
+                            if (newLine.includes(',URI=')) {
+                                newLine = newLine.replace(',URI=', ',DEFAULT=NO,AUTOSELECT=NO,URI=');
+                            }
+                            else {
+                                newLine += ',DEFAULT=NO,AUTOSELECT=NO';
+                            }
+                        }
+                        return newLine;
+                    });
                 }
                 // 5. CRITICAL: If the master.m3u8 has no #EXT-X-STREAM-INF at all, synthesize one
                 //    from the video playlist that exists on disk. This happens when FFmpeg generates
