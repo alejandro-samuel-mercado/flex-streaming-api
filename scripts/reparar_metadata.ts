@@ -10,9 +10,8 @@ const prisma = new PrismaClient();
 async function run() {
   console.log('🔍 Iniciando Reparación de Metadata...');
 
-  // Buscar todos los contenidos que podrían estar incompletos
+  // Buscar todos los contenidos (incluyendo los que no tienen tmdbId porque fallaron por 429)
   const contents = await prisma.content.findMany({
-    where: { tmdbId: { not: null } },
     include: { genres: true, thumbnails: true, translations: true }
   });
 
@@ -27,12 +26,28 @@ async function run() {
     const translation = content.translations.find(t => t.language === 'es');
     const hasDescription = translation && translation.description && translation.description.length > 10;
 
-    if (!hasGenres || !hasPoster || !hasDescription) {
-      console.log(`\n⚠️ Reparando: ${translation?.title || content.slug} (TMDB: ${content.tmdbId})`);
+    if (!hasGenres || !hasPoster || !hasDescription || !content.tmdbId) {
+      console.log(`\n⚠️ Reparando: ${translation?.title || content.slug}`);
       
       try {
         const type = content.type === 'MOVIE' ? 'movie' : 'tv';
-        const details = await TMDBService.getFullDetails(parseInt(content.tmdbId!), type);
+        let tmdbId = content.tmdbId;
+
+        if (!tmdbId && translation?.title) {
+           console.log(`  - Buscando TMDB ID para: ${translation.title}...`);
+           const searchResult = await TMDBService.searchWithFallback(translation.title, 'es-ES', type);
+           if (searchResult.bestMatch) {
+             tmdbId = String(searchResult.bestMatch.id);
+             await prisma.content.update({ where: { id: content.id }, data: { tmdbId } });
+           } else {
+             console.log(`  ❌ No se encontró en TMDB.`);
+             continue;
+           }
+        }
+
+        if (!tmdbId) continue;
+
+        const details = await TMDBService.getFullDetails(parseInt(tmdbId), type);
 
         // 1. Reparar Géneros
         if (!hasGenres && details.genres && details.genres.length > 0) {
@@ -76,6 +91,8 @@ async function run() {
       } catch (err: any) {
         console.log(`  ❌ Falló al reparar de TMDB: ${err.message}`);
       }
+      // Pausa para no saturar a TMDB
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
   }
 
