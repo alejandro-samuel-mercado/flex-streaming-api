@@ -742,8 +742,27 @@ export class MediaScannerService {
             tmdbMatch = true;
             return id;
           } catch (err: any) {
-            console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
-            return await this._createMinimalSeriesContent(episode.seriesFolderName);
+            // Verificar si el ID en realidad es de una película
+            try {
+               const movieDetails = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'movie');
+               console.warn(`[MediaScanner] ⚠️ Ignorando ID ${episode.tmdbSeriesId}: TMDB dice que es una PELÍCULA, pero se está subiendo como SERIE.`);
+               
+               await prisma.rejectedImport.create({
+                 data: {
+                   filePath,
+                   fileName,
+                   reason: 'Es una película, use el escáner de películas',
+                   tmdbId: String(episode.tmdbSeriesId),
+                   tmdbTitle: movieDetails.title || fileName,
+                   tmdbType: 'movie',
+                   serverMode: env.WORKER_MODE || 'ALL'
+                 }
+               });
+               return null;
+            } catch (err2: any) {
+               console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
+               return await this._createMinimalSeriesContent(episode.seriesFolderName);
+            }
           }
         } else {
           const seriesName = this.cleanFileName(episode.seriesFolderName);
@@ -753,6 +772,18 @@ export class MediaScannerService {
             
             if (mediaType === 'movie') {
                console.warn(`[MediaScanner] ⚠️ Ignorando ${seriesName}: TMDB dice que es una PELÍCULA, pero se está subiendo como SERIE.`);
+               
+               await prisma.rejectedImport.create({
+                 data: {
+                   filePath,
+                   fileName,
+                   reason: 'Es una película, use el escáner de películas',
+                   tmdbId: String(tmdbResult.bestMatch.id),
+                   tmdbTitle: (tmdbResult.bestMatch as any).title || seriesName,
+                   tmdbType: 'movie',
+                   serverMode: env.WORKER_MODE || 'ALL'
+                 }
+               });
                return null; // Return null to trigger fallback
             }
 
