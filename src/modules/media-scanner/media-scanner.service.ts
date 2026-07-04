@@ -390,6 +390,13 @@ export class MediaScannerService {
 
   static async importFile(filePath: string, contentType: 'MOVIE' | 'SERIES' = 'MOVIE', episode?: ScannedFile['episode']): Promise<ImportResult> {
     const fileName = path.basename(filePath);
+    
+    // Bloqueador GLOBAL de carpetas puramente numéricas
+    const cleanName = this.cleanFileName(fileName);
+    if (/^\d+$/.test(cleanName)) {
+      console.log(`[MediaScanner] 🛡️ Rechazando carpeta puramente numérica: ${fileName}`);
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título numérico rechazado' };
+    }
 
     // Si es una carpeta vacía de una serie (no tiene episodio), la marcamos como fallida inmediatamente
     if (contentType === 'SERIES' && !episode) {
