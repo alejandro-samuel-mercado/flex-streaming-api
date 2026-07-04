@@ -13,8 +13,6 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import fs from 'fs';
-import path from 'path';
 import { PrismaClient, ContentStatus } from '@prisma/client';
 
 
@@ -35,7 +33,7 @@ const MOVIE_TYPES = new Set([
 /**
  * Verifica si el hlsPath / masterPlaylist de un VideoFile existe en disco.
  */
-function hlsExistsOnDisk(hlsPath: string | null, masterPlaylist: string | null): boolean {
+function hlsExistsOnDisk(_hlsPath: string | null, _masterPlaylist: string | null): boolean {
   // En la arquitectura multi-servidor, Cerebro no tiene acceso físico a los discos
   // de los servidores de Películas/Series. Por lo tanto, confiamos en el estado COMPLETED
   // de la base de datos y asumimos que el archivo existe.
