@@ -598,17 +598,21 @@ export class MediaScannerService {
           let details;
           try {
              details = await TMDBService.getFullDetails(match.id, 'movie');
-          } catch {
-             // Fallback minimal
-             const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
-             const content = await prisma.content.create({
-               data: {
-                 type: 'MOVIE', status: 'PENDING', slug,
-                 translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
-               }
-             });
-             contentId = content.id;
-             details = null;
+          } catch (err: any) {
+             try {
+               details = await TMDBService.getFullDetails(match.id, 'tv');
+             } catch (err2: any) {
+               // Fallback minimal
+               const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Math.random().toString(36).substring(2, 6);
+               const content = await prisma.content.create({
+                 data: {
+                   type: 'MOVIE', status: 'PENDING', slug,
+                   translations: { create: [{ language: 'es', title: cleanName, description: 'Sin sinopsis disponible.' }] }
+                 }
+               });
+               contentId = content.id;
+               details = null;
+             }
           }
 
           if (details) {
