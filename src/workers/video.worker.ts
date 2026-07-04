@@ -10,12 +10,77 @@ const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 
 const QUEUE_NAME = process.env.QUEUE_NAME || 'video-processing';
 
+// ── Genera un slug legible por humanos a partir de un título ──────────────────
+function slugify(text: string): string {
+  return (text || 'sin-titulo')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .substring(0, 60);
+}
+
+/**
+ * Construye la carpeta HLS con formato legible:
+ *   PELÍCULA: /home/peliplus_gran_disco/hls/peliculas/iron-man--cmr4xxx/
+ *   EPISODIO:  /home/peliplus_gran_disco/hls/series/breaking-bad--cmr5xxx/S01E01--cmryyy/
+ */
+async function buildOutputFolder(
+  jobType: string,
+  videoFileId: string,
+  contentId: string,
+  episodeId?: string | null
+): Promise<string> {
+  if (jobType === 'EPISODE' && episodeId) {
+    // Resolver serie: episodio → temporada → contenido
+    const epRecord = await prisma.episode.findUnique({
+      where: { id: episodeId },
+      include: {
+        season: {
+          include: {
+            content: { include: { translations: true } }
+          }
+        }
+      }
+    });
+    const seriesTitle = epRecord?.season?.content?.translations?.[0]?.title || epRecord?.season?.contentId || contentId;
+    const seriesSlug = slugify(seriesTitle);
+    const shortSeriesId = epRecord?.season?.contentId?.substring(0, 8) || contentId.substring(0, 8);
+    const seasonNum = String(epRecord?.season?.number || 1).padStart(2, '0');
+    const episodeNum = String(epRecord?.number || 1).padStart(2, '0');
+    const shortEpId = videoFileId.substring(0, 8);
+    // /hls/series/breaking-bad--cmr5xxx/S01E02--cmryyy/
+    return path.join(
+      env.MEDIA_PATH, 'hls', 'series',
+      `${seriesSlug}--${shortSeriesId}`,
+      `S${seasonNum}E${episodeNum}--${shortEpId}`
+    );
+  } else {
+    // Película
+    const content = await prisma.content.findUnique({
+      where: { id: contentId },
+      include: { translations: true }
+    });
+    const movieTitle = content?.translations?.[0]?.title || contentId;
+    const movieSlug = slugify(movieTitle);
+    const shortId = contentId.substring(0, 8);
+    // /hls/peliculas/iron-man--cmr4xxx/
+    return path.join(env.MEDIA_PATH, 'hls', 'peliculas', `${movieSlug}--${shortId}`);
+  }
+}
+
 export const videoWorker = new Worker(
   QUEUE_NAME,
   async (job: Job) => {
     const { videoFileId, contentId, videoPath } = job.data;
-    // FIX: Usamos videoFileId en lugar de contentId para HLS para evitar que los episodios de una misma serie se sobreescriban entre sí
-    const outputFolder = path.join(env.MEDIA_PATH, 'hls', videoFileId);
+    const jobType = job.data.type || 'MOVIE';
+
+    // Buscar el episodeId si existe
+    const vfInitial = await prisma.videoFile.findUnique({ where: { id: videoFileId }, select: { episodeId: true } });
+    const episodeId = vfInitial?.episodeId ?? null;
+
+    // Construir carpeta de salida con formato legible por humanos
+    const outputFolder = await buildOutputFolder(jobType, videoFileId, contentId, episodeId);
 
     const onProgress = async (percent: number) => {
       try {
@@ -27,12 +92,12 @@ export const videoWorker = new Worker(
     };
 
     job.log(`Starting HLS processing for contentId: ${contentId}`);
+    job.log(`Output folder (legible): ${outputFolder}`);
 
     // ─── Worker Mode Filter ────────────────────────────────────────────────
     // When WORKER_MODE is set, this server only processes a specific type.
     // Server 2 (SERIES): skips MOVIE jobs, lets them wait for Server 3.
     // Server 3 (MOVIES): skips EPISODE jobs, lets them wait for Server 2.
-    const jobType = job.data.type || 'MOVIE';
     if (env.WORKER_MODE === 'MOVIES' && jobType === 'EPISODE') {
       job.log(`[WorkerMode] Skipping EPISODE job — this node handles MOVIES only. Re-queuing.`);
       await job.moveToDelayed(Date.now() + 30000, job.token);
@@ -87,7 +152,9 @@ export const videoWorker = new Worker(
       });
 
       if (!hasPoster) {
-        const thumbnailFolder = path.join(env.MEDIA_PATH, 'thumbnails', contentId);
+        // Thumbnails con carpeta legible: thumbnails/peliculas/titulo--id/ o thumbnails/series/titulo--id/
+        const thumbSubdir = jobType === 'EPISODE' ? path.join('series', contentId.substring(0, 8)) : path.join('peliculas', contentId.substring(0, 8));
+        const thumbnailFolder = path.join(env.MEDIA_PATH, 'thumbnails', thumbSubdir);
         const thumbnailResult = await FFmpegService.generateThumbnail(videoPath, thumbnailFolder);
         job.log(`Thumbnail generated at ${thumbnailResult.path}`);
       } else {
@@ -97,7 +164,11 @@ export const videoWorker = new Worker(
       await onProgress(10);
 
       // ─── Extract embedded subtitles (MKV, MP4, etc.) ──────────────────
-      const subtitlesFolder = path.join(env.MEDIA_PATH, 'subtitles', contentId);
+      // Subtítulos con carpeta legible separada por tipo
+      const subSubdir = jobType === 'EPISODE'
+        ? path.join('series', contentId.substring(0, 8), videoFileId.substring(0, 8))
+        : path.join('peliculas', contentId.substring(0, 8));
+      const subtitlesFolder = path.join(env.MEDIA_PATH, 'subtitles', subSubdir);
       let extractedSubs: { language: string; label: string; filePath: string; isDefault: boolean; isForced: boolean }[] = [];
       try {
         extractedSubs = await FFmpegService.extractSubtitles(videoPath, subtitlesFolder);
@@ -172,9 +243,13 @@ export const videoWorker = new Worker(
       // ─── Save extracted subtitles to DB ────────────────────────────────
       if (extractedSubs.length > 0) {
         for (const sub of extractedSubs) {
-          // Copy subtitle file to the subtitles media folder and get relative URL
           const subFileName = path.basename(sub.filePath);
-          const subUrl = `/media/subtitles/${contentId}/${subFileName}`;
+          // URL legible: /media/subtitles/peliculas/{contentId_corto}/sub_spa.vtt
+          //              /media/subtitles/series/{contentId_corto}/{videoFileId_corto}/sub_spa.vtt
+          const subUrlDir = jobType === 'EPISODE'
+            ? `series/${contentId.substring(0, 8)}/${videoFileId.substring(0, 8)}`
+            : `peliculas/${contentId.substring(0, 8)}`;
+          const subUrl = `/media/subtitles/${subUrlDir}/${subFileName}`;
 
           await prisma.subtitleTrack.create({
             data: {
@@ -191,7 +266,6 @@ export const videoWorker = new Worker(
         job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
       }
 
-      const jobType = job.data.type || 'MOVIE';
       const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
 
       // ─── Determine content status ──────────────────────────────────────────
@@ -298,23 +372,10 @@ export const videoWorker = new Worker(
         }
       }
 
-      // ─── Borrar original solo cuando sea seguro ───────────────────────────
-      // PELÍCULAS: borrar siempre al completar (ya está en HLS)
-      // SERIES: conservar hasta que el admin lo elimine manualmente
-      try {
-        const contentType = realContentId
-          ? (await prisma.content.findUnique({ where: { id: realContentId }, select: { type: true } }))?.type
-          : null;
-        const isSafeToDelete = !contentType || !SERIES_TYPES.includes(contentType);
-        if (isSafeToDelete && fs.existsSync(videoPath)) {
-          fs.unlinkSync(videoPath);
-          job.log(`Original eliminado: ${videoPath}`);
-        } else if (!isSafeToDelete) {
-          job.log(`Original conservado (serie): ${videoPath}`);
-        }
-      } catch (delErr: any) {
-        job.log(`Warning: no se pudo eliminar original: ${delErr.message}`);
-      }
+      // ─── NUNCA borrar el original ──────────────────────────────────────
+      // Los videos originales SIEMPRE se conservan en /home/media/peliculas
+      // o /home/series por si es necesario reprocesar sin volver a subir.
+      job.log(`Original conservado en: ${videoPath} (no se borra para permitir reprocesamiento)`);
 
       await onProgress(100);
       return { success: true, path: hlsResult.path };
