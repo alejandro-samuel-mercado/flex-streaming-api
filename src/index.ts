@@ -271,9 +271,9 @@ async function bootstrap() {
         await prisma.$connect();
         console.log('✅ Database connected');
 
-        // Start auto-scanner worker
-        AutoScannerWorker.start(io);
-        console.log('🔍 Auto-scanner worker initialized');
+        // Start auto-scanner worker (DISABLED - Preferimos usar CRON de Linux o consola manual)
+        // AutoScannerWorker.start(io);
+        // console.log('🔍 Auto-scanner worker initialized (DISABLED)');
 
         // Start account expiry worker
         AccountExpiryWorker.start();

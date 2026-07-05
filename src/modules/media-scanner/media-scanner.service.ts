@@ -422,7 +422,6 @@ export class MediaScannerService {
     // Bloqueador GLOBAL de carpetas puramente numéricas
     const cleanName = this.cleanFileName(fileName);
     if (/^\d+$/.test(cleanName)) {
-      console.log(`[MediaScanner] 🛡️ Rechazando carpeta puramente numérica: ${fileName}`);
       return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título numérico rechazado' };
     }
 
