@@ -28,7 +28,6 @@ async function fixMess() {
         if (!hasTs) {
           console.log(`[Roto] ${vf.id} - ${vf.originalPath} (Carpeta: ${vf.hlsPath}) no tiene .ts. Marcando como FAILED...`);
           
-          // Borramos la carpeta HLS vacía/rota para limpiar (tiene los m3u8 rotos)
           try {
             fs.rmSync(vf.hlsPath, { recursive: true, force: true });
           } catch (e) {}
@@ -37,26 +36,19 @@ async function fixMess() {
             where: { id: vf.id },
             data: {
               status: 'FAILED',
-              errorMessage: 'Carpeta HLS generada sin fragmentos .ts debido a bug previo de FFmpeg. Se reprocesará automáticamente.',
+              errorMessage: 'Carpeta HLS generada sin fragmentos .ts debido a bug previo. Se reprocesará.',
               masterPlaylist: '',
               hlsPath: ''
             }
           });
           fixedCount++;
+        } else {
+          // La carpeta existe y tiene .ts, está perfecta.
         }
       } else {
-         // La carpeta ni siquiera existe
-          console.log(`[Roto] ${vf.id} - ${vf.originalPath} - Carpeta HLS no existe. Marcando como FAILED...`);
-          await prisma.videoFile.update({
-            where: { id: vf.id },
-            data: {
-              status: 'FAILED',
-              errorMessage: 'Carpeta HLS no encontrada.',
-              masterPlaylist: '',
-              hlsPath: ''
-            }
-          });
-          fixedCount++;
+         // CRÍTICO: Si la carpeta no existe, NO hacemos nada. 
+         // Como cada VPS (Películas y Series) tiene su propio disco local /home/peliplus_gran_disco,
+         // no podemos asumir que está roto, simplemente está en el OTRO servidor.
       }
     } catch (e: any) {
       console.error(`Error procesando videoFile ${vf.id}:`, e.message);
