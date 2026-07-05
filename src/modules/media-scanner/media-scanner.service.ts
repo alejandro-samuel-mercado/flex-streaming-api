@@ -1158,8 +1158,22 @@ export class MediaScannerService {
     return { filePath, fileName, success: true, contentId, tmdbMatch: false };
   }
 
+  private static creatingVideos = new Map<string, Promise<void>>();
+
   private static async _createVideoAndEnqueue(contentId: string, filePath: string, contentType: 'MOVIE' | 'SERIES'): Promise<void> {
-    const fileName = path.basename(filePath);
+    const lockKey = `video-${filePath}`;
+    if (this.creatingVideos.has(lockKey)) {
+        return this.creatingVideos.get(lockKey);
+    }
+
+    const resolveVideo = async () => {
+        const existing = await prisma.videoFile.findFirst({ where: { originalPath: filePath } });
+        if (existing) {
+            console.log(`⏭️  [MediaScanner] Skipping duplicate enqueue for ${filePath}`);
+            return;
+        }
+
+        const fileName = path.basename(filePath);
     let episodeId: string | null = null;
 
     if (contentType === 'SERIES') {
@@ -1208,6 +1222,11 @@ export class MediaScannerService {
 
     await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
     console.log(`📦 [MediaScanner] Enqueued ${fileName} → ${contentType === 'SERIES' ? 'Episode ' + episodeId : 'Content ' + contentId}`);
+    };
+
+    const promise = resolveVideo().finally(() => this.creatingVideos.delete(lockKey));
+    this.creatingVideos.set(lockKey, promise);
+    return promise;
   }
 
   private static async _downloadTMDBImages(contentId: string, details: TMDBFullDetails): Promise<void> {
