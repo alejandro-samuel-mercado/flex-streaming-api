@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import fs from 'fs';
-import path from 'path';
-import { addVideoJob } from '../src/shared/queues/video.queue';
+import * as fs from 'fs';
+import * as path from 'path';
+import { addVideoJob } from '../src/services/queue.service';
 
 const prisma = new PrismaClient();
 
@@ -21,7 +21,7 @@ async function run() {
   }
 
   let deletedCount = 0;
-  for (const [originalPath, group] of grouped.entries()) {
+  for (const [originalPath, group] of Array.from(grouped.entries())) {
     if (group.length > 1) {
       // Priorizar el que esté completado. Si no hay, tomamos el más antiguo.
       group.sort((a, b) => {
