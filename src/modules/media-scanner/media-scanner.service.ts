@@ -228,6 +228,17 @@ export class MediaScannerService {
       if (++count % 50 === 0) await new Promise(resolve => setImmediate(resolve));
 
       const fullPath = path.join(dirPath, entry.name);
+      const cleanName = this.cleanFileName(entry.name);
+      const isNumeric = /^\d+$/.test(cleanName);
+      const isGarbageNumber = isNumeric && (
+        cleanName.length > 4 ||
+        (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
+      );
+      const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
+      if (isGarbageNumber || isSinTitulo) {
+        continue;
+      }
+
       if (entry.isDirectory()) {
         // Check if this folder is a pre-processed HLS movie (has index.m3u8)
         const m3u8Path = await this._findM3u8(fullPath);
@@ -296,6 +307,16 @@ export class MediaScannerService {
       if (++count % 50 === 0) await new Promise(resolve => setImmediate(resolve));
 
       const fullPath = path.join(dirPath, entry.name);
+      const cleanName = this.cleanFileName(entry.name);
+      const isNumeric = /^\d+$/.test(cleanName);
+      const isGarbageNumber = isNumeric && (
+        cleanName.length > 4 ||
+        (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
+      );
+      const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
+      if (isGarbageNumber || isSinTitulo) {
+        continue;
+      }
 
       if (entry.isDirectory()) {
         // Check if this folder is a pre-processed HLS episode (has index.m3u8)
@@ -421,10 +442,16 @@ export class MediaScannerService {
   static async importFile(filePath: string, contentType: 'MOVIE' | 'SERIES' = 'MOVIE', episode?: ScannedFile['episode']): Promise<ImportResult> {
     const fileName = path.basename(filePath);
     
-    // Bloqueador GLOBAL de carpetas puramente numéricas
+    // Bloqueador GLOBAL de carpetas y archivos no deseados (basura numérica y "sin título")
     const cleanName = this.cleanFileName(fileName);
-    if (/^\d+$/.test(cleanName)) {
-      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título numérico rechazado' };
+    const isNumeric = /^\d+$/.test(cleanName);
+    const isGarbageNumber = isNumeric && (
+      cleanName.length > 4 ||
+      (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
+    );
+    const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
+    if (isGarbageNumber || isSinTitulo) {
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título no deseado (numérico o sin título)' };
     }
 
     // Si es una carpeta vacía de una serie (no tiene episodio), la marcamos como fallida inmediatamente
