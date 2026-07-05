@@ -58,7 +58,9 @@ const NOISE_PATTERNS = [
  * Parse TMDB id from folder names like "1399_juego_de_tronos" or "1399_S01E01".
  */
 function parseTmdbId(folderName: string): number | null {
-  const m = folderName.match(/^(\d+)_/);
+  let m = folderName.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
+  if (m) return parseInt(m[1], 10);
+  m = folderName.match(/^(\d+)[_\s-]/);
   return m ? parseInt(m[1], 10) : null;
 }
 
