@@ -18,7 +18,7 @@ async function main() {
   // Buscar duplicados de originalPath
   const dups = await prisma.$queryRaw<Array<{ originalPath: string; count: bigint }>>`
     SELECT "originalPath", COUNT(*) as count 
-    FROM "VideoFile" 
+    FROM "video_files" 
     GROUP BY "originalPath" 
     HAVING COUNT(*) > 1
     LIMIT 20;
