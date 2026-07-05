@@ -47,13 +47,21 @@ async function getResolvedRoot(v: any) {
 }
 
 async function run() {
-  console.log('🔍 Buscando SÓLO películas/series recientes (últimas 48 hrs) que realmente fueron borradas del disco...');
+  const type = process.argv[2];
+  if (type !== '--movies' && type !== '--series') {
+    console.error("❌ ERROR: Debes especificar '--movies' o '--series'");
+    process.exit(1);
+  }
+
+  const videoType = type === '--movies' ? 'MOVIE' : 'SERIES';
+  console.log(`🔍 Buscando SÓLO ${videoType} recientes (últimas 48 hrs) que realmente fueron borradas del disco...`);
   
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   const completedVideos = await prisma.videoFile.findMany({
     where: { 
       status: 'COMPLETED',
+      type: videoType,
       createdAt: { gte: fortyEightHoursAgo } 
     }
   });
