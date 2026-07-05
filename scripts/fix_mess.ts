@@ -1,40 +1,71 @@
-import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
-import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import fs from 'fs';
+import path from 'path';
+import { prisma } from '../src/shared/config/prisma';
 
-const prisma = new PrismaClient();
-
-async function run() {
-  console.log('🛑 1. CONECTANDO Y VACIANDO LA COLA...');
+async function fixMess() {
+  console.log('Buscando archivos de video COMPLETED que no tienen fragmentos .ts...');
   
-  try {
-    const connection = new IORedis(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
-    const videoQueue = new Queue('video-processing', { connection });
-    await videoQueue.pause();
-    await videoQueue.obliterate({ force: true });
-    console.log('✅ Cola vaciada por completo.');
-    connection.disconnect();
-  } catch (e: any) {
-    console.log('⚠️ No se pudo vaciar la cola automáticamente. Si el worker sigue procesando, detenlo con "pm2 stop all"');
-  }
-
-  console.log('⏪ 2. RESTAURANDO TODAS LAS PELICULAS/SERIES...');
-  
-  // Todo lo que el script dañino puso como QUEUED lo volvemos a poner como COMPLETED.
-  // El error fue porque el script viejo no encontraba las rutas correctas y creyó que todas estaban rotas.
-  const updated = await prisma.videoFile.updateMany({
-    where: { status: 'QUEUED' },
-    data: { status: 'COMPLETED' }
+  const videoFiles = await prisma.videoFile.findMany({
+    where: {
+      status: 'COMPLETED',
+      hlsPath: {
+        not: ''
+      }
+    }
   });
 
-  console.log(`✅ ¡Restaurados ${updated.count} videos de vuelta a COMPLETED!`);
-  console.log(`\n🎉 Tu librería ha vuelto a la normalidad en la base de datos.`);
-  
-  await prisma.$disconnect();
+  let fixedCount = 0;
+
+  for (const vf of videoFiles) {
+    if (!vf.hlsPath) continue;
+
+    try {
+      if (fs.existsSync(vf.hlsPath)) {
+        const files = fs.readdirSync(vf.hlsPath);
+        const hasTs = files.some(f => f.endsWith('.ts'));
+
+        if (!hasTs) {
+          console.log(`[Roto] ${vf.id} - ${vf.originalPath} (Carpeta: ${vf.hlsPath}) no tiene .ts. Marcando como FAILED...`);
+          
+          // Borramos la carpeta HLS vacía/rota para limpiar (tiene los m3u8 rotos)
+          try {
+            fs.rmSync(vf.hlsPath, { recursive: true, force: true });
+          } catch (e) {}
+
+          await prisma.videoFile.update({
+            where: { id: vf.id },
+            data: {
+              status: 'FAILED',
+              errorMessage: 'Carpeta HLS generada sin fragmentos .ts debido a bug previo de FFmpeg. Se reprocesará automáticamente.',
+              masterPlaylist: '',
+              hlsPath: ''
+            }
+          });
+          fixedCount++;
+        }
+      } else {
+         // La carpeta ni siquiera existe
+          console.log(`[Roto] ${vf.id} - ${vf.originalPath} - Carpeta HLS no existe. Marcando como FAILED...`);
+          await prisma.videoFile.update({
+            where: { id: vf.id },
+            data: {
+              status: 'FAILED',
+              errorMessage: 'Carpeta HLS no encontrada.',
+              masterPlaylist: '',
+              hlsPath: ''
+            }
+          });
+          fixedCount++;
+      }
+    } catch (e: any) {
+      console.error(`Error procesando videoFile ${vf.id}:`, e.message);
+    }
+  }
+
+  console.log(`\n¡Listo! Se encontraron y marcaron como fallidos ${fixedCount} videos rotos.`);
+  console.log(`Para que se reprocesen solos, simplemente ejecuta el cron o espera a que el escáner pase de nuevo.`);
 }
 
-run().catch(e => {
-  console.error(e);
-  process.exit(1);
-});
+fixMess()
+  .catch(console.error)
+  .finally(() => prisma.$disconnect());
