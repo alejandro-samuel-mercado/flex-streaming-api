@@ -1173,6 +1173,16 @@ export class MediaScannerService {
             return;
         }
 
+        if (contentType === 'MOVIE') {
+            const existingMovieVideo = await prisma.videoFile.findFirst({
+                where: { contentId, type: 'MOVIE' }
+            });
+            if (existingMovieVideo) {
+                console.log(`⏭️  [MediaScanner] MOVIE ${contentId} already has a video. Skipping ${filePath}`);
+                return;
+            }
+        }
+
         const fileName = path.basename(filePath);
     let episodeId: string | null = null;
 
@@ -1200,6 +1210,14 @@ export class MediaScannerService {
       });
       const tmdbSeriesId = parentContent?.tmdbId ? parseInt(parentContent.tmdbId, 10) : null;
       await this._syncEpisodeMetadata(episode.id, tmdbSeriesId, seInfo.season, seInfo.episode);
+
+      const existingEpVideo = await prisma.videoFile.findFirst({
+        where: { episodeId: episode.id }
+      });
+      if (existingEpVideo) {
+         console.log(`⏭️  [MediaScanner] EPISODE ${episode.id} already has a video. Skipping ${filePath}`);
+         return;
+      }
     }
 
     const videoFile = await prisma.videoFile.create({
