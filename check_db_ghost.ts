@@ -30,6 +30,15 @@ async function main() {
   } else {
     for (const d of dups) {
       console.log(`Path: ${d.originalPath} (Repetido ${d.count} veces)`);
+      // Buscar los registros individuales para ver cuándo se crearon
+      const records = await prisma.videoFile.findMany({
+        where: { originalPath: d.originalPath },
+        select: { id: true, createdAt: true, status: true },
+        orderBy: { createdAt: 'asc' }
+      });
+      for (const r of records) {
+        console.log(`  - ID: ${r.id} | Status: ${r.status} | Creado: ${r.createdAt.toISOString()}`);
+      }
     }
   }
 }
