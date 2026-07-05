@@ -316,7 +316,7 @@ model VideoFile {
   episodeId       String?
   type            VideoFileType    @default(MOVIE)
   status          ProcessingStatus @default(PENDING)
-  originalPath    String
+  originalPath    String           @unique
   hlsPath         String?
   masterPlaylist  String?
   duration        Int?
