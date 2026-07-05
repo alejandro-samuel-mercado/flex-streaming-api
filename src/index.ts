@@ -50,7 +50,7 @@ import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router
 import { backupRouter } from './modules/backup/backup.router';
 import { likesRouter } from './modules/likes/likes.router';
 import { startAutoBackupScheduler } from './modules/backup/backup.service';
-import { AutoScannerWorker } from './workers/auto-scanner.worker';
+// import { AutoScannerWorker } from './workers/auto-scanner.worker';
 import { AccountExpiryWorker } from './workers/account-expiry.worker';
 import { ChunkUploadService } from './services/chunk-upload.service';
 
