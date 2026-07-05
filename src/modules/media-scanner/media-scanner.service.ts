@@ -103,6 +103,32 @@ export class MediaScannerService {
     return dirs.split(';').map(d => d.trim()).filter(d => d.length > 0);
   }
 
+  static extractTmdbId(fileName: string): number | null {
+    // Patrón 1: "[TMDB-12345]" o "(tmdb 12345)" o "{tmdb_12345}"
+    let m = fileName.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
+    if (m) return parseInt(m[1], 10);
+
+    // Patrón 2: ID al inicio como "12345 - Nombre" o "12345_nombre" o "12345 nombre"
+    m = fileName.match(/^(\d+)[_\s-]/);
+    if (m) return parseInt(m[1], 10);
+
+    // Patrón 3: ID al final exacto "Nombre - 12345" (evita años como 1999 o 2026)
+    m = fileName.match(/[_\s-](\d+)$/);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      if (!(num >= 1900 && num <= 2100)) {
+         return num;
+      }
+    }
+    
+    // Patrón 4: "12345" solo números
+    if (/^\d+$/.test(fileName)) {
+        return parseInt(fileName, 10);
+    }
+    
+    return null;
+  }
+
   static cleanFileName(fileName: string): string {
     let clean = fileName.replace(/\.[^/.]+$/, '');
     for (const pattern of NOISE_PATTERNS) clean = clean.replace(pattern, ' ');
@@ -458,7 +484,15 @@ export class MediaScannerService {
       }
 
       const cleanName = this.cleanFileName(fileName);
-      const tmdbResult = await TMDBService.searchWithFallback(cleanName, 'es-ES', 'movie');
+      const explicitTmdbId = this.extractTmdbId(fileName);
+      
+      let tmdbResult;
+      if (explicitTmdbId) {
+          console.log(`[MediaScanner] 💡 Smart ID detectado en película: ${explicitTmdbId}`);
+          tmdbResult = { bestMatch: { id: explicitTmdbId, title: cleanName }, confidence: 1 };
+      } else {
+          tmdbResult = await TMDBService.searchWithFallback(cleanName, 'es-ES', 'movie');
+      }
       if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
         return await this._importWithTMDB(filePath, fileName, tmdbResult.bestMatch, 'MOVIE');
       } else {
@@ -591,9 +625,8 @@ export class MediaScannerService {
     const cleanName = this.cleanFileName(folderName);
     let tmdbResult;
 
-    // Check if the folder name is or starts with a TMDB ID (e.g., "1309923" or "1309923_movie_name")
-    const tmdbIdMatch = folderName.match(/^(\d+)/);
-    const explicitTmdbId = tmdbIdMatch ? parseInt(tmdbIdMatch[1], 10) : null;
+    // Check if the folder name has a TMDB ID
+    const explicitTmdbId = this.extractTmdbId(folderName);
 
     if (explicitTmdbId) {
        // Mock the search result to force the TMDB flow to use this exact ID
@@ -776,7 +809,15 @@ export class MediaScannerService {
           }
         } else {
           const seriesName = this.cleanFileName(episode.seriesFolderName);
-          const tmdbResult = await TMDBService.searchWithFallback(seriesName, 'es-ES', 'tv').catch(() => ({ bestMatch: null, confidence: 0 }));
+        const explicitTmdbId = this.extractTmdbId(episode.seriesFolderName);
+        let tmdbResult;
+        
+        if (explicitTmdbId) {
+            console.log(`[MediaScanner] 💡 Smart ID detectado en serie: ${explicitTmdbId}`);
+            tmdbResult = { bestMatch: { id: explicitTmdbId, name: seriesName }, confidence: 1 };
+        } else {
+            tmdbResult = await TMDBService.searchWithFallback(seriesName, 'es-ES', 'tv').catch(() => ({ bestMatch: null, confidence: 0 }));
+        }
           if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.5) {
             const mediaType = (tmdbResult.bestMatch as any).media_type === 'movie' ? 'movie' : 'tv';
             
