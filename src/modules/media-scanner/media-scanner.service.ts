@@ -571,24 +571,39 @@ export class MediaScannerService {
       contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
     }
 
-    // Find or create the Season
-    const season = await prisma.season.upsert({
-      where: { contentId_number: { contentId, number: episode.season } },
-      update: {},
-      create: {
-        contentId,
-        number: episode.season,
-      }
-    });
+    // Find or create the Season (with retry for concurrency)
+    let season;
+    try {
+      season = await prisma.season.upsert({
+        where: { contentId_number: { contentId, number: episode.season } },
+        update: {},
+        create: {
+          contentId,
+          number: episode.season,
+        }
+      });
+    } catch {
+      season = await prisma.season.findUniqueOrThrow({
+        where: { contentId_number: { contentId, number: episode.season } }
+      });
+    }
 
-    const episodeRecord = await prisma.episode.upsert({
-      where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
-      update: {},
-      create: {
-        seasonId: season.id,
-        number: episode.episodeNumber,
-      }
-    });
+    // Find or create the Episode (with retry for concurrency)
+    let episodeRecord;
+    try {
+      episodeRecord = await prisma.episode.upsert({
+        where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } },
+        update: {},
+        create: {
+          seasonId: season.id,
+          number: episode.episodeNumber,
+        }
+      });
+    } catch {
+      episodeRecord = await prisma.episode.findUniqueOrThrow({
+        where: { seasonId_number: { seasonId: season.id, number: episode.episodeNumber } }
+      });
+    }
 
     await this._syncEpisodeMetadata(
       episodeRecord.id,
