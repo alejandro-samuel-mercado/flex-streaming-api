@@ -68,6 +68,27 @@ const io = new SocketIOServer(httpServer, {
 // Import worker and events to start them
 import { videoQueueEvents } from './services/queue.service';
 import fs from 'fs';
+import Redis from 'ioredis';
+
+// ─── Redis PubSub Control Listener (Multi-Server Command) ──────────────────
+const controlRedis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+controlRedis.subscribe('peliplus-control-channel').then(() => {
+  console.log('📡 [Control] Subscribed to peliplus-control-channel');
+}).catch(err => {
+  console.error('📡 [Control] Failed to subscribe to control channel:', err.message);
+});
+
+controlRedis.on('message', (channel, message) => {
+  if (channel === 'peliplus-control-channel' && message === 'nuclear-restart') {
+     console.log('🔄 [Control] Nuclear restart signal received. Cleaning up FFmpeg and restarting in 2 seconds...');
+     const { exec } = require('child_process');
+     exec('killall ffmpeg', () => {});
+     setTimeout(() => {
+       console.log('🔄 [Control] Exiting process now.');
+       process.exit(1); // PM2 will automatically restart the process
+     }, 2000);
+  }
+});
 
 // ─── Manual PM2 Cache Bypass ────────────────────────────────────────────────
 // If PM2 cached ENABLE_WORKER=true, but the physical .env file says false,

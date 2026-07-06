@@ -573,24 +573,22 @@ mediaScannerRouter.post('/drain-and-reset', (async (_req: AuthenticatedRequest, 
 
     console.log(`[drain-and-reset] Queue obliterated. Deleted ${deleted.count} videoFile records. Reset ${resetContent.count} content records to PENDING.`);
 
+    // 4. Publish nuclear-restart message to Redis PubSub to notify all worker servers
+    try {
+      const { env } = await import('../../shared/config/env');
+      const Redis = (await import('ioredis')).default;
+      const pub = new Redis(env.REDIS_URL);
+      await pub.publish('peliplus-control-channel', 'nuclear-restart');
+      await pub.quit();
+      console.log('📡 [MediaScanner] Broadcasted nuclear-restart to control channel.');
+    } catch (pubErr: any) {
+      console.error('⚠️ [MediaScanner] Failed to broadcast restart signal:', pubErr.message);
+    }
+
     ok(res, {
-      message: 'Cola vaciada, procesos FFmpeg cerrados y reiniciando servidor PM2. El sistema retomará todo desde cero en breve.',
+      message: 'Cola vaciada, procesos FFmpeg cerrados y reiniciando todos los servidores (PM2). El sistema retomará todo desde cero en breve.',
       deletedVideoFiles: deleted.count,
       resetContentToPending: resetContent.count,
     });
-
-    // Safe self-restart after response has flushed
-    setTimeout(() => {
-      const { exec } = require('child_process');
-      console.log('🔄 [MediaScanner] DRAIN_AND_RESET: Cleaning FFmpeg zombies and restarting PM2...');
-      exec('killall ffmpeg', () => {
-        exec('pm2 restart all', (err: any) => {
-          if (err) {
-            console.warn('⚠️ [MediaScanner] pm2 restart all failed. Exiting process as fallback...', err);
-            process.exit(1);
-          }
-        });
-      });
-    }, 1000);
   } catch (err) { next(err); }
 }) as RequestHandler);
