@@ -40,6 +40,8 @@ const auth_middleware_1 = require("../../shared/middleware/auth.middleware");
 const api_response_1 = require("../../shared/utils/api-response");
 const cache_middleware_1 = require("../../shared/middleware/cache.middleware");
 const zod_1 = require("zod");
+const client_1 = require("@prisma/client");
+const prisma = new client_1.PrismaClient();
 exports.contentRouter = (0, express_1.Router)();
 console.log('🚀 [ContentRouter] Router loaded and routes defined');
 const ContentFiltersSchema = zod_1.z.object({
@@ -144,6 +146,11 @@ exports.contentRouter.post('/', auth_middleware_1.authenticate, (0, auth_middlew
 }));
 exports.contentRouter.put('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
+        const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+        if (content?.isPinned) {
+            res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser modificado.' });
+            return;
+        }
         const data = await content_service_1.ContentService.updateContent(req.params.id, req.body);
         (0, api_response_1.ok)(res, data);
     }
@@ -153,11 +160,29 @@ exports.contentRouter.put('/:id', auth_middleware_1.authenticate, (0, auth_middl
 }));
 exports.contentRouter.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
+        const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+        if (content?.isPinned) {
+            res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser borrado.' });
+            return;
+        }
         const { invalidateCache } = await Promise.resolve().then(() => __importStar(require('../../shared/middleware/cache.middleware')));
         await invalidateCache(`*/content/${req.params.id}*`);
         await invalidateCache(`*catalog*`);
         await content_service_1.ContentService.deleteContent(req.params.id);
         (0, api_response_1.ok)(res, { deleted: true });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.contentRouter.patch('/:id/pin', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
+    try {
+        const { isPinned } = req.body;
+        const content = await prisma.content.update({
+            where: { id: req.params.id },
+            data: { isPinned }
+        });
+        (0, api_response_1.ok)(res, content);
     }
     catch (err) {
         next(err);

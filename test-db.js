@@ -1,11 +1,10 @@
-require('dotenv').config();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-async function run() {
-  const p = await prisma.profile.findUnique({ where: { id: 'cmoyztnst00jyn8o2l3rnzutf' } });
-  console.log("Profile:", p ? "EXISTS" : "MISSING");
-  const c = await prisma.content.findUnique({ where: { id: 'cmp8sp78y062v8jz6ruzvy07c' } });
-  console.log("Content:", c ? "EXISTS" : "MISSING");
-  process.exit(0);
+async function main() {
+  const content = await prisma.content.findMany({
+    where: { slug: { contains: 'the-flash' } },
+    include: { videoFiles: true, seasons: { include: { episodes: true } } }
+  });
+  console.log(JSON.stringify(content, null, 2));
 }
-run();
+main().catch(console.error).finally(() => prisma.$disconnect());

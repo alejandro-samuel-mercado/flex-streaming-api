@@ -86,8 +86,9 @@ const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.ro
 const backup_router_1 = require("./modules/backup/backup.router");
 const likes_router_1 = require("./modules/likes/likes.router");
 const backup_service_1 = require("./modules/backup/backup.service");
-const auto_scanner_worker_1 = require("./workers/auto-scanner.worker");
+// import { AutoScannerWorker } from './workers/auto-scanner.worker';
 const account_expiry_worker_1 = require("./workers/account-expiry.worker");
+const maintenance_service_1 = require("./modules/maintenance/maintenance.service");
 const chunk_upload_service_1 = require("./services/chunk-upload.service");
 const app = (0, express_1.default)();
 exports.app = app;
@@ -286,11 +287,12 @@ async function bootstrap() {
         await redis_1.redis.connect();
         await prisma_1.prisma.$connect();
         console.log('✅ Database connected');
-        // Start auto-scanner worker
-        auto_scanner_worker_1.AutoScannerWorker.start(io);
-        console.log('🔍 Auto-scanner worker initialized');
+        // Start auto-scanner worker (DISABLED - Preferimos usar CRON de Linux o consola manual)
+        // AutoScannerWorker.start(io);
+        // console.log('🔍 Auto-scanner worker initialized (DISABLED)');
         // Start account expiry worker
         account_expiry_worker_1.AccountExpiryWorker.start();
+        maintenance_service_1.MaintenanceService.start();
         console.log('⏰ Account expiry worker initialized');
         // Start auto-backup scheduler (reads config from DB)
         (0, backup_service_1.startAutoBackupScheduler)().catch(err => console.warn('[Backup] Scheduler startup skipped:', err?.message));

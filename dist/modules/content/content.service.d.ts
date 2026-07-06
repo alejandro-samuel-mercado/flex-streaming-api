@@ -373,6 +373,7 @@ export declare class ContentService {
         budget: bigint | null;
         revenue: bigint | null;
         isAdult: boolean;
+        isPinned: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -634,6 +635,7 @@ export declare class ContentService {
         budget: bigint | null;
         revenue: bigint | null;
         isAdult: boolean;
+        isPinned: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -768,6 +770,7 @@ export declare class ContentService {
         budget: bigint | null;
         revenue: bigint | null;
         isAdult: boolean;
+        isPinned: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -801,6 +804,7 @@ export declare class ContentService {
         budget: bigint | null;
         revenue: bigint | null;
         isAdult: boolean;
+        isPinned: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;

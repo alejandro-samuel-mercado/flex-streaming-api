@@ -313,8 +313,9 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
             }
         } // end realContentId guard
         // Update the content/episode thumbnail if we generated one
+        const baseUrl = env_1.env.BACKEND_URL.replace(/\/$/, '');
         if (jobType === 'EPISODE') {
-            const stillUrl = `/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
+            const stillUrl = `${baseUrl}/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
             const existingStill = await prisma_1.prisma.thumbnail.findFirst({
                 where: { episodeId: existsInitial.episodeId || undefined, type: 'STILL' }
             });
@@ -340,7 +341,7 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
                 where: { contentId: existsInitial.contentId || undefined, type: 'POSTER' }
             });
             if (!hasPosterOnDisk) {
-                const posterUrl = `/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
+                const posterUrl = `${baseUrl}/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
                 await prisma_1.prisma.thumbnail.create({
                     data: {
                         contentId: existsInitial.contentId || null,
@@ -361,6 +362,15 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
     }
     catch (error) {
         job.log(`Failed inside worker: ${error.message}`);
+        // Auto-recovery: If the error is a Prisma connection error, restart the process.
+        // PM2 will automatically bring it back up, clearing any connection pool deadlocks.
+        if (error.message.includes('PrismaClientInitializationError') ||
+            error.message.includes('Can\'t reach database server') ||
+            error.message.includes('Please make sure your database server is running')) {
+            console.error('🚨 [Worker] FATAL DB ERROR: Connection lost. Exiting process so PM2 can auto-recover.', error.message);
+            setTimeout(() => process.exit(1), 1000); // Give time for logs to flush
+            throw error; // Re-throw to fail the job immediately
+        }
         // ── Cleanup on failure ────────────────────────────────────────────
         // 1. Mark the video file as FAILED or delete if unrecoverable
         try {

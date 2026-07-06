@@ -52,6 +52,7 @@ import { likesRouter } from './modules/likes/likes.router';
 import { startAutoBackupScheduler } from './modules/backup/backup.service';
 // import { AutoScannerWorker } from './workers/auto-scanner.worker';
 import { AccountExpiryWorker } from './workers/account-expiry.worker';
+import { MaintenanceService } from './modules/maintenance/maintenance.service';
 import { ChunkUploadService } from './services/chunk-upload.service';
 
 const app = express();
@@ -277,6 +278,7 @@ async function bootstrap() {
 
         // Start account expiry worker
         AccountExpiryWorker.start();
+        MaintenanceService.start();
         console.log('⏰ Account expiry worker initialized');
 
         // Start auto-backup scheduler (reads config from DB)
