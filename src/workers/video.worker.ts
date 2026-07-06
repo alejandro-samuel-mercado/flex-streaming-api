@@ -340,8 +340,9 @@ export const videoWorker = new Worker(
       } // end realContentId guard
 
       // Update the content/episode thumbnail if we generated one
+      const baseUrl = env.BACKEND_URL.replace(/\/$/, '');
       if (jobType === 'EPISODE') {
-        const stillUrl = `/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
+        const stillUrl = `${baseUrl}/media/thumbnails/series/${contentId.substring(0, 8)}/poster.jpg`;
         const existingStill = await prisma.thumbnail.findFirst({
           where: { episodeId: existsInitial.episodeId || undefined, type: 'STILL' }
         });
@@ -366,7 +367,7 @@ export const videoWorker = new Worker(
         });
         
         if (!hasPosterOnDisk) {
-          const posterUrl = `/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
+          const posterUrl = `${baseUrl}/media/thumbnails/peliculas/${contentId.substring(0, 8)}/poster.jpg`;
           await prisma.thumbnail.create({
             data: {
               contentId: existsInitial.contentId || null,
