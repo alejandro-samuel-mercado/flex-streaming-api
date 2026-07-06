@@ -99,8 +99,12 @@ export class AccountExpiryWorker {
         console.log(`  ⏰ Expired: "${account.username}" (was ${account.status})`);
       });
 
-    } catch (err) {
-      console.error('❌ [AccountExpiry] Worker error:', err);
+    } catch (err: any) {
+      if (err.code === 'P1001' || err.message?.includes('P1001') || err.message?.includes('Can\'t reach database server')) {
+        console.warn('⚠️ [AccountExpiry] Base de datos inaccesible (P1001). Se reintentará en el próximo ciclo.');
+      } else {
+        console.error('❌ [AccountExpiry] Worker error:', err);
+      }
     }
   }
 }
