@@ -245,6 +245,10 @@ export class MediaScannerService {
         if (m3u8Path) {
           try {
             const stat = await fs.promises.stat(fullPath);
+            if (Date.now() - stat.mtimeMs < 15 * 60 * 1000) {
+              console.log(`⏳ [MediaScanner] Carpeta de Película "${entry.name}" está subiéndose (actividad reciente). Se omitirá por ahora.`);
+              continue;
+            }
             results.push({
               fileName: entry.name,
               cleanName: this.cleanFileName(entry.name),
@@ -265,6 +269,10 @@ export class MediaScannerService {
         if (VIDEO_EXTENSIONS.has(ext)) {
           try {
             const stat = await fs.promises.stat(fullPath);
+            if (Date.now() - stat.mtimeMs < 15 * 60 * 1000) {
+              console.log(`⏳ [MediaScanner] Película "${entry.name}" está subiéndose (actividad reciente). Se omitirá por ahora.`);
+              continue;
+            }
             results.push({
               fileName: entry.name,
               cleanName: this.cleanFileName(entry.name),
@@ -357,8 +365,23 @@ export class MediaScannerService {
         } else {
           // Go deeper. At depth 0 this is the series root folder name.
             const nextSeriesFolder = currentDepth === 0 ? entry.name : seriesFolderName;
+            const startIndex = results.length;
             const subFound = await this._scanSeriesRecursive(fullPath, results, importedPaths, nextSeriesFolder, currentDepth + 1, maxDepth);
             if (subFound) {
+              if (currentDepth === 0) {
+                let activelyUploading = false;
+                const now = Date.now();
+                for (let i = startIndex; i < results.length; i++) {
+                  if (now - results[i].lastModified.getTime() < 15 * 60 * 1000) {
+                    activelyUploading = true;
+                    break;
+                  }
+                }
+                if (activelyUploading) {
+                  console.log(`⏳ [MediaScanner] Serie "${entry.name}" está en subida activa (actividad en últimos 15 min). Se omitirá por seguridad para no separar episodios.`);
+                  results.splice(startIndex, results.length - startIndex);
+                }
+              }
               foundMedia = true;
             } else if (currentDepth === 0) {
               // It's a root series folder and nothing was found inside! It is empty!
