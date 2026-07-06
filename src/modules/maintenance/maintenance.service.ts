@@ -11,9 +11,41 @@ export class MaintenanceService {
 
         console.log('[Maintenance] Scheduled automated ghost series cleanup');
         setTimeout(() => {
-            this.cleanGhostSeries();
-            this.intervalId = setInterval(() => this.cleanGhostSeries(), this.CLEANUP_INTERVAL);
+            this.runAllCleanupTasks();
+            this.intervalId = setInterval(() => this.runAllCleanupTasks(), this.CLEANUP_INTERVAL);
         }, this.INITIAL_DELAY);
+    }
+
+    private static async runAllCleanupTasks() {
+        await this.cleanGhostSeries();
+        await this.cleanStuckJobs();
+    }
+
+    static async cleanStuckJobs() {
+        try {
+            console.log('[Maintenance] Running scheduled stuck transcode jobs cleanup...');
+            const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
+
+            // Mark video files stuck in PROCESSING/QUEUED for more than 6h as FAILED
+            const stuck = await prisma.videoFile.updateMany({
+                where: {
+                    status: { in: ['PROCESSING', 'QUEUED'] },
+                    updatedAt: { lt: sixHoursAgo }
+                },
+                data: {
+                    status: 'FAILED',
+                    errorMessage: 'Cancelado automáticamente: El proceso superó las 6 horas de inactividad.'
+                }
+            });
+
+            if (stuck.count > 0) {
+                console.log(`[Maintenance] 🔓 Auto-recovered ${stuck.count} stuck transcode jobs (marked as FAILED for re-scanning).`);
+            } else {
+                console.log('[Maintenance] No stuck transcode jobs found.');
+            }
+        } catch (error) {
+            console.error('[Maintenance] Error during stuck jobs cleanup:', error);
+        }
     }
 
     static async cleanGhostSeries() {
