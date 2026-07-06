@@ -1,9 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import { prisma } from '../../shared/config/prisma';
-import { env } from '../../shared/config/env';
 import { addVideoJob } from '../../services/queue.service';
-import { TMDBService, TMDBFullDetails } from '../../services/tmdb.service';
+import { TMDBFullDetails, TMDBService } from '../../services/tmdb.service';
+import { env } from '../../shared/config/env';
+import { prisma } from '../../shared/config/prisma';
 
 export interface ScannedFile {
   fileName: string;
