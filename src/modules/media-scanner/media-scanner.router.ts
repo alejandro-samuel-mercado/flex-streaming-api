@@ -574,9 +574,23 @@ mediaScannerRouter.post('/drain-and-reset', (async (_req: AuthenticatedRequest, 
     console.log(`[drain-and-reset] Queue obliterated. Deleted ${deleted.count} videoFile records. Reset ${resetContent.count} content records to PENDING.`);
 
     ok(res, {
-      message: 'Cola vaciada y BD limpiada. El auto-scanner re-detectará los archivos en el próximo ciclo.',
+      message: 'Cola vaciada, procesos FFmpeg cerrados y reiniciando servidor PM2. El sistema retomará todo desde cero en breve.',
       deletedVideoFiles: deleted.count,
       resetContentToPending: resetContent.count,
     });
+
+    // Safe self-restart after response has flushed
+    setTimeout(() => {
+      const { exec } = require('child_process');
+      console.log('🔄 [MediaScanner] DRAIN_AND_RESET: Cleaning FFmpeg zombies and restarting PM2...');
+      exec('killall ffmpeg', () => {
+        exec('pm2 restart all', (err: any) => {
+          if (err) {
+            console.warn('⚠️ [MediaScanner] pm2 restart all failed. Exiting process as fallback...', err);
+            process.exit(1);
+          }
+        });
+      });
+    }, 1000);
   } catch (err) { next(err); }
 }) as RequestHandler);
