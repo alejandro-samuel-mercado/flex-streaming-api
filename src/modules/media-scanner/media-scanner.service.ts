@@ -839,7 +839,7 @@ export class MediaScannerService {
           const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
           if (existing) {
             if (existing.isPinned) {
-                console.log(`📌 [MediaScanner] Skipping Series "${episode.tmdbSeriesId}" — Content is PINNED.`);
+                console.log(`📌 [MediaScanner] Serie "${episode.tmdbSeriesId}" está fijada (PINNED). Se agregarán episodios faltantes pero no se sobrescribirán metadatos.`);
                 // Note: We return existing.id, and we will protect VideoFile creation further down
             }
             tmdbMatch = true;

@@ -56,7 +56,8 @@ export class FFmpegService {
 
         const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
         const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => 
-            HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c))
+            HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
+            (s.channels === undefined || s.channels <= 2)
         );
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 

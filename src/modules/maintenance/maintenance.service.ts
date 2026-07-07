@@ -79,9 +79,20 @@ export class MaintenanceService {
                 const title = s.translations[0]?.title || '';
                 const isGarbageTitle = /^\d+[\s_-]/.test(title) || /^\d+$/.test(title) || title.includes('Sin título');
 
-                // If a series is older than 24h and only has 1 or 0 episodes, it's considered an orphaned ghost series.
+                // Si la serie tiene más de 2 horas y tiene 1 o 0 episodios, se considera falsa/fantasma según tu regla.
                 if (totalEpisodes <= 1 || (isGarbageTitle && totalEpisodes === 0)) {
                     console.log(`[Maintenance] 🗑️ Deleting ghost/minimal series: "${title}" (ID: ${s.id}, Episodes: ${totalEpisodes})`);
+                    
+                    // IMPORTANTE: Antes de borrar el Content, borramos sus VideoFiles para que no queden huérfanos
+                    await prisma.videoFile.deleteMany({
+                        where: {
+                            OR: [
+                                { contentId: s.id },
+                                { episode: { season: { contentId: s.id } } }
+                            ]
+                        }
+                    });
+                    
                     await prisma.content.delete({ where: { id: s.id } });
                     deletedCount++;
                 }
