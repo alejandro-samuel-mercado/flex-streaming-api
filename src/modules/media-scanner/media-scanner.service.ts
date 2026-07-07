@@ -529,6 +529,53 @@ export class MediaScannerService {
       }
 
       // Movie flow
+      const cleanName = this.cleanFileName(fileName);
+
+      // --- MATCH INTELIGENTE POR NOMBRE DE CARPETA ---
+      // Si el usuario ya editó o creó un título en el panel que se llama EXACTAMENTE como la carpeta,
+      // lo enlazamos directo sin pelearnos con TMDB ni importar su tmdbId actual.
+      const existingDbByFolderName = await prisma.content.findFirst({
+        where: {
+            translations: { some: { title: { equals: cleanName, mode: 'insensitive' } } },
+            type: contentType,
+            deletedAt: null
+        }
+      });
+
+      if (existingDbByFolderName) {
+          console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando a "${cleanName}".`);
+          if (episode?.m3u8Path) {
+              const alreadyHasVideo = await prisma.videoFile.findFirst({
+                  where: { contentId: existingDbByFolderName.id, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
+              });
+              if (!alreadyHasVideo) {
+                  const videoFile = await prisma.videoFile.create({
+                      data: {
+                          contentId: existingDbByFolderName.id,
+                          type: 'MOVIE',
+                          originalPath: filePath, // use folderPath for HLS
+                          status: 'COMPLETED',
+                          masterPlaylist: '',
+                          hlsPath: path.dirname(episode.m3u8Path),
+                          fileSize: BigInt(0),
+                          sourceNode: env.WORKER_MODE || 'ALL'
+                      }
+                  });
+                  const virtualMasterPath = `/api/stream/hls/${videoFile.id}/${path.basename(episode.m3u8Path)}`;
+                  await prisma.videoFile.update({
+                      where: { id: videoFile.id },
+                      data: { masterPlaylist: virtualMasterPath, qualities: { create: [{ resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: virtualMasterPath, codec: 'h264' }] } }
+                  });
+              }
+              await prisma.content.updateMany({ where: { id: existingDbByFolderName.id, status: 'PENDING' }, data: { status: 'READY' } });
+              return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
+          } else {
+              await this._createVideoAndEnqueue(existingDbByFolderName.id, filePath, contentType);
+              return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
+          }
+      }
+      // --- FIN MATCH INTELIGENTE ---
+
       if (episode?.m3u8Path) {
         // This is a pre-processed HLS movie folder
         return await this._importHLSMovie(filePath, fileName, episode.m3u8Path);
