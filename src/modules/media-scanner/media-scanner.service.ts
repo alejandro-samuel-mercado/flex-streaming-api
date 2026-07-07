@@ -528,8 +528,7 @@ export class MediaScannerService {
         }
       }
 
-      // Movie flow
-      const cleanName = this.cleanFileName(fileName);
+
 
       // --- MATCH INTELIGENTE POR NOMBRE DE CARPETA ---
       // Si el usuario ya editó o creó un título en el panel que se llama EXACTAMENTE como la carpeta,
@@ -581,7 +580,6 @@ export class MediaScannerService {
         return await this._importHLSMovie(filePath, fileName, episode.m3u8Path);
       }
 
-      const cleanName = this.cleanFileName(fileName);
       const explicitTmdbId = this.extractTmdbId(fileName);
       
       let tmdbResult;
