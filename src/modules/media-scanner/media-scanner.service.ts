@@ -498,23 +498,48 @@ export class MediaScannerService {
     const existingVideo = await prisma.videoFile.findFirst({ 
       where: { 
         originalPath: filePath
-      } 
-    });
-    if (existingVideo) {
-      if (existingVideo.status === 'FAILED') {
-        // Retry failed processing jobs automatically if scanned again
-        await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { status: 'QUEUED' } });
-        try {
-          await addVideoJob({
-            videoFileId: existingVideo.id,
-            contentId: existingVideo.contentId || existingVideo.episodeId || '',
-            type: existingVideo.type,
-            videoPath: filePath
-          });
-        } catch (e) { /* skip if queue fails */ }
-        return { filePath, fileName, success: true, tmdbMatch: false };
+      },
+      include: {
+        content: true,
+        episode: {
+          include: {
+            season: {
+              include: { content: true }
+            }
+          }
+        }
       }
-      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Este archivo ya fue importado' };
+    });
+
+    if (existingVideo) {
+      let isOrphaned = false;
+      if (existingVideo.type === 'MOVIE' && (!existingVideo.content || existingVideo.content.deletedAt !== null)) {
+         isOrphaned = true;
+      }
+      if (existingVideo.type === 'EPISODE' && (!existingVideo.episode || !existingVideo.episode.season || !existingVideo.episode.season.content || existingVideo.episode.season.content.deletedAt !== null)) {
+         isOrphaned = true;
+      }
+
+      if (isOrphaned) {
+         console.log(`[MediaScanner] 🗑️ Limpiando registro de video huérfano (serie eliminada o sin enlazar) para re-escanearlo: ${fileName}`);
+         await prisma.videoFile.delete({ where: { id: existingVideo.id } });
+         // Al borrarlo, permitimos que el código de abajo lo importe como nuevo
+      } else {
+        if (existingVideo.status === 'FAILED') {
+          // Retry failed processing jobs automatically if scanned again
+          await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { status: 'QUEUED' } });
+          try {
+            await addVideoJob({
+              videoFileId: existingVideo.id,
+              contentId: existingVideo.contentId || existingVideo.episodeId || '',
+              type: existingVideo.type,
+              videoPath: filePath
+            });
+          } catch (e) { /* skip if queue fails */ }
+          return { filePath, fileName, success: true, tmdbMatch: false };
+        }
+        return { filePath, fileName, success: false, tmdbMatch: false, error: 'Este archivo ya fue importado' };
+      }
     }
 
     try {
