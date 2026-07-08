@@ -248,6 +248,7 @@ export async function runHealthInspection(): Promise<void> {
   // Paso 1b: Barrido de series "fantasma" que están READY/ACTIVE pero no tienen ningún episodio con VideoFile COMPLETED
   const emptySeries = await prisma.content.findMany({
     where: {
+      isPinned: false,
       type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
       status: { in: ['READY', 'ACTIVE'] },
       seasons: {
