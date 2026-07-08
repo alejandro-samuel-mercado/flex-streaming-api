@@ -797,7 +797,15 @@ export class MediaScannerService {
     if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
       // Find or create with TMDB
       const match = tmdbResult.bestMatch;
-      const existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
+      let existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id), deletedAt: null } });
+      
+      if (!existing) {
+         existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
+         if (existing) {
+            await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
+         }
+      }
+
       if (existing) {
         contentId = existing.id;
         const alreadyHasVideo = await prisma.videoFile.findFirst({
@@ -1106,7 +1114,15 @@ export class MediaScannerService {
 
     const creationPromise = (async () => {
         // 1. Double check existence by TMDB ID (safety)
-        const existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
+        let existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId), deletedAt: null } });
+        
+        if (!existing) {
+           existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
+           if (existing) {
+              await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
+           }
+        }
+
         if (existing) {
           // If already ACTIVE, never overwrite metadata — protect manual edits
           if (existing.status === 'ACTIVE') return existing.id;
@@ -1115,7 +1131,14 @@ export class MediaScannerService {
 
         // 2. Check by imdbId to avoid unique constraint crash
         if (details.imdbId) {
-            const existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId } });
+            let existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId, deletedAt: null } });
+            if (!existingByImdb) {
+                existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId } });
+                if (existingByImdb) {
+                    await prisma.content.update({ where: { id: existingByImdb.id }, data: { deletedAt: null, status: 'PENDING' } });
+                }
+            }
+
             if (existingByImdb) {
                 // Link tmdbId if missing, but don't overwrite metadata if ACTIVE
                 if (!existingByImdb.tmdbId)
