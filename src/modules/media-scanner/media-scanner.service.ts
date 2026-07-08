@@ -797,10 +797,16 @@ export class MediaScannerService {
     if (tmdbResult.bestMatch && tmdbResult.confidence >= 0.3) {
       // Find or create with TMDB
       const match = tmdbResult.bestMatch;
-      let existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id), deletedAt: null } });
+      let existing = await prisma.content.findFirst({ 
+         where: { tmdbId: String(match.id), deletedAt: null },
+         orderBy: { isPinned: 'desc' }
+      });
       
       if (!existing) {
-         existing = await prisma.content.findFirst({ where: { tmdbId: String(match.id) } });
+         existing = await prisma.content.findFirst({ 
+            where: { tmdbId: String(match.id) },
+            orderBy: { isPinned: 'desc' }
+         });
          if (existing) {
             await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
          }
@@ -1114,10 +1120,16 @@ export class MediaScannerService {
 
     const creationPromise = (async () => {
         // 1. Double check existence by TMDB ID (safety)
-        let existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId), deletedAt: null } });
+        let existing = await prisma.content.findFirst({ 
+           where: { tmdbId: String(details.tmdbId), deletedAt: null },
+           orderBy: { isPinned: 'desc' }
+        });
         
         if (!existing) {
-           existing = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
+           existing = await prisma.content.findFirst({ 
+              where: { tmdbId: String(details.tmdbId) },
+              orderBy: { isPinned: 'desc' }
+           });
            if (existing) {
               await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
            }
@@ -1131,9 +1143,15 @@ export class MediaScannerService {
 
         // 2. Check by imdbId to avoid unique constraint crash
         if (details.imdbId) {
-            let existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId, deletedAt: null } });
+            let existingByImdb = await prisma.content.findFirst({ 
+               where: { imdbId: details.imdbId, deletedAt: null },
+               orderBy: { isPinned: 'desc' }
+            });
             if (!existingByImdb) {
-                existingByImdb = await prisma.content.findFirst({ where: { imdbId: details.imdbId } });
+                existingByImdb = await prisma.content.findFirst({ 
+                   where: { imdbId: details.imdbId },
+                   orderBy: { isPinned: 'desc' }
+                });
                 if (existingByImdb) {
                     await prisma.content.update({ where: { id: existingByImdb.id }, data: { deletedAt: null, status: 'PENDING' } });
                 }
