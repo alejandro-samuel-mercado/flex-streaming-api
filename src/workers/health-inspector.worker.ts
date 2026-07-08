@@ -87,9 +87,18 @@ async function inspectMovie(contentId: string): Promise<{ newStatus: ContentStat
     return { newStatus: 'PENDING', reason: 'HLS no encontrado en disco (enlace roto)' };
   }
 
-  // Sin portada, título o descripción → PENDING (datos esenciales faltantes)
-  if (!hasPoster || !hasTitle || !hasDescription) {
-    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título', !hasDescription && 'sinopsis'].filter(Boolean).join(', ')}` };
+  if (content.isPinned) {
+    return { newStatus: 'ACTIVE', reason: 'activo (fijado manualmente)' };
+  }
+
+  // Sin portada o título → PENDING
+  if (!hasPoster || !hasTitle) {
+    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
+  }
+
+  // Si le falta la sinopsis pero tiene portada y video, lo dejamos ACTIVE pero lo marcamos en el reason
+  if (!hasDescription) {
+    return { newStatus: 'ACTIVE', reason: 'activo pero incompleto (sin sinopsis)' };
   }
 
   // Tiene lo esencial, pero le faltan géneros u otras cosas menores
@@ -174,14 +183,19 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
     return { newStatus: 'PENDING', reason: 'sin episodios físicos con video' };
   }
 
+  // Si está fijado manualmente por el administrador, respetamos su estado siempre y cuando tenga videos físicos
+  if (content.isPinned) {
+    return { newStatus: 'ACTIVE', reason: `activo (fijado manualmente con ${episodesWithVideoOnDisk} episodios)` };
+  }
+
   // Tiene episodios pero faltan datos mínimos → PENDING
   if (!hasPoster || !hasTitle) {
     return { newStatus: 'PENDING', reason: `tiene episodios pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
   }
 
-  // Tiene episodios, portada y título pero falta descripción → PENDING
+  // Tiene episodios, portada y título pero falta descripción → ACTIVE (pero marcamos que le falta sinopsis)
   if (!hasDescription) {
-    return { newStatus: 'PENDING', reason: 'incompleto: falta sinopsis' };
+    return { newStatus: 'ACTIVE', reason: 'activo pero incompleto (sin sinopsis)' };
   }
 
   // Tiene lo esencial, pero le faltan géneros

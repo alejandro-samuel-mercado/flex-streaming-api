@@ -297,10 +297,14 @@ async function bootstrap() {
         // AutoScannerWorker.start(io);
         // console.log('🔍 Auto-scanner worker initialized (DISABLED)');
 
-        // Start account expiry worker
+        // Start background workers
         AccountExpiryWorker.start();
         MaintenanceService.start();
-        console.log('⏰ Account expiry worker initialized');
+        console.log('⏰ Account expiry worker & Maintenance service initialized');
+
+        const { HealthInspectorWorker } = require('./workers/health-inspector.worker');
+        HealthInspectorWorker.start();
+        console.log('🩺 Health Inspector worker initialized');
 
         // Start auto-backup scheduler (reads config from DB)
         startAutoBackupScheduler().catch(err =>
