@@ -615,10 +615,24 @@ export class MediaScannerService {
     const m3u8Url = episode.m3u8Path; // absolute path; the streaming service reads from MEDIA_PATH
 
     // Find or create the series content
-    let contentId: string;
+    let contentId: string = '';
     let tmdbMatch = false;
 
-    if (episode.tmdbSeriesId) {
+    // MATCH INTELIGENTE POR NOMBRE DE CARPETA
+    const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
+    const existingDbByFolderName = await prisma.content.findFirst({
+        where: {
+            translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
+            type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
+            deletedAt: null
+        }
+    });
+
+    if (existingDbByFolderName) {
+        console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando episodio a serie editada "${seriesNameForMatch}".`);
+        contentId = existingDbByFolderName.id;
+        tmdbMatch = true;
+    } else if (episode.tmdbSeriesId) {
       // Look up existing content by TMDB id first
       const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
       if (existing) {
@@ -635,7 +649,7 @@ export class MediaScannerService {
           contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
         }
       }
-    } else {
+    } else if (!contentId) {
       contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
     }
 
@@ -880,6 +894,22 @@ export class MediaScannerService {
     
     if (!this.resolvingSeries.has(seriesKey)) {
       const resolveSeries = async () => {
+        // MATCH INTELIGENTE POR NOMBRE DE CARPETA
+        const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
+        const existingDbByFolderName = await prisma.content.findFirst({
+            where: {
+                translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
+                type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
+                deletedAt: null
+            }
+        });
+
+        if (existingDbByFolderName) {
+            console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando a serie editada "${seriesNameForMatch}".`);
+            tmdbMatch = true;
+            return existingDbByFolderName.id;
+        }
+
         if (episode.tmdbSeriesId) {
           const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
           if (existing) {
