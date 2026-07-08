@@ -618,27 +618,34 @@ export class MediaScannerService {
     let contentId: string = '';
     let tmdbMatch = false;
 
-    // MATCH INTELIGENTE POR NOMBRE DE CARPETA
-    const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
-    const existingDbByFolderName = await prisma.content.findFirst({
-        where: {
-            translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
-            type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
-            deletedAt: null
-        }
-    });
-
-    if (existingDbByFolderName) {
-        console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando episodio a serie editada "${seriesNameForMatch}".`);
-        contentId = existingDbByFolderName.id;
-        tmdbMatch = true;
-    } else if (episode.tmdbSeriesId) {
+    if (episode.tmdbSeriesId) {
       // Look up existing content by TMDB id first
       const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
       if (existing) {
         contentId = existing.id;
         tmdbMatch = true;
-      } else {
+      }
+    }
+
+    if (!contentId) {
+      // MATCH INTELIGENTE POR NOMBRE DE CARPETA
+      const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
+      const existingDbByFolderName = await prisma.content.findFirst({
+          where: {
+              translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
+              type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
+              deletedAt: null
+          }
+      });
+
+      if (existingDbByFolderName) {
+          console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando episodio a serie editada "${seriesNameForMatch}".`);
+          contentId = existingDbByFolderName.id;
+          tmdbMatch = true;
+      }
+    }
+
+    if (!contentId && episode.tmdbSeriesId) {
         // Fetch from TMDB and create content
         try {
           const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
@@ -648,7 +655,6 @@ export class MediaScannerService {
           console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
           contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
         }
-      }
     } else if (!contentId) {
       contentId = await this._createMinimalSeriesContent(episode.seriesFolderName);
     }
@@ -894,6 +900,17 @@ export class MediaScannerService {
     
     if (!this.resolvingSeries.has(seriesKey)) {
       const resolveSeries = async () => {
+        if (episode.tmdbSeriesId) {
+          const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
+          if (existing) {
+            if (existing.isPinned) {
+                console.log(`📌 [MediaScanner] Serie "${episode.tmdbSeriesId}" está fijada (PINNED). Se agregarán episodios faltantes pero no se sobrescribirán metadatos.`);
+            }
+            tmdbMatch = true;
+            return existing.id;
+          }
+        }
+
         // MATCH INTELIGENTE POR NOMBRE DE CARPETA
         const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
         const existingDbByFolderName = await prisma.content.findFirst({
@@ -911,15 +928,6 @@ export class MediaScannerService {
         }
 
         if (episode.tmdbSeriesId) {
-          const existing = await prisma.content.findFirst({ where: { tmdbId: String(episode.tmdbSeriesId) } });
-          if (existing) {
-            if (existing.isPinned) {
-                console.log(`📌 [MediaScanner] Serie "${episode.tmdbSeriesId}" está fijada (PINNED). Se agregarán episodios faltantes pero no se sobrescribirán metadatos.`);
-                // Note: We return existing.id, and we will protect VideoFile creation further down
-            }
-            tmdbMatch = true;
-            return existing.id;
-          }
           try {
             const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
             const id = await this._createSeriesContent(details);
