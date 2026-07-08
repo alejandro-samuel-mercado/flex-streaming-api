@@ -484,6 +484,11 @@ export class ContentService {
         // Clean up contentData and handle BigInts
         const { platformId, budget, revenue, ...cleanContentData } = contentData;
 
+        // Prevent frontend from wiping out TMDB ID on edit, which breaks scanner linkage
+        if (cleanContentData.tmdbId === '' || cleanContentData.tmdbId === null) {
+            delete cleanContentData.tmdbId;
+        }
+
         return prisma.content.update({
             where: { id },
             data: {
