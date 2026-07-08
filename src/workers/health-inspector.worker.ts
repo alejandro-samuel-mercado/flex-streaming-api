@@ -87,10 +87,6 @@ async function inspectMovie(contentId: string): Promise<{ newStatus: ContentStat
     return { newStatus: 'PENDING', reason: 'HLS no encontrado en disco (enlace roto)' };
   }
 
-  if (content.isPinned) {
-    return { newStatus: 'ACTIVE', reason: 'activo (fijado manualmente)' };
-  }
-
   // Sin portada o título → PENDING
   if (!hasPoster || !hasTitle) {
     return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
@@ -183,11 +179,6 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
     return { newStatus: 'PENDING', reason: 'sin episodios físicos con video' };
   }
 
-  // Si está fijado manualmente por el administrador, respetamos su estado siempre y cuando tenga videos físicos
-  if (content.isPinned) {
-    return { newStatus: 'ACTIVE', reason: `activo (fijado manualmente con ${episodesWithVideoOnDisk} episodios)` };
-  }
-
   // Tiene episodios pero faltan datos mínimos → PENDING
   if (!hasPoster || !hasTitle) {
     return { newStatus: 'PENDING', reason: `tiene episodios pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
@@ -248,7 +239,6 @@ export async function runHealthInspection(): Promise<void> {
   // Paso 1b: Barrido de series "fantasma" que están READY/ACTIVE pero no tienen ningún episodio con VideoFile COMPLETED
   const emptySeries = await prisma.content.findMany({
     where: {
-      isPinned: false,
       type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
       status: { in: ['READY', 'ACTIVE'] },
       seasons: {
