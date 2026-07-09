@@ -124,7 +124,10 @@ export class MediaScannerService {
     
     // Patrón 4: "12345" solo números (si tiene 4 o más dígitos para evitar falsos positivos con series como "24")
     if (/^\d{4,}$/.test(fileName)) {
-        return parseInt(fileName, 10);
+        const num = parseInt(fileName, 10);
+        if (!(num >= 1880 && num <= 2050)) {
+            return num;
+        }
     }
     
     return null;
