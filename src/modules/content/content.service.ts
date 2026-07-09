@@ -20,6 +20,7 @@ const CONTENT_LIST_SELECT = {
     trailerUrl: true,
     createdAt: true,
     isFreeWithMembership: true,
+    isPinned: true,
     translations: { select: { language: true, title: true, description: true, tagline: true } },
     thumbnails: { where: { type: 'POSTER' }, take: 1 },
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
