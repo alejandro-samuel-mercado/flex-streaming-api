@@ -1181,29 +1181,40 @@ export class MediaScannerService {
         const actorIds = await this._matchActors(details.actors);
         const directorIds = await this._matchDirectors(details.directors);
 
-        const content = await prisma.content.create({
-            data: {
-                type: details.type,
-                status: 'PENDING',
-                slug,
-                releaseYear: details.releaseYear,
-                originalTitle: details.originalTitle || null,
-                duration: details.duration,
-                rating: details.rating,
-                tmdbId: String(details.tmdbId),
-                imdbId: details.imdbId,
-                country: details.country,
-                languages: details.languages || [],
-                originalLanguage: details.originalLanguage || null,
-                budget: details.budget ? BigInt(Math.floor(details.budget)) : null,
-                revenue: details.revenue ? BigInt(Math.floor(details.revenue)) : null,
-                isAdult: details.isAdult || false,
-                translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
-                genres: genreIds.length > 0 ? { create: genreIds.map(gId => ({ genreId: gId })) } : undefined,
-                actors: actorIds.length > 0 ? { create: actorIds.map((aId, idx) => ({ actorId: aId, order: idx })) } : undefined,
-                directors: directorIds.length > 0 ? { create: directorIds.map(dId => ({ directorId: dId })) } : undefined,
+        let content: any;
+        const createData = {
+            type: details.type,
+            status: 'PENDING' as any,
+            slug,
+            releaseYear: details.releaseYear,
+            originalTitle: details.originalTitle || null,
+            duration: details.duration,
+            rating: details.rating,
+            tmdbId: String(details.tmdbId),
+            imdbId: details.imdbId,
+            country: details.country,
+            languages: details.languages || [],
+            originalLanguage: details.originalLanguage || null,
+            budget: details.budget ? BigInt(Math.floor(details.budget)) : null,
+            revenue: details.revenue ? BigInt(Math.floor(details.revenue)) : null,
+            isAdult: details.isAdult || false,
+            translations: { create: [{ language: 'es', title: details.title, description: details.synopsis }] },
+            genres: genreIds.length > 0 ? { create: genreIds.map((gId: string) => ({ genreId: gId })) } : undefined,
+            actors: actorIds.length > 0 ? { create: actorIds.map((aId: string, idx: number) => ({ actorId: aId, order: idx })) } : undefined,
+            directors: directorIds.length > 0 ? { create: directorIds.map((dId: string) => ({ directorId: dId })) } : undefined,
+        };
+
+        try {
+            content = await prisma.content.create({ data: createData });
+        } catch (err: any) {
+            if (err.message?.includes('imdbId') || err.code === 'P2002') {
+                console.warn(`[MediaScanner] TMDB ID ${details.tmdbId} failed due to duplicate imdbId (${details.imdbId}). Creating without imdbId...`);
+                createData.imdbId = null as any;
+                content = await prisma.content.create({ data: createData });
+            } else {
+                throw err;
             }
-        });
+        }
         await this._downloadTMDBImages(content.id, details);
         return content.id;
     })();
