@@ -34,11 +34,10 @@ export interface ImportResult {
 }
 
 const VIDEO_EXTENSIONS = new Set([
-  '.mkv', '.mp4', '.avi', '.webm', '.mov', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.mxf', '.rmvb', '.vob'
+  '.mkv', '.mp4', '.avi', '.webm', '.mov', '.flv', '.wmv', '.m4v', '.mpg', '.mpeg', '.3gp', '.mxf', '.rmvb', '.vob', '.ts'
 ]);
 
 const NOISE_PATTERNS = [
-  /^\d+[_\s-\.]+/, // Quita el prefijo ID TMDB como "1402_", "1402 ", "1402-" o "1402."
   /\b(360p|480p|720p|1080p|2160p|4k|uhd)\b/gi,
   /\b(x264|x265|h264|h265|hevc|avc|xvid|divx|av1)\b/gi,
   /\b(blu[\s-]?ray|bdrip|brrip|web[\s-]?dl|web[\s-]?rip|hdtv|dvdrip|hdrip|cam|ts|screener|r5)\b/gi,
@@ -110,8 +109,8 @@ export class MediaScannerService {
     let m = fileName.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
     if (m) return parseInt(m[1], 10);
 
-    // Patrón 2: ID al inicio como "12345 - Nombre" o "12345_nombre" o "12345 nombre"
-    m = fileName.match(/^(\d+)[_\s-]/);
+    // Patrón 2: ID al inicio SOLO si está seguido de guión bajo: "12345_nombre"
+    m = fileName.match(/^(\d+)_/);
     if (m) return parseInt(m[1], 10);
 
     // Patrón 3: ID al final exacto "Nombre - 12345" (evita años como 1999 o 2026)
@@ -123,8 +122,8 @@ export class MediaScannerService {
       }
     }
     
-    // Patrón 4: "12345" solo números
-    if (/^\d+$/.test(fileName)) {
+    // Patrón 4: "12345" solo números (si tiene 4 o más dígitos para evitar falsos positivos con series como "24")
+    if (/^\d{4,}$/.test(fileName)) {
         return parseInt(fileName, 10);
     }
     
@@ -133,6 +132,14 @@ export class MediaScannerService {
 
   static cleanFileName(fileName: string): string {
     let clean = fileName.replace(/\.[^/.]+$/, '');
+    
+    // Si tiene un Smart ID, quítalo del nombre para no ensuciar el título
+    const tmdbId = this.extractTmdbId(fileName);
+    if (tmdbId) {
+      clean = clean.replace(new RegExp(`^${tmdbId}_`), '');
+      clean = clean.replace(new RegExp(`[_\\s-]${tmdbId}$`), '');
+    }
+
     for (const pattern of NOISE_PATTERNS) clean = clean.replace(pattern, ' ');
     clean = clean.replace(/[._-]/g, ' ').replace(/\s{2,}/g, ' ').trim();
     return clean;
@@ -229,13 +236,8 @@ export class MediaScannerService {
 
       const fullPath = path.join(dirPath, entry.name);
       const cleanName = this.cleanFileName(entry.name);
-      const isNumeric = /^\d+$/.test(cleanName);
-      const isGarbageNumber = isNumeric && (
-        cleanName.length > 4 ||
-        (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
-      );
       const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
-      if (isGarbageNumber || isSinTitulo) {
+      if (isSinTitulo) {
         continue;
       }
 
@@ -316,13 +318,8 @@ export class MediaScannerService {
 
       const fullPath = path.join(dirPath, entry.name);
       const cleanName = this.cleanFileName(entry.name);
-      const isNumeric = /^\d+$/.test(cleanName);
-      const isGarbageNumber = isNumeric && (
-        cleanName.length > 4 ||
-        (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
-      );
       const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
-      if (isGarbageNumber || isSinTitulo) {
+      if (isSinTitulo) {
         continue;
       }
 
@@ -467,14 +464,9 @@ export class MediaScannerService {
     
     // Bloqueador GLOBAL de carpetas y archivos no deseados (basura numérica y "sin título")
     const cleanName = this.cleanFileName(fileName);
-    const isNumeric = /^\d+$/.test(cleanName);
-    const isGarbageNumber = isNumeric && (
-      cleanName.length > 4 ||
-      (cleanName.length === 4 && (parseInt(cleanName, 10) < 1880 || parseInt(cleanName, 10) > 2030))
-    );
     const isSinTitulo = /sin t[ií]tulo/i.test(cleanName);
-    if (isGarbageNumber || isSinTitulo) {
-      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título no deseado (numérico o sin título)' };
+    if (isSinTitulo) {
+      return { filePath, fileName, success: false, tmdbMatch: false, error: 'Título no deseado (sin título)' };
     }
 
     // Si es una carpeta vacía de una serie (no tiene episodio), la marcamos como fallida inmediatamente
