@@ -485,7 +485,7 @@ export class ContentService {
         const { platformId, budget, revenue, ...cleanContentData } = contentData;
 
         // Prevent frontend from wiping out TMDB ID on edit, which breaks scanner linkage
-        if (cleanContentData.tmdbId === '' || cleanContentData.tmdbId === null) {
+        if (!cleanContentData.tmdbId || cleanContentData.tmdbId === '' || cleanContentData.tmdbId === 'null') {
             delete cleanContentData.tmdbId;
         }
 
