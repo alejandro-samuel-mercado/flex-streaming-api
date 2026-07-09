@@ -528,4 +528,37 @@ export class ContentService {
     static async deleteContent(id: string) {
         return prisma.content.update({ where: { id }, data: { deletedAt: new Date() } });
     }
+
+    static async bulkAction(action: 'delete' | 'changeStatus' | 'pin' | 'unpin', ids: string[], status?: ContentStatus) {
+        if (!ids || ids.length === 0) return { count: 0 };
+
+        const whereClause: Prisma.ContentWhereInput = {
+            id: { in: ids },
+            ...( (action === 'delete' || action === 'changeStatus') ? { isPinned: false } : {} )
+        };
+
+        if (action === 'delete') {
+            return prisma.content.updateMany({
+                where: whereClause,
+                data: { deletedAt: new Date() }
+            });
+        } else if (action === 'changeStatus' && status) {
+            return prisma.content.updateMany({
+                where: whereClause,
+                data: { status }
+            });
+        } else if (action === 'pin') {
+            return prisma.content.updateMany({
+                where: { id: { in: ids } },
+                data: { isPinned: true }
+            });
+        } else if (action === 'unpin') {
+            return prisma.content.updateMany({
+                where: { id: { in: ids } },
+                data: { isPinned: false }
+            });
+        }
+
+        return { count: 0 };
+    }
 }

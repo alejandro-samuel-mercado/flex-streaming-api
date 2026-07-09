@@ -32,6 +32,11 @@ const ContentFiltersSchema = z.object({
   incomplete: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
 });
 
+const ContentBulkActionSchema = z.object({
+  action: z.enum(['delete', 'changeStatus', 'pin', 'unpin']),
+  ids: z.array(z.string()).min(1),
+  status: z.string().optional()
+});
 // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────────
 
 contentRouter.get('/featured', cacheMiddleware('catalog'), (async (_req, res, next) => {
@@ -142,5 +147,20 @@ contentRouter.patch('/:id/pin', authenticate as RequestHandler, requireRole('ADM
       data: { isPinned }
     });
     ok(res, content);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+contentRouter.post('/bulk-action', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { action, ids, status } = ContentBulkActionSchema.parse(req.body);
+    const result = await ContentService.bulkAction(action, ids, status as any);
+    
+    // Invalidate cache for bulk delete or status change
+    if (action === 'delete' || action === 'changeStatus') {
+        const { invalidateCache } = await import('../../shared/middleware/cache.middleware');
+        await invalidateCache(`*catalog*`);
+    }
+
+    ok(res, result);
   } catch (err) { next(err); }
 }) as RequestHandler);
