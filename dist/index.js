@@ -104,6 +104,25 @@ exports.io = io;
 // Import worker and events to start them
 const queue_service_1 = require("./services/queue.service");
 const fs_1 = __importDefault(require("fs"));
+const ioredis_1 = __importDefault(require("ioredis"));
+// ─── Redis PubSub Control Listener (Multi-Server Command) ──────────────────
+const controlRedis = new ioredis_1.default(env_1.env.REDIS_URL, { maxRetriesPerRequest: null });
+controlRedis.subscribe('peliplus-control-channel').then(() => {
+    console.log('📡 [Control] Subscribed to peliplus-control-channel');
+}).catch(err => {
+    console.error('📡 [Control] Failed to subscribe to control channel:', err.message);
+});
+controlRedis.on('message', (channel, message) => {
+    if (channel === 'peliplus-control-channel' && message === 'nuclear-restart') {
+        console.log('🔄 [Control] Nuclear restart signal received. Cleaning up FFmpeg and restarting in 2 seconds...');
+        const { exec } = require('child_process');
+        exec('killall ffmpeg', () => { });
+        setTimeout(() => {
+            console.log('🔄 [Control] Exiting process now.');
+            process.exit(1); // PM2 will automatically restart the process
+        }, 2000);
+    }
+});
 // ─── Manual PM2 Cache Bypass ────────────────────────────────────────────────
 // If PM2 cached ENABLE_WORKER=true, but the physical .env file says false,
 // we forcefully disable it here to prevent Cerebro from stealing jobs.
@@ -290,10 +309,13 @@ async function bootstrap() {
         // Start auto-scanner worker (DISABLED - Preferimos usar CRON de Linux o consola manual)
         // AutoScannerWorker.start(io);
         // console.log('🔍 Auto-scanner worker initialized (DISABLED)');
-        // Start account expiry worker
+        // Start background workers
         account_expiry_worker_1.AccountExpiryWorker.start();
         maintenance_service_1.MaintenanceService.start();
-        console.log('⏰ Account expiry worker initialized');
+        console.log('⏰ Account expiry worker & Maintenance service initialized');
+        const { HealthInspectorWorker } = require('./workers/health-inspector.worker');
+        HealthInspectorWorker.start();
+        console.log('🩺 Health Inspector worker initialized');
         // Start auto-backup scheduler (reads config from DB)
         (0, backup_service_1.startAutoBackupScheduler)().catch(err => console.warn('[Backup] Scheduler startup skipped:', err?.message));
         console.log('💾 Backup scheduler initialized');
