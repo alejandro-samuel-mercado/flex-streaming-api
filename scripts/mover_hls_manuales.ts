@@ -49,9 +49,9 @@ async function main() {
                     fs.renameSync(sourcePath, targetPath);
                 } catch (renameErr: any) {
                     if (renameErr.code === 'EXDEV') {
-                        console.log(`  Cruza particiones. Copiando y eliminando (esto tomará un momento)...`);
-                        fs.cpSync(sourcePath, targetPath, { recursive: true });
-                        fs.rmSync(sourcePath, { recursive: true, force: true });
+                        console.log(`  Cruza particiones. Usando mv nativo para mayor velocidad...`);
+                        const { execSync } = require('child_process');
+                        execSync(`mv "${sourcePath}" "${targetPath}"`);
                     } else {
                         throw renameErr;
                     }
