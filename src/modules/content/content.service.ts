@@ -1,9 +1,9 @@
-import { prisma } from '../../shared/config/prisma';
 import { ContentStatus, ContentType, Prisma } from '@prisma/client';
-import { TMDBService } from '../../services/tmdb.service';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
+import { TMDBService } from '../../services/tmdb.service';
 import { env } from '../../shared/config/env';
+import { prisma } from '../../shared/config/prisma';
 
 const CONTENT_LIST_SELECT = {
     id: true,
