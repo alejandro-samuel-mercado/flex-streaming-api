@@ -2,6 +2,11 @@ import axios from 'axios';
 import fs from 'fs';
 import { env } from '../shared/config/env';
 
+// Global timeout for all TMDB requests.
+// Without this, when the VPS DNS fails (EAI_AGAIN), each axios call hangs for
+// up to 2 minutes and saturates the Node.js thread pool, freezing the whole server.
+const TMDB_TIMEOUT_MS = 8000;
+
 export interface TMDBSearchResult {
   id: number;
   title?: string;
@@ -52,6 +57,7 @@ export class TMDBService {
   static async search(query: string, type: 'movie' | 'tv' | 'multi' = 'multi', lang: string = 'es-ES') {
     try {
       const response = await axios.get(`${this.baseURL}/search/${type}`, {
+        timeout: TMDB_TIMEOUT_MS,
         params: {
           api_key: env.TMDB_API_KEY,
           query,
@@ -72,6 +78,7 @@ export class TMDBService {
   static async getDetails(id: string | number, type: 'movie' | 'tv', lang: string = 'es-ES') {
     try {
       const response = await axios.get(`${this.baseURL}/${type}/${id}`, {
+        timeout: TMDB_TIMEOUT_MS,
         params: {
           api_key: env.TMDB_API_KEY,
           language: lang,
@@ -107,7 +114,7 @@ export class TMDBService {
       const url = this.getImageUrl(tmdbPath);
       if (!url) return null;
 
-      const response = await axios.get(url, { responseType: 'stream' });
+      const response = await axios.get(url, { responseType: 'stream', timeout: TMDB_TIMEOUT_MS });
       const writer = fs.createWriteStream(targetPath);
 
       response.data.pipe(writer);
@@ -378,6 +385,7 @@ export class TMDBService {
   static async getEpisodeDetails(tvId: string | number, seasonNumber: number, episodeNumber: number, lang: string = 'es-ES') {
     try {
       const response = await axios.get(`${this.baseURL}/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}`, {
+        timeout: TMDB_TIMEOUT_MS,
         params: {
           api_key: env.TMDB_API_KEY,
           language: lang,

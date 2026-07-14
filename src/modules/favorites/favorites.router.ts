@@ -33,6 +33,24 @@ favoritesRouter.get('/check/:contentId', (async (req: AuthenticatedRequest, res,
   } catch (err) { next(err); }
 }) as RequestHandler);
 
+// Batch check – resolves N favorites in ONE DB query instead of N individual requests
+favoritesRouter.post('/batch-check', (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const profileId = req.headers['x-profile-id'] as string;
+    if (!profileId) {
+      res.status(400).json({ success: false, error: 'X-Profile-Id header required' });
+      return;
+    }
+    const { contentIds } = req.body;
+    if (!Array.isArray(contentIds) || contentIds.length === 0) {
+      ok(res, {});
+      return;
+    }
+    const result = await FavoritesService.batchCheckFavorites(profileId, contentIds);
+    ok(res, result);
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
 favoritesRouter.post('/toggle', (async (req: AuthenticatedRequest, res, next) => {
   try {
     const profileId = req.headers['x-profile-id'] as string;
