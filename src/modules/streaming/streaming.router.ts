@@ -87,10 +87,15 @@ streamingRouter.get('/play', ((req: Request, res, next) => {
 }) as RequestHandler);
 
 // ─── Download HLS as MP4 (FFmpeg on the fly) ────────────────────────────────
-streamingRouter.get('/download-hls/:videoFileId', (async (req: Request, res, next) => {
+streamingRouter.get('/download-hls', (async (req: Request, res, next) => {
   try {
-    const videoFileId = req.params.videoFileId;
-    const result = await StreamingService.downloadHlsAsMp4(videoFileId);
+    const contentId = req.query.contentId as string;
+    if (!contentId) {
+      res.status(400).send('Missing contentId');
+      return;
+    }
+
+    const result = await StreamingService.downloadHlsAsMp4(contentId);
 
     if (result.error || !result.stream) {
       res.status(result.status).send(result.error || 'Stream error');
@@ -98,8 +103,8 @@ streamingRouter.get('/download-hls/:videoFileId', (async (req: Request, res, nex
     }
 
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${videoFileId}.mp4"`);
-    res.setHeader('Accept-Ranges', 'none'); // FFmpeg pipe does not support byte ranges
+    res.setHeader('Content-Disposition', `attachment; filename="${contentId}.mp4"`);
+    res.setHeader('Accept-Ranges', 'none');
     
     result.stream.pipe(res);
 
@@ -110,4 +115,5 @@ streamingRouter.get('/download-hls/:videoFileId', (async (req: Request, res, nex
     });
   } catch (err) { next(err); }
 }) as RequestHandler);
+
 

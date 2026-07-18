@@ -536,60 +536,83 @@ export class StreamingService {
     }
 
     /**
-     * Finds the HLS master playlist and spawns FFmpeg to mux it into an MP4 stream on the fly.
-     * This avoids storing an extra MP4 on disk while allowing seamless downloads.
+     * Finds the HLS master playlist by scanning known HLS directories for a
+     * folder whose name ends with a prefix of the given contentId.
+     * Then spawns FFmpeg to mux the HLS stream into an MP4 on the fly.
+     *
+     * HLS folders are named like: "titulo-de-pelicula--cmrp2fj3"
+     * where "cmrp2fj3" is the first 8 chars of the content ID.
      */
-    static async downloadHlsAsMp4(videoFileId: string): Promise<{ status: number, stream: any, error?: string }> {
-        // 1. Get the root HLS folder using existing logic
-        let hlsRoot = getCachedHlsRoot(videoFileId);
+    static async downloadHlsAsMp4(contentId: string): Promise<{ status: number, stream: any, error?: string }> {
+        // The first 8 chars of the contentId match the suffix in the folder name
+        const idPrefix = contentId.substring(0, 8);
+        const cacheKey = `download:${contentId}`;
 
-        if (!hlsRoot) {
-            const videoFile = getCachedVideoFile(videoFileId) || 
-                              await prisma.videoFile.findUnique({ where: { id: videoFileId } });
-            
-            if (!videoFile) return { status: 404, stream: null, error: 'VideoFile not found' };
+        let hlsRoot = getCachedHlsRoot(cacheKey);
 
-            let resolvedRoot = '';
-            if (videoFile.hlsPath) {
-                if (path.isAbsolute(videoFile.hlsPath)) {
-                    resolvedRoot = videoFile.hlsPath;
-                } else if (videoFile.hlsPath.startsWith('media/hls')) {
-                    resolvedRoot = path.resolve(env.HLS_PATH, videoFile.hlsPath.replace('media/hls', '').replace(/^\//, ''));
-                } else {
-                    resolvedRoot = path.resolve(process.cwd(), videoFile.hlsPath);
+        if (!hlsRoot || !fs.existsSync(hlsRoot)) {
+            // Directories to scan for HLS folders (order: most likely first)
+            const scanDirs = [
+                path.join(env.HLS_PATH, 'peliculas'),
+                path.join(env.HLS_PATH, 'peliculas_manuales'),
+                path.join(env.HLS_PATH, 'series'),
+                env.HLS_PATH,
+            ];
+
+            for (const dir of scanDirs) {
+                if (!fs.existsSync(dir)) continue;
+                const entries = fs.readdirSync(dir);
+                // Match folder ending in "--{idPrefix}" or exactly matching contentId
+                const match = entries.find(e =>
+                    e.endsWith(`--${idPrefix}`) ||
+                    e.endsWith(`--${contentId}`) ||
+                    e === contentId
+                );
+                if (match) {
+                    hlsRoot = path.join(dir, match);
+                    setCachedHlsRoot(cacheKey, hlsRoot);
+                    break;
                 }
             }
 
-            if (!resolvedRoot || !fs.existsSync(resolvedRoot)) {
-                resolvedRoot = path.resolve(env.HLS_PATH, videoFileId);
-            }
+            // Also try /home/media/peliculas/{tmdbId}/ and /home/media/series/{tmdbId}/
+            // for older style HLS stored directly by numeric TMDB id
+            if (!hlsRoot || !fs.existsSync(hlsRoot)) {
+                // Try looking up from DB by content id to get tmdbId
+                const content = await prisma.content.findFirst({
+                    where: { id: { startsWith: idPrefix } },
+                    select: { tmdbId: true }
+                }).catch(() => null);
 
-            hlsRoot = resolvedRoot;
-            if (fs.existsSync(hlsRoot)) {
-                setCachedHlsRoot(videoFileId, hlsRoot);
+                if (content?.tmdbId) {
+                    const candidates = [
+                        path.join('/home/media/peliculas', content.tmdbId),
+                        path.join('/home/media/series', content.tmdbId),
+                    ];
+                    for (const c of candidates) {
+                        if (fs.existsSync(c)) { hlsRoot = c; break; }
+                    }
+                }
             }
         }
 
         if (!hlsRoot || !fs.existsSync(hlsRoot)) {
-            return { status: 404, stream: null, error: 'HLS directory not found on disk' };
+            return { status: 404, stream: null, error: `HLS directory not found for contentId ${contentId} (prefix: ${idPrefix})` };
         }
 
-        // 2. Identify the playlist file
+        // Identify the playlist file
         let playlistPath = path.resolve(hlsRoot, 'master.m3u8');
         if (!fs.existsSync(playlistPath)) {
             playlistPath = path.resolve(hlsRoot, 'index.m3u8');
             if (!fs.existsSync(playlistPath)) {
-                return { status: 404, stream: null, error: 'Playlist not found in HLS directory' };
+                return { status: 404, stream: null, error: `Playlist not found in ${hlsRoot}` };
             }
         }
 
-        // 3. Spawn FFmpeg to stream copy to MP4 pipe
-        // -i: Input playlist
-        // -c copy: Do not re-encode video/audio, just remux
-        // -bsf:a aac_adtstoasc: Fix AAC bitstream for MP4 container
-        // -movflags frag_keyframe+empty_moov: Allow streaming fragmented MP4 without seeking
-        // -f mp4: Output format
-        // pipe:1: Send output to stdout
+        // Spawn FFmpeg to stream copy to MP4 pipe
+        // -c copy: no re-encode, just remux  
+        // -bsf:a aac_adtstoasc: fix AAC bitstream for MP4 container
+        // -movflags frag_keyframe+empty_moov: allow streaming without seeking
         const ffmpeg = spawn('ffmpeg', [
             '-i', playlistPath,
             '-c', 'copy',
