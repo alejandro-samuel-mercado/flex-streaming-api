@@ -536,6 +536,42 @@ export class StreamingService {
     }
 
     /**
+     * Spawns FFmpeg to remux an HLS playlist into a fragmented MP4 piped to stdout.
+     * Sets CWD to the playlist directory so relative segment paths resolve correctly.
+     * Logs stderr for debugging.
+     */
+    private static spawnFfmpegMp4(playlistPath: string): any {
+        const cwd = path.dirname(playlistPath);
+        const ffmpeg = spawn('ffmpeg', [
+            '-allowed_extensions', 'ALL',
+            '-i', playlistPath,
+            '-c', 'copy',
+            '-bsf:a', 'aac_adtstoasc',   // Required: AAC in TS segments has ADTS headers that MP4 can't handle raw
+            '-movflags', 'frag_keyframe+empty_moov',
+            '-f', 'mp4',
+            'pipe:1'
+        ], { cwd });
+
+        // Log stderr for debugging (don't throw — stderr always has info lines)
+        ffmpeg.stderr.on('data', (chunk: Buffer) => {
+            const msg = chunk.toString();
+            // Only log actual errors, not progress lines
+            if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('failed')) {
+                console.error(`[FFmpeg][${path.basename(cwd)}]`, msg.trim());
+            }
+        });
+
+        ffmpeg.on('close', (code: number) => {
+            if (code !== 0 && code !== null) {
+                console.error(`[FFmpeg][${path.basename(cwd)}] exited with code ${code}`);
+            }
+        });
+
+        return ffmpeg.stdout;
+    }
+
+
+    /**
      * Finds the HLS master playlist by scanning known HLS directories for a
      * folder whose name ends with a prefix of the given contentId.
      * Then spawns FFmpeg to mux the HLS stream into an MP4 on the fly.
@@ -589,8 +625,7 @@ export class StreamingService {
                         let playlist = path.join(epFolderPath, 'master.m3u8');
                         if (!fs.existsSync(playlist)) playlist = path.join(epFolderPath, 'index.m3u8');
                         if (fs.existsSync(playlist)) {
-                            const ffmpeg = spawn('ffmpeg', ['-i', playlist, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1']);
-                            return { status: 200, stream: ffmpeg.stdout };
+                            return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
                         }
                     }
                 }
@@ -633,8 +668,7 @@ export class StreamingService {
                             if (epDir) {
                                 const playlist = path.join(epDir, 'index.m3u8');
                                 if (fs.existsSync(playlist)) {
-                                    const ffmpeg = spawn('ffmpeg', ['-i', playlist, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1']);
-                                    return { status: 200, stream: ffmpeg.stdout };
+                                    return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
                                 }
                             }
                         }
@@ -712,19 +746,6 @@ export class StreamingService {
             }
         }
 
-        // Spawn FFmpeg to stream copy to MP4 pipe
-        // -c copy: no re-encode, just remux  
-        // -bsf:a aac_adtstoasc: fix AAC bitstream for MP4 container
-        // -movflags frag_keyframe+empty_moov: allow streaming without seeking
-        const ffmpeg = spawn('ffmpeg', [
-            '-i', playlistPath,
-            '-c', 'copy',
-            '-bsf:a', 'aac_adtstoasc',
-            '-movflags', 'frag_keyframe+empty_moov',
-            '-f', 'mp4',
-            'pipe:1'
-        ]);
-
-        return { status: 200, stream: ffmpeg.stdout };
+        return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlistPath) };
     }
 }
