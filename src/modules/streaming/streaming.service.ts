@@ -3,6 +3,7 @@ import { prisma } from '../../shared/config/prisma';
 import { generateSignedUrl, verifySignedToken } from '../../services/token.service';
 import fs from 'fs';
 import path from 'path';
+import { spawn } from 'child_process';
 
 // ─── In-memory cache for HLS segment serving ─────────────────────────────────
 // Eliminates DB queries on every .ts segment request.
@@ -477,7 +478,6 @@ export class StreamingService {
             headers['Content-Length'] = fs.statSync(resolvedPath).size.toString();
             stream = fs.createReadStream(resolvedPath);
         }
-
         return {
             status: 200,
             headers,
@@ -510,22 +510,95 @@ export class StreamingService {
                 return { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` }, stream: null };
             }
 
+            const chunksize = (end - start) + 1;
+            const file = fs.createReadStream(filePath, { start, end });
+
             return {
                 status: 206,
                 headers: {
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
-                    'Content-Length': (end - start + 1).toString(),
-                    'Content-Type': 'video/mp4',
+                    'Content-Length': chunksize.toString(),
+                    'Content-Type': 'video/mp4'
                 },
-                stream: fs.createReadStream(filePath, { start, end }),
+                stream: file
             };
         }
 
         return {
             status: 200,
-            headers: { 'Content-Length': fileSize.toString(), 'Content-Type': 'video/mp4' },
-            stream: fs.createReadStream(filePath),
+            headers: {
+                'Content-Length': fileSize.toString(),
+                'Content-Type': 'video/mp4'
+            },
+            stream: fs.createReadStream(filePath)
         };
+    }
+
+    /**
+     * Finds the HLS master playlist and spawns FFmpeg to mux it into an MP4 stream on the fly.
+     * This avoids storing an extra MP4 on disk while allowing seamless downloads.
+     */
+    static async downloadHlsAsMp4(videoFileId: string): Promise<{ status: number, stream: any, error?: string }> {
+        // 1. Get the root HLS folder using existing logic
+        let hlsRoot = getCachedHlsRoot(videoFileId);
+
+        if (!hlsRoot) {
+            const videoFile = getCachedVideoFile(videoFileId) || 
+                              await prisma.videoFile.findUnique({ where: { id: videoFileId } });
+            
+            if (!videoFile) return { status: 404, stream: null, error: 'VideoFile not found' };
+
+            let resolvedRoot = '';
+            if (videoFile.hlsPath) {
+                if (path.isAbsolute(videoFile.hlsPath)) {
+                    resolvedRoot = videoFile.hlsPath;
+                } else if (videoFile.hlsPath.startsWith('media/hls')) {
+                    resolvedRoot = path.resolve(env.HLS_PATH, videoFile.hlsPath.replace('media/hls', '').replace(/^\//, ''));
+                } else {
+                    resolvedRoot = path.resolve(process.cwd(), videoFile.hlsPath);
+                }
+            }
+
+            if (!resolvedRoot || !fs.existsSync(resolvedRoot)) {
+                resolvedRoot = path.resolve(env.HLS_PATH, videoFileId);
+            }
+
+            hlsRoot = resolvedRoot;
+            if (fs.existsSync(hlsRoot)) {
+                setCachedHlsRoot(videoFileId, hlsRoot);
+            }
+        }
+
+        if (!hlsRoot || !fs.existsSync(hlsRoot)) {
+            return { status: 404, stream: null, error: 'HLS directory not found on disk' };
+        }
+
+        // 2. Identify the playlist file
+        let playlistPath = path.resolve(hlsRoot, 'master.m3u8');
+        if (!fs.existsSync(playlistPath)) {
+            playlistPath = path.resolve(hlsRoot, 'index.m3u8');
+            if (!fs.existsSync(playlistPath)) {
+                return { status: 404, stream: null, error: 'Playlist not found in HLS directory' };
+            }
+        }
+
+        // 3. Spawn FFmpeg to stream copy to MP4 pipe
+        // -i: Input playlist
+        // -c copy: Do not re-encode video/audio, just remux
+        // -bsf:a aac_adtstoasc: Fix AAC bitstream for MP4 container
+        // -movflags frag_keyframe+empty_moov: Allow streaming fragmented MP4 without seeking
+        // -f mp4: Output format
+        // pipe:1: Send output to stdout
+        const ffmpeg = spawn('ffmpeg', [
+            '-i', playlistPath,
+            '-c', 'copy',
+            '-bsf:a', 'aac_adtstoasc',
+            '-movflags', 'frag_keyframe+empty_moov',
+            '-f', 'mp4',
+            'pipe:1'
+        ]);
+
+        return { status: 200, stream: ffmpeg.stdout };
     }
 }

@@ -85,3 +85,29 @@ streamingRouter.get('/play', ((req: Request, res, next) => {
     }
   } catch (err) { next(err); }
 }) as RequestHandler);
+
+// ─── Download HLS as MP4 (FFmpeg on the fly) ────────────────────────────────
+streamingRouter.get('/download-hls/:videoFileId', (async (req: Request, res, next) => {
+  try {
+    const videoFileId = req.params.videoFileId;
+    const result = await StreamingService.downloadHlsAsMp4(videoFileId);
+
+    if (result.error || !result.stream) {
+      res.status(result.status).send(result.error || 'Stream error');
+      return;
+    }
+
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Disposition', `attachment; filename="${videoFileId}.mp4"`);
+    res.setHeader('Accept-Ranges', 'none'); // FFmpeg pipe does not support byte ranges
+    
+    result.stream.pipe(res);
+
+    req.on('close', () => {
+      if (result.stream && typeof result.stream.kill === 'function') {
+        result.stream.kill('SIGKILL');
+      }
+    });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
