@@ -104,9 +104,10 @@ streamingRouter.get('/download-hls', (async (req: Request, res, next) => {
       return;
     }
 
-    const label = contentId || episodeId || 'descarga';
+    const queryFilename = req.query.filename as string | undefined;
+    const label = queryFilename || `${contentId || episodeId || 'descarga'}.mp4`;
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${label}.mp4"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${label}"`);
     res.setHeader('Accept-Ranges', 'none');
     
     result.stream.pipe(res);
