@@ -543,7 +543,110 @@ export class StreamingService {
      * HLS folders are named like: "titulo-de-pelicula--cmrp2fj3"
      * where "cmrp2fj3" is the first 8 chars of the content ID.
      */
-    static async downloadHlsAsMp4(contentId: string): Promise<{ status: number, stream: any, error?: string }> {
+    static async downloadHlsAsMp4(contentId?: string, episodeId?: string): Promise<{ status: number, stream: any, error?: string }> {
+        // ── EPISODE DOWNLOAD ──────────────────────────────────────────────────
+        // Structure in /home/peliplus_gran_disco/hls/series/:
+        //   {series-slug}--{seriesIdPrefix}/
+        //     {SxxExx}--{episodeIdPrefix}/
+        //       master.m3u8
+        //
+        // Structure in /home/media/series/:
+        //   {tmdbId}_{series_name}/{series_name}/{tmdbId}_S{s}E{ep}/
+        //     index.m3u8
+        if (episodeId) {
+            const epPrefix = episodeId.substring(0, 8);
+
+            // Look up episode to get its contentId (series) from the DB
+            const ep = await prisma.episode.findUnique({
+                where: { id: episodeId },
+                select: { id: true, number: true, season: { select: { number: true, contentId: true } } }
+            }).catch(() => null);
+
+            const seriesContentId = ep?.season?.contentId;
+
+            // ── Strategy 1: new-style HLS under /home/peliplus_gran_disco/hls/series/
+            const hlsSeriesDir = path.join(env.HLS_PATH, 'series');
+            if (fs.existsSync(hlsSeriesDir)) {
+                // Find the series folder (slug--seriesIdPrefix)
+                const seriesIdPrefix = seriesContentId?.substring(0, 8);
+                const seriesFolders = fs.readdirSync(hlsSeriesDir);
+                const matchedSeriesFolder = seriesFolders.find(f =>
+                    (seriesIdPrefix && f.endsWith(`--${seriesIdPrefix}`)) ||
+                    f === seriesContentId
+                );
+
+                if (matchedSeriesFolder) {
+                    const seriesFolderPath = path.join(hlsSeriesDir, matchedSeriesFolder);
+                    // Find the episode subfolder (SxxExx--episodeIdPrefix)
+                    const epFolders = fs.readdirSync(seriesFolderPath);
+                    const matchedEpFolder = epFolders.find(f =>
+                        f.endsWith(`--${epPrefix}`) ||
+                        f === episodeId
+                    );
+
+                    if (matchedEpFolder) {
+                        const epFolderPath = path.join(seriesFolderPath, matchedEpFolder);
+                        let playlist = path.join(epFolderPath, 'master.m3u8');
+                        if (!fs.existsSync(playlist)) playlist = path.join(epFolderPath, 'index.m3u8');
+                        if (fs.existsSync(playlist)) {
+                            const ffmpeg = spawn('ffmpeg', ['-i', playlist, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1']);
+                            return { status: 200, stream: ffmpeg.stdout };
+                        }
+                    }
+                }
+            }
+
+            // ── Strategy 2: old-style HLS under /home/media/series/{tmdbId}_{name}/
+            // Look up content TMDB id to find the correct top-level folder
+            if (seriesContentId) {
+                const content = await prisma.content.findFirst({
+                    where: { id: { startsWith: seriesContentId.substring(0, 8) } },
+                    select: { tmdbId: true }
+                }).catch(() => null);
+
+                if (content?.tmdbId && ep?.season?.number !== undefined && ep?.number !== undefined) {
+                    const mediaSeriesDir = '/home/media/series';
+                    if (fs.existsSync(mediaSeriesDir)) {
+                        // Find top-level folder starting with tmdbId_
+                        const topDirs = fs.readdirSync(mediaSeriesDir);
+                        const topMatch = topDirs.find(d => d.startsWith(`${content.tmdbId}_`));
+                        if (topMatch) {
+                            // Walk subdirs to find the episode folder like {tmdbId}_S01E01
+                            const sNum = String(ep.season.number).padStart(2, '0');
+                            const eNum = String(ep.number).padStart(2, '0');
+                            const epFolderName = `${content.tmdbId}_S${sNum}E${eNum}`;
+                            // The episode folder may be nested one level deep (e.g. inside a "Show Name" folder)
+                            const walk = (dir: string, depth: number): string | null => {
+                                if (depth < 0 || !fs.existsSync(dir)) return null;
+                                const entries = fs.readdirSync(dir);
+                                if (entries.includes(epFolderName)) return path.join(dir, epFolderName);
+                                for (const e of entries) {
+                                    const sub = path.join(dir, e);
+                                    if (fs.statSync(sub).isDirectory()) {
+                                        const found = walk(sub, depth - 1);
+                                        if (found) return found;
+                                    }
+                                }
+                                return null;
+                            };
+                            const epDir = walk(path.join(mediaSeriesDir, topMatch), 2);
+                            if (epDir) {
+                                const playlist = path.join(epDir, 'index.m3u8');
+                                if (fs.existsSync(playlist)) {
+                                    const ffmpeg = spawn('ffmpeg', ['-i', playlist, '-c', 'copy', '-bsf:a', 'aac_adtstoasc', '-movflags', 'frag_keyframe+empty_moov', '-f', 'mp4', 'pipe:1']);
+                                    return { status: 200, stream: ffmpeg.stdout };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return { status: 404, stream: null, error: `Episode HLS not found for episodeId ${episodeId} (prefix: ${epPrefix})` };
+        }
+
+        if (!contentId) return { status: 400, stream: null, error: 'contentId or episodeId required' };
+
         // The first 8 chars of the contentId match the suffix in the folder name
         const idPrefix = contentId.substring(0, 8);
         const cacheKey = `download:${contentId}`;

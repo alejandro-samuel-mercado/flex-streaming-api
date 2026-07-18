@@ -89,21 +89,24 @@ streamingRouter.get('/play', ((req: Request, res, next) => {
 // ─── Download HLS as MP4 (FFmpeg on the fly) ────────────────────────────────
 streamingRouter.get('/download-hls', (async (req: Request, res, next) => {
   try {
-    const contentId = req.query.contentId as string;
-    if (!contentId) {
-      res.status(400).send('Missing contentId');
+    const contentId = req.query.contentId as string | undefined;
+    const episodeId = req.query.episodeId as string | undefined;
+
+    if (!contentId && !episodeId) {
+      res.status(400).send('Missing contentId or episodeId');
       return;
     }
 
-    const result = await StreamingService.downloadHlsAsMp4(contentId);
+    const result = await StreamingService.downloadHlsAsMp4(contentId, episodeId);
 
     if (result.error || !result.stream) {
       res.status(result.status).send(result.error || 'Stream error');
       return;
     }
 
+    const label = contentId || episodeId || 'descarga';
     res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${contentId}.mp4"`);
+    res.setHeader('Content-Disposition', `attachment; filename="${label}.mp4"`);
     res.setHeader('Accept-Ranges', 'none');
     
     result.stream.pipe(res);
@@ -115,5 +118,6 @@ streamingRouter.get('/download-hls', (async (req: Request, res, next) => {
     });
   } catch (err) { next(err); }
 }) as RequestHandler);
+
 
 
