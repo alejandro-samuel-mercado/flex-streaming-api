@@ -67,9 +67,11 @@ function parseTmdbId(folderName: string): number | null {
  * Parse season and episode from folder names like "1399_S01E01".
  */
 function parseSeasonEpisode(folderName: string): { season: number; episode: number } | null {
-  const m = folderName.match(/[Ss](\d+)[Ee](\d+)/);
-  if (!m) return null;
-  return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
+  const m = folderName.match(/[Ss](\d+)[-_\s]*[Ee](?:[Pp])?[-_\s]*(\d+)/i);
+  if (m) {
+    return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
+  }
+  return null;
 }
 
 /**
@@ -80,15 +82,26 @@ function parseSeasonEpisode(folderName: string): { season: number; episode: numb
  *   "Episode 5.mkv"      → S01E05 (season defaults to 1)
  */
 function parseSeasonEpisodeFromFilename(fileName: string): { season: number; episode: number } | null {
+  // Try standard S01E01 formats again just in case
+  const m = fileName.match(/[Ss](\d+)[-_\s]*[Ee](?:[Pp])?[-_\s]*(\d+)/i);
+  if (m) return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
+
   // T01-05, T01E05, T01-E05 formats (common in Spanish file naming)
-  const tFormat = fileName.match(/[Tt](\d+)[-\s]?[Ee]?(\d+)/);
+  const tFormat = fileName.match(/[Tt](\d+)[-\s]*[Ee]?(?:[Pp])?[-\s]*(\d+)/i);
   if (tFormat) return { season: parseInt(tFormat[1], 10), episode: parseInt(tFormat[2], 10) };
+
   // 1x09 format
-  const xFormat = fileName.match(/(\d+)[xX](\d+)/);
+  const xFormat = fileName.match(/(\d+)[xX](\d+)/i);
   if (xFormat) return { season: parseInt(xFormat[1], 10), episode: parseInt(xFormat[2], 10) };
-  // Standalone episode number (e.g. "Episode 5" or just "05")
-  const epOnly = fileName.match(/(?:^|\D)(\d{1,3})(?:\D|$)/);
-  if (epOnly) return { season: 1, episode: parseInt(epOnly[1], 10) };
+
+  // Standalone episode number (e.g. "Episode 5", "Capitulo 5", "Ep 05")
+  const epFormat = fileName.match(/(?:[Ee]pisodio|[Ee]p|[Cc]apitulo|[Cc]ap)[-_\s]*(\d+)/i);
+  if (epFormat) return { season: 1, episode: parseInt(epFormat[1], 10) };
+
+  // E05 format
+  const eFormat = fileName.match(/[Ee](\d+)/i);
+  if (eFormat) return { season: 1, episode: parseInt(eFormat[1], 10) };
+
   return null;
 }
 
@@ -331,8 +344,8 @@ export class MediaScannerService {
         const m3u8Path = await this._findM3u8(fullPath, 0, 0);
         if (m3u8Path) {
           const parentDirName = path.basename(dirPath);
-          let seasonMatch = parentDirName.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Ss](\d+)/);
-          let episodeMatch = entry.name.match(/[Ee]p(?:isodio)?\s*(\d+)/i) || entry.name.match(/[Ee](\d+)/) || entry.name.match(/(?:^|[^a-zA-Z0-9])(\d{1,3})(?:[^a-zA-Z0-9]|$)/);
+          let seasonMatch = parentDirName.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Tt]emp(?:orada)?\s*(\d+)/i) || entry.name.match(/[Ss](\d+)/i);
+          let episodeMatch = entry.name.match(/[Ee]p(?:isodio)?\s*(\d+)/i) || entry.name.match(/[Ee](\d+)/i);
           
           let seInfo = parseSeasonEpisode(entry.name) || parseSeasonEpisodeFromFilename(entry.name);
           if (seasonMatch && episodeMatch) {
