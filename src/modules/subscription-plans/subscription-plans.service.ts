@@ -107,14 +107,18 @@ export class SubscriptionPlansService {
   }
 
   static async remove(id: string) {
-    const activeAccounts = await prisma.endUserAccount.count({
-      where: { planId: id, status: 'ACTIVE' },
+    // Desvincular el plan de cualquier cuenta de usuario que lo tenga asignado
+    await prisma.endUserAccount.updateMany({
+      where: { planId: id },
+      data: { planId: null },
     });
 
-    if (activeAccounts > 0) {
-      throw new AppError(400, `Cannot delete plan with ${activeAccounts} active accounts`, 'HAS_ACTIVE_ACCOUNTS');
-    }
+    // Eliminar todo el historial asociado a este plan
+    await prisma.endUserPlanHistory.deleteMany({
+      where: { planId: id },
+    });
 
+    // Finalmente, eliminar el plan
     return prisma.subscriptionPlan.delete({ where: { id } });
   }
 }
