@@ -940,6 +940,32 @@ export class MediaScannerService {
     fileName: string,
     episode: NonNullable<ScannedFile['episode']>
   ): Promise<ImportResult> {
+    // 💡 FIRST CHECK: If this file was already imported but FAILED, just re-queue it!
+    const existingFailedVF = await prisma.videoFile.findFirst({
+        where: { originalPath: filePath, status: 'FAILED' },
+        include: { episode: { select: { season: { select: { contentId: true } } } } }
+    });
+    
+    if (existingFailedVF && existingFailedVF.episodeId) {
+        console.log(`[MediaScanner] 🔄 Re-encolando episodio previamente FALLIDO: ${fileName}`);
+        
+        await prisma.videoFile.update({
+            where: { id: existingFailedVF.id },
+            data: { status: 'QUEUED', processingJobId: null }
+        });
+        
+        const job = await addVideoJob({
+          videoFileId: existingFailedVF.id,
+          contentId: existingFailedVF.episodeId, 
+          type: 'EPISODE',
+          videoPath: filePath
+        });
+        
+        await prisma.videoFile.update({ where: { id: existingFailedVF.id }, data: { processingJobId: job.id } });
+        
+        return { filePath, fileName, success: true, contentId: existingFailedVF.episode?.season?.contentId || '', tmdbMatch: true };
+    }
+
     let contentId: string;
     let tmdbMatch = false;
 
