@@ -1,4 +1,4 @@
-import express, { Router, RequestHandler, Request, Response } from 'express';
+import { Router, RequestHandler, Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -10,13 +10,13 @@ export const appVersionRouter = Router();
 
 // ─── Multer setup (APK + changelog) ─────────────────────────────────────────
 const storage = multer.diskStorage({
-    destination: (req: any, file, cb) => {
+    destination: (req: any, _file, cb) => {
         const platform = req.body?.platform || req.query?.platform || 'android';
         const dir = AppVersionService.getApkDir(platform);
         fs.mkdirSync(dir, { recursive: true });
         cb(null, dir);
     },
-    filename: (req: any, file, cb) => {
+    filename: (_req: any, file, cb) => {
         cb(null, file.originalname);
     }
 });
@@ -24,7 +24,7 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage,
     limits: { fileSize: 300 * 1024 * 1024 }, // 300MB max
-    fileFilter: (req, file, cb) => {
+    fileFilter: (_req, file, cb) => {
         const allowedExts = ['.apk', '.txt', '.md'];
         const ext = path.extname(file.originalname).toLowerCase();
         if (allowedExts.includes(ext)) cb(null, true);
