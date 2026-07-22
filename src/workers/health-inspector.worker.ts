@@ -292,7 +292,13 @@ export async function runHealthInspection(): Promise<void> {
         continue;
       }
 
-      const { newStatus, reason } = inspection;
+      let { newStatus, reason } = inspection;
+
+      // Si el contenido está en PENDING, no promoverlo automáticamente a ACTIVE o READY.
+      // Debe mantenerse en PENDING para permitir la activación manual por parte del administrador.
+      if (content.status === 'PENDING' && (newStatus === 'ACTIVE' || newStatus === 'READY')) {
+        newStatus = 'PENDING';
+      }
 
       if (newStatus !== content.status) {
         await prisma.content.update({

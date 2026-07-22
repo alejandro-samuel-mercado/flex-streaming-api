@@ -599,7 +599,7 @@ export class MediaScannerService {
                       data: { masterPlaylist: virtualMasterPath, qualities: { create: [{ resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: virtualMasterPath, codec: 'h264' }] } }
                   });
               }
-              await prisma.content.updateMany({ where: { id: existingDbByFolderName.id, status: 'PENDING' }, data: { status: 'READY' } });
+              // Keep content status as PENDING for admin review
               return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
           } else {
               await this._createVideoAndEnqueue(existingDbByFolderName.id, filePath, contentType);
@@ -770,13 +770,8 @@ export class MediaScannerService {
       }
     });
 
-    // Ensure the series is marked as READY so it appears in the frontend
-    await prisma.content.updateMany({
-      where: { id: contentId, status: 'PENDING' },
-      data: { status: 'READY' }
-    });
-
-    console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId} (Marked READY)`);
+    // Keep the series marked as PENDING for admin review
+    console.log(`📦 [MediaScanner] Registered series episode ${folderName} → contentId: ${contentId} (Kept PENDING for admin review)`);
 
     return { filePath: episodeFolderPath, fileName: folderName, success: true, contentId, tmdbMatch };
   }
@@ -922,11 +917,7 @@ export class MediaScannerService {
       }
     });
 
-    // Ensure the movie is marked as READY so the Health Inspector can activate it
-    await prisma.content.updateMany({
-      where: { id: contentId!, status: 'PENDING' },
-      data: { status: 'READY' }
-    });
+    // Keep the movie marked as PENDING for admin review
 
     return { filePath: folderPath, fileName: folderName, success: true, contentId: contentId!, tmdbMatch };
   }

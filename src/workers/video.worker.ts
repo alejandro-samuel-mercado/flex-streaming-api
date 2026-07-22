@@ -266,8 +266,6 @@ export const videoWorker = new Worker(
         job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
       }
 
-      const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
-
       // ─── Determine content status ──────────────────────────────────────────
       // For EPISODE type: resolve real series Content ID via episode→season chain
       let realContentId: string | null = existsInitial.contentId;
@@ -291,36 +289,13 @@ export const videoWorker = new Worker(
         });
 
         if (content) {
-          const isSeriesType = SERIES_TYPES.includes(content.type);
-          const hasPoster = content.thumbnails.some((t: any) => t.type === 'POSTER');
-          const targetStatus = hasPoster ? 'ACTIVE' : 'PENDING';
-
-          if (!isSeriesType) {
-            // PELÍCULA / TRAILER
-            await prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
-            job.log(`Content ${rcId} marked as ${targetStatus} (hasPoster: ${hasPoster})`);
+          const isAlreadyActiveOrReady = content.status === 'ACTIVE' || content.status === 'READY';
+          if (!isAlreadyActiveOrReady) {
+            // Contenido nuevo escaneado/subido/procesado se mantiene en PENDING para revisión manual del admin
+            await prisma.content.update({ where: { id: rcId }, data: { status: 'PENDING' } });
+            job.log(`Content ${rcId} processing completed — status set/kept as PENDING for admin review`);
           } else {
-            // SERIE: contar episodios con video COMPLETED
-            const completedEpisodes = await prisma.episode.count({
-              where: {
-                season: { contentId: rcId },
-                videoFiles: { some: { status: 'COMPLETED' } }
-              }
-            });
-            const totalEpisodes = await prisma.episode.count({
-              where: { season: { contentId: rcId } }
-            });
-
-            if (completedEpisodes > 0) {
-              await prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
-              job.log(`Serie ${rcId} ${targetStatus} — ${completedEpisodes}/${totalEpisodes} eps completos (hasPoster: ${hasPoster})`);
-            } else {
-              await prisma.content.updateMany({
-                where: { id: rcId, status: { notIn: ['ACTIVE'] } },
-                data: { status: 'PROCESSING' }
-              });
-              job.log(`Serie ${rcId} PROCESSING — ${completedEpisodes}/${totalEpisodes} eps completos`);
-            }
+            job.log(`Content ${rcId} processing completed — keeping existing status (${content.status})`);
           }
 
           // Log warnings sobre metadata faltante

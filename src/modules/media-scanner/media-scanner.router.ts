@@ -434,17 +434,20 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
       }
     }
 
-    // Check if all video files are completed and update status accordingly
-    const videos = await prisma.videoFile.findMany({
-      where: { contentId },
-      select: { status: true }
-    });
-    const allCompleted = videos.length > 0 && videos.every(v => v.status === 'COMPLETED');
-    if (allCompleted) {
-      await prisma.content.update({
-        where: { id: contentId },
-        data: { status: 'READY' }
+    // Keep PENDING content as PENDING for admin review
+    const currentContent = await prisma.content.findUnique({ where: { id: contentId }, select: { status: true } });
+    if (currentContent && currentContent.status !== 'PENDING') {
+      const videos = await prisma.videoFile.findMany({
+        where: { contentId },
+        select: { status: true }
       });
+      const allCompleted = videos.length > 0 && videos.every(v => v.status === 'COMPLETED');
+      if (allCompleted && currentContent.status === 'PROCESSING') {
+        await prisma.content.update({
+          where: { id: contentId },
+          data: { status: 'READY' }
+        });
+      }
     }
 
     // Fetch updated content
