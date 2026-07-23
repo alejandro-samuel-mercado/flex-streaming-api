@@ -300,6 +300,12 @@ export async function runHealthInspection(): Promise<void> {
         newStatus = 'PENDING';
       }
 
+      // Si el administrador lo puso en ACTIVE o READY manualmente, no lo degradamos automáticamente a PENDING.
+      // Así respetamos los cambios que hizo el administrador desde el panel.
+      if ((content.status === 'ACTIVE' || content.status === 'READY') && newStatus === 'PENDING') {
+        newStatus = content.status;
+      }
+
       if (newStatus !== content.status) {
         await prisma.content.update({
           where: { id: content.id },

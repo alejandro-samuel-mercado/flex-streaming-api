@@ -442,10 +442,10 @@ mediaScannerRouter.post('/apply-tmdb', (async (req: AuthenticatedRequest, res: R
         select: { status: true }
       });
       const allCompleted = videos.length > 0 && videos.every(v => v.status === 'COMPLETED');
-      if (allCompleted && currentContent.status === 'PROCESSING') {
+      if (allCompleted && (currentContent.status === 'PROCESSING' || currentContent.status === 'DRAFT')) {
         await prisma.content.update({
           where: { id: contentId },
-          data: { status: 'READY' }
+          data: { status: 'PENDING' }
         });
       }
     }
