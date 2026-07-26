@@ -184,8 +184,6 @@ app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:content
     const { contentId, filename } = req.params;
 
     try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
         const content = await prisma.content.findUnique({ where: { id: contentId } });
 
         if (content) {

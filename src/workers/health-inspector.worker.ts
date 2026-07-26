@@ -13,10 +13,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { PrismaClient, ContentStatus } from '@prisma/client';
-
-
-const prisma = new PrismaClient();
+import { ContentStatus } from '@prisma/client';
+import { prisma } from '../shared/config/prisma';
 
 // ── Tipos de contenido que son SERIES (tienen episodios) ──────────────────────
 const SERIES_TYPES = new Set([

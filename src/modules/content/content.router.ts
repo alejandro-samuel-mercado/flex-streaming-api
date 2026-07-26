@@ -4,9 +4,7 @@ import { authenticate, requireRole, AuthenticatedRequest, optionalAuth } from '.
 import { ok, created, paginate } from '../../shared/utils/api-response';
 import { cacheMiddleware } from '../../shared/middleware/cache.middleware';
 import { z } from 'zod';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../shared/config/prisma';
 
 export const contentRouter = Router();
 console.log('🚀 [ContentRouter] Router loaded and routes defined');
