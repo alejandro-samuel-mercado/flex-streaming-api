@@ -265,11 +265,12 @@ export async function runHealthInspection(): Promise<void> {
     }
   }
 
-  // Paso 2: Inspeccionar todo el contenido que NO está siendo procesado
+  // Paso 2: Inspeccionar todo el contenido que NO está siendo procesado y NO está fijado
   const allContent = await prisma.content.findMany({
     where: {
       status: { notIn: ['PROCESSING'] },
-      deletedAt: null
+      deletedAt: null,
+      isPinned: false
     },
     select: { id: true, type: true, status: true }
   });
