@@ -239,6 +239,7 @@ export async function runHealthInspection(): Promise<void> {
     where: {
       type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
       status: { in: ['READY', 'ACTIVE'] },
+      isPinned: false,
       seasons: {
         every: {
           episodes: {

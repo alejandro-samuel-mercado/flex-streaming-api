@@ -438,9 +438,9 @@ export const videoWorker = new Worker(
             }
           });
           if (completedLeft === 0) {
-            // No hay ningún video funcionando → bajar a PENDING
+            // No hay ningún video funcionando y no está fijado → bajar a PENDING
             await prisma.content.updateMany({
-              where: { id: errContentId },
+              where: { id: errContentId, isPinned: false },
               data: { status: 'PENDING' }
             });
           }
@@ -535,7 +535,7 @@ videoWorker.on('failed', async (job, err) => {
         });
         if (completedLeft === 0) {
           await prisma.content.updateMany({
-            where: { id: errContentId },
+            where: { id: errContentId, isPinned: false },
             data: { status: 'PENDING' }
           });
         }
