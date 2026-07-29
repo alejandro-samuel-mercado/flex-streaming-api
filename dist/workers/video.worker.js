@@ -111,6 +111,10 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
             return { cancelled: true };
         }
         // ── Lock: prevent double-processing ───────────────────────────────
+        if (existsInitial.status === 'COMPLETED') {
+            job.log('Job skipped: VideoFile is already COMPLETED.');
+            return { skipped: true };
+        }
         // If the record is already PROCESSING, another worker is handling it
         // EXCEPT if this is a retry attempt (server restart/crash recovery), in which case we MUST proceed
         if (existsInitial.status === 'PROCESSING' && job.attemptsMade === 0) {
@@ -238,7 +242,6 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
             }
             job.log(`Saved ${extractedSubs.length} subtitle track(s) to database`);
         }
-        const SERIES_TYPES = ['SERIES', 'ANIME', 'ANIMATION', 'NOVELA', 'REALITY_SHOW', 'DOCUMENTARY', 'KIDS', 'FAMILY'];
         // ─── Determine content status ──────────────────────────────────────────
         // For EPISODE type: resolve real series Content ID via episode→season chain
         let realContentId = existsInitial.contentId;
@@ -262,36 +265,14 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
                 include: { translations: true, thumbnails: true, genres: true }
             });
             if (content) {
-                const isSeriesType = SERIES_TYPES.includes(content.type);
-                const hasPoster = content.thumbnails.some((t) => t.type === 'POSTER');
-                const targetStatus = hasPoster ? 'ACTIVE' : 'PENDING';
-                if (!isSeriesType) {
-                    // PELÍCULA / TRAILER
-                    await prisma_1.prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
-                    job.log(`Content ${rcId} marked as ${targetStatus} (hasPoster: ${hasPoster})`);
+                const isAlreadyActiveOrReady = content.status === 'ACTIVE' || content.status === 'READY';
+                if (!isAlreadyActiveOrReady) {
+                    // Contenido nuevo escaneado/subido/procesado se mantiene en PENDING para revisión manual del admin
+                    await prisma_1.prisma.content.update({ where: { id: rcId }, data: { status: 'PENDING' } });
+                    job.log(`Content ${rcId} processing completed — status set/kept as PENDING for admin review`);
                 }
                 else {
-                    // SERIE: contar episodios con video COMPLETED
-                    const completedEpisodes = await prisma_1.prisma.episode.count({
-                        where: {
-                            season: { contentId: rcId },
-                            videoFiles: { some: { status: 'COMPLETED' } }
-                        }
-                    });
-                    const totalEpisodes = await prisma_1.prisma.episode.count({
-                        where: { season: { contentId: rcId } }
-                    });
-                    if (completedEpisodes > 0) {
-                        await prisma_1.prisma.content.update({ where: { id: rcId }, data: { status: targetStatus } });
-                        job.log(`Serie ${rcId} ${targetStatus} — ${completedEpisodes}/${totalEpisodes} eps completos (hasPoster: ${hasPoster})`);
-                    }
-                    else {
-                        await prisma_1.prisma.content.updateMany({
-                            where: { id: rcId, status: { notIn: ['ACTIVE'] } },
-                            data: { status: 'PROCESSING' }
-                        });
-                        job.log(`Serie ${rcId} PROCESSING — ${completedEpisodes}/${totalEpisodes} eps completos`);
-                    }
+                    job.log(`Content ${rcId} processing completed — keeping existing status (${content.status})`);
                 }
                 // Log warnings sobre metadata faltante
                 const hasDescription = content.translations.some((t) => t.description && t.description.trim().length > 0);

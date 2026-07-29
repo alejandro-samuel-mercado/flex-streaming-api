@@ -84,6 +84,7 @@ const end_users_router_1 = require("./modules/end-users/end-users.router");
 const tmdb_router_1 = require("./modules/admin/tmdb.router");
 const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.router");
 const backup_router_1 = require("./modules/backup/backup.router");
+const app_version_router_1 = require("./modules/app-version/app-version.router");
 const likes_router_1 = require("./modules/likes/likes.router");
 const backup_service_1 = require("./modules/backup/backup.service");
 // import { AutoScannerWorker } from './workers/auto-scanner.worker';
@@ -208,9 +209,7 @@ app.get(['/media/subtitles/:contentId/:filename', '/api/media/subtitles/:content
     // Let's redirect to the correct storage node if distributed mode is enabled.
     const { contentId, filename } = req.params;
     try {
-        const { PrismaClient } = require('@prisma/client');
-        const prisma = new PrismaClient();
-        const content = await prisma.content.findUnique({ where: { id: contentId } });
+        const content = await prisma_1.prisma.content.findUnique({ where: { id: contentId } });
         if (content) {
             const storageNodeUrl = content.type === 'SERIES' ? env_1.env.STORAGE_NODE_SERIES_URL : env_1.env.STORAGE_NODE_MOVIES_URL;
             if (storageNodeUrl && storageNodeUrl !== env_1.env.BACKEND_URL) {
@@ -271,6 +270,7 @@ app.use('/api/admin', admin_router_1.adminRouter);
 app.use('/api/admin/tmdb', tmdb_router_1.tmdbRouter);
 app.use('/api/admin/media-scanner', media_scanner_router_1.mediaScannerRouter);
 app.use('/api/admin/backup', backup_router_1.backupRouter);
+app.use('/api/app', app_version_router_1.appVersionRouter);
 app.use('/api/upload', uploadLimiter, auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), upload_router_1.uploadRouter);
 app.use('/api/platforms', platforms_router_1.platformsRouter);
 app.use('/api/plans', plans_router_1.plansRouter);

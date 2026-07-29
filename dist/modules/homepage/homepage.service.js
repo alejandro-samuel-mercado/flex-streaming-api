@@ -52,10 +52,10 @@ class HomepageService {
                 take: 15,
                 select: CONTENT_LIST_SELECT,
             }),
-            // Estrenos / releases (sorted by releaseYear)
+            // Estrenos / releases (sorted by releaseYear, then latest uploaded)
             prisma_1.prisma.content.findMany({
                 where: activeContentWhere,
-                orderBy: { releaseYear: 'desc' },
+                orderBy: [{ releaseYear: 'desc' }, { createdAt: 'desc' }],
                 take: 15,
                 select: CONTENT_LIST_SELECT,
             }),
@@ -162,6 +162,25 @@ class HomepageService {
             }
             // Add trending
             for (const item of trending) {
+                if (featured.length >= bannerLimit)
+                    break;
+                if (!combinedSet.has(item.id)) {
+                    featured.push(item);
+                    combinedSet.add(item.id);
+                }
+            }
+        }
+        // Si aún con todo esto el banner está vacío o muy pobre, meter aleatorios recientes para rellenar
+        if (featured.length === 0) {
+            // Fallback robusto si todo falla (ej: estrategia manual sin items marcados)
+            const shuffledRecent = [...recent].sort(() => 0.5 - Math.random());
+            featured = shuffledRecent.slice(0, bannerLimit);
+        }
+        else if (featured.length < bannerLimit) {
+            // Rellenar si no llega al límite
+            const combinedSet = new Set(featured.map(m => m.id));
+            const shuffledRecent = [...recent].sort(() => 0.5 - Math.random());
+            for (const item of shuffledRecent) {
                 if (featured.length >= bannerLimit)
                     break;
                 if (!combinedSet.has(item.id)) {

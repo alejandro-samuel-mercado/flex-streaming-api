@@ -88,4 +88,34 @@ exports.streamingRouter.get('/play', ((req, res, next) => {
         next(err);
     }
 }));
+// ─── Download HLS as MP4 (FFmpeg on the fly) ────────────────────────────────
+exports.streamingRouter.get('/download-hls', (async (req, res, next) => {
+    try {
+        const contentId = req.query.contentId;
+        const episodeId = req.query.episodeId;
+        if (!contentId && !episodeId) {
+            res.status(400).send('Missing contentId or episodeId');
+            return;
+        }
+        const result = await streaming_service_1.StreamingService.downloadHlsAsMp4(contentId, episodeId);
+        if (result.error || !result.stream) {
+            res.status(result.status).send(result.error || 'Stream error');
+            return;
+        }
+        const queryFilename = req.query.filename;
+        const label = queryFilename || `${contentId || episodeId || 'descarga'}.mp4`;
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${label}"`);
+        res.setHeader('Accept-Ranges', 'none');
+        result.stream.pipe(res);
+        req.on('close', () => {
+            if (result.stream && typeof result.stream.kill === 'function') {
+                result.stream.kill('SIGKILL');
+            }
+        });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 //# sourceMappingURL=streaming.router.js.map

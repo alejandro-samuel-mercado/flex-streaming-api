@@ -24,6 +24,7 @@ const CONTENT_LIST_SELECT = {
     trailerUrl: true,
     createdAt: true,
     isFreeWithMembership: true,
+    isPinned: true,
     translations: { select: { language: true, title: true, description: true, tagline: true } },
     thumbnails: { where: { type: 'POSTER' }, take: 1 },
     genres: { include: { genre: { select: { id: true, name: true, slug: true } } } },
@@ -88,8 +89,22 @@ class ContentService {
             });
         }
         // 3. Type condition
-        if (type)
-            conditions.push({ type: type });
+        if (type) {
+            if (type === 'KIDS' || type === 'ANIMATION') {
+                conditions.push({
+                    OR: [
+                        { type: 'ANIMATION' },
+                        { type: 'KIDS' },
+                        { genres: { some: { genre: { name: { contains: 'Animac', mode: 'insensitive' } } } } },
+                        { genres: { some: { genre: { name: { contains: 'Infant', mode: 'insensitive' } } } } },
+                        { genres: { some: { genre: { name: { contains: 'Kids', mode: 'insensitive' } } } } }
+                    ]
+                });
+            }
+            else {
+                conditions.push({ type: type });
+            }
+        }
         // 4. Platform filter - THE IMPORTANT ONE
         if (platformId && platformId !== 'null' && platformId !== 'undefined' && platformId !== '') {
             console.log(`[DEBUG] PLATFORM FILTER DETECTED: "${platformId}"`);
@@ -431,6 +446,10 @@ class ContentService {
             || originalTitle;
         // Clean up contentData and handle BigInts
         const { platformId, budget, revenue, ...cleanContentData } = contentData;
+        // Prevent frontend from wiping out TMDB ID on edit, which breaks scanner linkage
+        if (!cleanContentData.tmdbId || cleanContentData.tmdbId === '' || cleanContentData.tmdbId === 'null') {
+            delete cleanContentData.tmdbId;
+        }
         return prisma_1.prisma.content.update({
             where: { id },
             data: {
@@ -468,6 +487,39 @@ class ContentService {
     }
     static async deleteContent(id) {
         return prisma_1.prisma.content.update({ where: { id }, data: { deletedAt: new Date() } });
+    }
+    static async bulkAction(action, ids, status) {
+        if (!ids || ids.length === 0)
+            return { count: 0 };
+        const whereClause = {
+            id: { in: ids },
+            ...((action === 'delete' || action === 'changeStatus') ? { isPinned: false } : {})
+        };
+        if (action === 'delete') {
+            return prisma_1.prisma.content.updateMany({
+                where: whereClause,
+                data: { deletedAt: new Date() }
+            });
+        }
+        else if (action === 'changeStatus' && status) {
+            return prisma_1.prisma.content.updateMany({
+                where: whereClause,
+                data: { status }
+            });
+        }
+        else if (action === 'pin') {
+            return prisma_1.prisma.content.updateMany({
+                where: { id: { in: ids } },
+                data: { isPinned: true }
+            });
+        }
+        else if (action === 'unpin') {
+            return prisma_1.prisma.content.updateMany({
+                where: { id: { in: ids } },
+                data: { isPinned: false }
+            });
+        }
+        return { count: 0 };
     }
 }
 exports.ContentService = ContentService;

@@ -45,5 +45,24 @@ export declare class StreamingService {
         status: number;
         stream: fs.ReadStream | null;
     };
+    /**
+     * Spawns FFmpeg to remux an HLS playlist into a fragmented MP4 piped to stdout.
+     * Sets CWD to the playlist directory so relative segment paths resolve correctly.
+     * Logs stderr for debugging.
+     */
+    private static spawnFfmpegMp4;
+    /**
+     * Finds the HLS master playlist by scanning known HLS directories for a
+     * folder whose name ends with a prefix of the given contentId.
+     * Then spawns FFmpeg to mux the HLS stream into an MP4 on the fly.
+     *
+     * HLS folders are named like: "titulo-de-pelicula--cmrp2fj3"
+     * where "cmrp2fj3" is the first 8 chars of the content ID.
+     */
+    static downloadHlsAsMp4(contentId?: string, episodeId?: string): Promise<{
+        status: number;
+        stream: any;
+        error?: string;
+    }>;
 }
 //# sourceMappingURL=streaming.service.d.ts.map

@@ -9,6 +9,7 @@ const prisma_1 = require("../../shared/config/prisma");
 const token_service_1 = require("../../services/token.service");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
+const child_process_1 = require("child_process");
 // ─── In-memory cache for HLS segment serving ─────────────────────────────────
 // Eliminates DB queries on every .ts segment request.
 // TTL: 5 minutes (videos don't change paths after encoding)
@@ -455,22 +456,220 @@ class StreamingService {
             if (start >= fileSize) {
                 return { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` }, stream: null };
             }
+            const chunksize = (end - start) + 1;
+            const file = fs_1.default.createReadStream(filePath, { start, end });
             return {
                 status: 206,
                 headers: {
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
-                    'Content-Length': (end - start + 1).toString(),
-                    'Content-Type': 'video/mp4',
+                    'Content-Length': chunksize.toString(),
+                    'Content-Type': 'video/mp4'
                 },
-                stream: fs_1.default.createReadStream(filePath, { start, end }),
+                stream: file
             };
         }
         return {
             status: 200,
-            headers: { 'Content-Length': fileSize.toString(), 'Content-Type': 'video/mp4' },
-            stream: fs_1.default.createReadStream(filePath),
+            headers: {
+                'Content-Length': fileSize.toString(),
+                'Content-Type': 'video/mp4'
+            },
+            stream: fs_1.default.createReadStream(filePath)
         };
+    }
+    /**
+     * Spawns FFmpeg to remux an HLS playlist into a fragmented MP4 piped to stdout.
+     * Sets CWD to the playlist directory so relative segment paths resolve correctly.
+     * Logs stderr for debugging.
+     */
+    static spawnFfmpegMp4(playlistPath) {
+        const cwd = path_1.default.dirname(playlistPath);
+        const ffmpeg = (0, child_process_1.spawn)('ffmpeg', [
+            '-allowed_extensions', 'ALL',
+            '-i', playlistPath,
+            '-c', 'copy',
+            '-bsf:a', 'aac_adtstoasc', // Required: AAC in TS segments has ADTS headers that MP4 can't handle raw
+            '-movflags', 'frag_keyframe+empty_moov',
+            '-f', 'mp4',
+            'pipe:1'
+        ], { cwd });
+        // Log stderr for debugging (don't throw — stderr always has info lines)
+        ffmpeg.stderr.on('data', (chunk) => {
+            const msg = chunk.toString();
+            // Only log actual errors, not progress lines
+            if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('failed')) {
+                console.error(`[FFmpeg][${path_1.default.basename(cwd)}]`, msg.trim());
+            }
+        });
+        ffmpeg.on('close', (code) => {
+            if (code !== 0 && code !== null) {
+                console.error(`[FFmpeg][${path_1.default.basename(cwd)}] exited with code ${code}`);
+            }
+        });
+        return ffmpeg.stdout;
+    }
+    /**
+     * Finds the HLS master playlist by scanning known HLS directories for a
+     * folder whose name ends with a prefix of the given contentId.
+     * Then spawns FFmpeg to mux the HLS stream into an MP4 on the fly.
+     *
+     * HLS folders are named like: "titulo-de-pelicula--cmrp2fj3"
+     * where "cmrp2fj3" is the first 8 chars of the content ID.
+     */
+    static async downloadHlsAsMp4(contentId, episodeId) {
+        // ── EPISODE DOWNLOAD ──────────────────────────────────────────────────
+        // Structure in /home/peliplus_gran_disco/hls/series/:
+        //   {series-slug}--{seriesIdPrefix}/
+        //     {SxxExx}--{episodeIdPrefix}/
+        //       master.m3u8
+        //
+        // Structure in /home/media/series/:
+        //   {tmdbId}_{series_name}/{series_name}/{tmdbId}_S{s}E{ep}/
+        //     index.m3u8
+        if (episodeId) {
+            const epPrefix = episodeId.substring(0, 8);
+            // Look up episode to get its contentId (series) from the DB
+            const ep = await prisma_1.prisma.episode.findUnique({
+                where: { id: episodeId },
+                select: { id: true, number: true, season: { select: { number: true, contentId: true } } }
+            }).catch(() => null);
+            const seriesContentId = ep?.season?.contentId;
+            // ── Strategy 1: new-style HLS under /home/peliplus_gran_disco/hls/series/
+            const hlsSeriesDir = path_1.default.join(env_1.env.HLS_PATH, 'series');
+            if (fs_1.default.existsSync(hlsSeriesDir)) {
+                // Find the series folder (slug--seriesIdPrefix)
+                const seriesIdPrefix = seriesContentId?.substring(0, 8);
+                const seriesFolders = fs_1.default.readdirSync(hlsSeriesDir);
+                const matchedSeriesFolder = seriesFolders.find(f => (seriesIdPrefix && f.endsWith(`--${seriesIdPrefix}`)) ||
+                    f === seriesContentId);
+                if (matchedSeriesFolder) {
+                    const seriesFolderPath = path_1.default.join(hlsSeriesDir, matchedSeriesFolder);
+                    // Find the episode subfolder (SxxExx--episodeIdPrefix)
+                    const epFolders = fs_1.default.readdirSync(seriesFolderPath);
+                    const matchedEpFolder = epFolders.find(f => f.endsWith(`--${epPrefix}`) ||
+                        f === episodeId);
+                    if (matchedEpFolder) {
+                        const epFolderPath = path_1.default.join(seriesFolderPath, matchedEpFolder);
+                        let playlist = path_1.default.join(epFolderPath, 'master.m3u8');
+                        if (!fs_1.default.existsSync(playlist))
+                            playlist = path_1.default.join(epFolderPath, 'index.m3u8');
+                        if (fs_1.default.existsSync(playlist)) {
+                            return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
+                        }
+                    }
+                }
+            }
+            // ── Strategy 2: old-style HLS under /home/media/series/{tmdbId}_{name}/
+            // Look up content TMDB id to find the correct top-level folder
+            if (seriesContentId) {
+                const content = await prisma_1.prisma.content.findFirst({
+                    where: { id: { startsWith: seriesContentId.substring(0, 8) } },
+                    select: { tmdbId: true }
+                }).catch(() => null);
+                if (content?.tmdbId && ep?.season?.number !== undefined && ep?.number !== undefined) {
+                    const mediaSeriesDir = '/home/media/series';
+                    if (fs_1.default.existsSync(mediaSeriesDir)) {
+                        // Find top-level folder starting with tmdbId_
+                        const topDirs = fs_1.default.readdirSync(mediaSeriesDir);
+                        const topMatch = topDirs.find(d => d.startsWith(`${content.tmdbId}_`));
+                        if (topMatch) {
+                            // Walk subdirs to find the episode folder like {tmdbId}_S01E01
+                            const sNum = String(ep.season.number).padStart(2, '0');
+                            const eNum = String(ep.number).padStart(2, '0');
+                            const epFolderName = `${content.tmdbId}_S${sNum}E${eNum}`;
+                            // The episode folder may be nested one level deep (e.g. inside a "Show Name" folder)
+                            const walk = (dir, depth) => {
+                                if (depth < 0 || !fs_1.default.existsSync(dir))
+                                    return null;
+                                const entries = fs_1.default.readdirSync(dir);
+                                if (entries.includes(epFolderName))
+                                    return path_1.default.join(dir, epFolderName);
+                                for (const e of entries) {
+                                    const sub = path_1.default.join(dir, e);
+                                    if (fs_1.default.statSync(sub).isDirectory()) {
+                                        const found = walk(sub, depth - 1);
+                                        if (found)
+                                            return found;
+                                    }
+                                }
+                                return null;
+                            };
+                            const epDir = walk(path_1.default.join(mediaSeriesDir, topMatch), 2);
+                            if (epDir) {
+                                const playlist = path_1.default.join(epDir, 'index.m3u8');
+                                if (fs_1.default.existsSync(playlist)) {
+                                    return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return { status: 404, stream: null, error: `Episode HLS not found for episodeId ${episodeId} (prefix: ${epPrefix})` };
+        }
+        if (!contentId)
+            return { status: 400, stream: null, error: 'contentId or episodeId required' };
+        // The first 8 chars of the contentId match the suffix in the folder name
+        const idPrefix = contentId.substring(0, 8);
+        const cacheKey = `download:${contentId}`;
+        let hlsRoot = getCachedHlsRoot(cacheKey);
+        if (!hlsRoot || !fs_1.default.existsSync(hlsRoot)) {
+            // Directories to scan for HLS folders (order: most likely first)
+            const scanDirs = [
+                path_1.default.join(env_1.env.HLS_PATH, 'peliculas'),
+                path_1.default.join(env_1.env.HLS_PATH, 'peliculas_manuales'),
+                path_1.default.join(env_1.env.HLS_PATH, 'series'),
+                env_1.env.HLS_PATH,
+            ];
+            for (const dir of scanDirs) {
+                if (!fs_1.default.existsSync(dir))
+                    continue;
+                const entries = fs_1.default.readdirSync(dir);
+                // Match folder ending in "--{idPrefix}" or exactly matching contentId
+                const match = entries.find(e => e.endsWith(`--${idPrefix}`) ||
+                    e.endsWith(`--${contentId}`) ||
+                    e === contentId);
+                if (match) {
+                    hlsRoot = path_1.default.join(dir, match);
+                    setCachedHlsRoot(cacheKey, hlsRoot);
+                    break;
+                }
+            }
+            // Also try /home/media/peliculas/{tmdbId}/ and /home/media/series/{tmdbId}/
+            // for older style HLS stored directly by numeric TMDB id
+            if (!hlsRoot || !fs_1.default.existsSync(hlsRoot)) {
+                // Try looking up from DB by content id to get tmdbId
+                const content = await prisma_1.prisma.content.findFirst({
+                    where: { id: { startsWith: idPrefix } },
+                    select: { tmdbId: true }
+                }).catch(() => null);
+                if (content?.tmdbId) {
+                    const candidates = [
+                        path_1.default.join('/home/media/peliculas', content.tmdbId),
+                        path_1.default.join('/home/media/series', content.tmdbId),
+                    ];
+                    for (const c of candidates) {
+                        if (fs_1.default.existsSync(c)) {
+                            hlsRoot = c;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (!hlsRoot || !fs_1.default.existsSync(hlsRoot)) {
+            return { status: 404, stream: null, error: `HLS directory not found for contentId ${contentId} (prefix: ${idPrefix})` };
+        }
+        // Identify the playlist file
+        let playlistPath = path_1.default.resolve(hlsRoot, 'master.m3u8');
+        if (!fs_1.default.existsSync(playlistPath)) {
+            playlistPath = path_1.default.resolve(hlsRoot, 'index.m3u8');
+            if (!fs_1.default.existsSync(playlistPath)) {
+                return { status: 404, stream: null, error: `Playlist not found in ${hlsRoot}` };
+            }
+        }
+        return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlistPath) };
     }
 }
 exports.StreamingService = StreamingService;

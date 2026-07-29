@@ -7,6 +7,8 @@ export declare class FavoritesService {
         error: string;
     }>;
     static checkFavorite(profileId: string, contentId: string): Promise<boolean>;
+    /** Batch-check: ONE DB query for ALL content IDs. Returns a map { [contentId]: boolean } */
+    static batchCheckFavorites(profileId: string, contentIds: string[]): Promise<Record<string, boolean>>;
     static getProfileFavorites(profileId: string, page?: number, limit?: number): Promise<{
         total: number;
         pages: number;

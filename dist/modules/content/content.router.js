@@ -40,8 +40,7 @@ const auth_middleware_1 = require("../../shared/middleware/auth.middleware");
 const api_response_1 = require("../../shared/utils/api-response");
 const cache_middleware_1 = require("../../shared/middleware/cache.middleware");
 const zod_1 = require("zod");
-const client_1 = require("@prisma/client");
-const prisma = new client_1.PrismaClient();
+const prisma_1 = require("../../shared/config/prisma");
 exports.contentRouter = (0, express_1.Router)();
 console.log('🚀 [ContentRouter] Router loaded and routes defined');
 const ContentFiltersSchema = zod_1.z.object({
@@ -63,6 +62,11 @@ const ContentFiltersSchema = zod_1.z.object({
     sort: zod_1.z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
     lang: zod_1.z.string().default('es'),
     incomplete: zod_1.z.preprocess((v) => v === undefined ? undefined : v === 'true', zod_1.z.boolean().optional()),
+});
+const ContentBulkActionSchema = zod_1.z.object({
+    action: zod_1.z.enum(['delete', 'changeStatus', 'pin', 'unpin']),
+    ids: zod_1.z.array(zod_1.z.string()).min(1),
+    status: zod_1.z.string().optional()
 });
 // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────────
 exports.contentRouter.get('/featured', (0, cache_middleware_1.cacheMiddleware)('catalog'), (async (_req, res, next) => {
@@ -146,7 +150,7 @@ exports.contentRouter.post('/', auth_middleware_1.authenticate, (0, auth_middlew
 }));
 exports.contentRouter.put('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
-        const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+        const content = await prisma_1.prisma.content.findUnique({ where: { id: req.params.id } });
         if (content?.isPinned) {
             res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser modificado.' });
             return;
@@ -160,7 +164,7 @@ exports.contentRouter.put('/:id', auth_middleware_1.authenticate, (0, auth_middl
 }));
 exports.contentRouter.delete('/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
-        const content = await prisma.content.findUnique({ where: { id: req.params.id } });
+        const content = await prisma_1.prisma.content.findUnique({ where: { id: req.params.id } });
         if (content?.isPinned) {
             res.status(403).json({ success: false, error: 'El contenido está fijado y no puede ser borrado.' });
             return;
@@ -178,11 +182,26 @@ exports.contentRouter.delete('/:id', auth_middleware_1.authenticate, (0, auth_mi
 exports.contentRouter.patch('/:id/pin', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
         const { isPinned } = req.body;
-        const content = await prisma.content.update({
+        const content = await prisma_1.prisma.content.update({
             where: { id: req.params.id },
             data: { isPinned }
         });
         (0, api_response_1.ok)(res, content);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.contentRouter.post('/bulk-action', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
+    try {
+        const { action, ids, status } = ContentBulkActionSchema.parse(req.body);
+        const result = await content_service_1.ContentService.bulkAction(action, ids, status);
+        // Invalidate cache for bulk delete or status change
+        if (action === 'delete' || action === 'changeStatus') {
+            const { invalidateCache } = await Promise.resolve().then(() => __importStar(require('../../shared/middleware/cache.middleware')));
+            await invalidateCache(`*catalog*`);
+        }
+        (0, api_response_1.ok)(res, result);
     }
     catch (err) {
         next(err);

@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { ContentStatus, Prisma } from '@prisma/client';
 export declare class ContentService {
     static getAllContent(filters: {
         page: number;
@@ -44,6 +44,7 @@ export declare class ContentService {
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
+            isPinned: boolean;
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
@@ -104,6 +105,7 @@ export declare class ContentService {
             rating: number | null;
             viewCount: bigint;
             featured: boolean;
+            isPinned: boolean;
             trailerUrl: string | null;
             isFreeWithMembership: boolean;
             translations: {
@@ -405,6 +407,7 @@ export declare class ContentService {
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
+        isPinned: boolean;
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
@@ -462,6 +465,7 @@ export declare class ContentService {
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
+        isPinned: boolean;
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
@@ -519,6 +523,7 @@ export declare class ContentService {
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
+        isPinned: boolean;
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
@@ -576,6 +581,7 @@ export declare class ContentService {
         rating: number | null;
         viewCount: bigint;
         featured: boolean;
+        isPinned: boolean;
         trailerUrl: string | null;
         isFreeWithMembership: boolean;
         translations: {
@@ -814,5 +820,6 @@ export declare class ContentService {
         imdbId: string | null;
         ageRatingId: string | null;
     }>;
+    static bulkAction(action: 'delete' | 'changeStatus' | 'pin' | 'unpin', ids: string[], status?: ContentStatus): Promise<Prisma.BatchPayload>;
 }
 //# sourceMappingURL=content.service.d.ts.map

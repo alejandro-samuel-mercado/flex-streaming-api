@@ -476,7 +476,9 @@ export class StreamingService {
             stream = Readable.from([modifiedBuffer]);
         } else {
             headers['Content-Length'] = fs.statSync(resolvedPath).size.toString();
-            stream = fs.createReadStream(resolvedPath);
+            // Aumentamos el highWaterMark a 2MB para optimizar la lectura en discos lentos o de red
+            // y evitar el buffering (stuttering) en videos de alto bitrate.
+            stream = fs.createReadStream(resolvedPath, { highWaterMark: 2 * 1024 * 1024 });
         }
         return {
             status: 200,
@@ -511,7 +513,7 @@ export class StreamingService {
             }
 
             const chunksize = (end - start) + 1;
-            const file = fs.createReadStream(filePath, { start, end });
+            const file = fs.createReadStream(filePath, { start, end, highWaterMark: 2 * 1024 * 1024 });
 
             return {
                 status: 206,
@@ -531,7 +533,7 @@ export class StreamingService {
                 'Content-Length': fileSize.toString(),
                 'Content-Type': 'video/mp4'
             },
-            stream: fs.createReadStream(filePath)
+            stream: fs.createReadStream(filePath, { highWaterMark: 2 * 1024 * 1024 })
         };
     }
 

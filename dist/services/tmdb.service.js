@@ -7,6 +7,10 @@ exports.TMDBService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const fs_1 = __importDefault(require("fs"));
 const env_1 = require("../shared/config/env");
+// Global timeout for all TMDB requests.
+// Without this, when the VPS DNS fails (EAI_AGAIN), each axios call hangs for
+// up to 2 minutes and saturates the Node.js thread pool, freezing the whole server.
+const TMDB_TIMEOUT_MS = 8000;
 class TMDBService {
     static baseURL = env_1.env.TMDB_BASE_URL;
     /**
@@ -15,6 +19,7 @@ class TMDBService {
     static async search(query, type = 'multi', lang = 'es-ES') {
         try {
             const response = await axios_1.default.get(`${this.baseURL}/search/${type}`, {
+                timeout: TMDB_TIMEOUT_MS,
                 params: {
                     api_key: env_1.env.TMDB_API_KEY,
                     query,
@@ -35,6 +40,7 @@ class TMDBService {
     static async getDetails(id, type, lang = 'es-ES') {
         try {
             const response = await axios_1.default.get(`${this.baseURL}/${type}/${id}`, {
+                timeout: TMDB_TIMEOUT_MS,
                 params: {
                     api_key: env_1.env.TMDB_API_KEY,
                     language: lang,
@@ -71,7 +77,7 @@ class TMDBService {
             const url = this.getImageUrl(tmdbPath);
             if (!url)
                 return null;
-            const response = await axios_1.default.get(url, { responseType: 'stream' });
+            const response = await axios_1.default.get(url, { responseType: 'stream', timeout: TMDB_TIMEOUT_MS });
             const writer = fs_1.default.createWriteStream(targetPath);
             response.data.pipe(writer);
             return new Promise((resolve, reject) => {
@@ -305,6 +311,7 @@ class TMDBService {
     static async getEpisodeDetails(tvId, seasonNumber, episodeNumber, lang = 'es-ES') {
         try {
             const response = await axios_1.default.get(`${this.baseURL}/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}`, {
+                timeout: TMDB_TIMEOUT_MS,
                 params: {
                     api_key: env_1.env.TMDB_API_KEY,
                     language: lang,

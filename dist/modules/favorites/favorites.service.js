@@ -46,6 +46,18 @@ class FavoritesService {
         });
         return !!favorite;
     }
+    /** Batch-check: ONE DB query for ALL content IDs. Returns a map { [contentId]: boolean } */
+    static async batchCheckFavorites(profileId, contentIds) {
+        const favorites = await prisma_1.prisma.favorite.findMany({
+            where: { profileId, contentId: { in: contentIds } },
+            select: { contentId: true },
+        });
+        const favSet = new Set(favorites.map(f => f.contentId));
+        const result = {};
+        for (const id of contentIds)
+            result[id] = favSet.has(id);
+        return result;
+    }
     static async getProfileFavorites(profileId, page = 1, limit = 20) {
         const skip = (page - 1) * limit;
         const [total, favorites] = await Promise.all([
