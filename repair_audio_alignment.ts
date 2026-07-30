@@ -37,7 +37,7 @@ async function run() {
         // Buscar listas de audio (todas las que empiecen con stream_ y no sean la de video)
         const filesInDir = fs.readdirSync(file.hlsPath);
         const audioPlaylists = filesInDir.filter(f => 
-            f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_video.m3u8'
+            f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_video.m3u8' && !f.includes('_fix')
         );
 
         if (audioPlaylists.length === 0) continue;
