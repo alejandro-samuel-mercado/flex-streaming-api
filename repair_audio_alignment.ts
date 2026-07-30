@@ -26,13 +26,19 @@ async function run() {
     console.log(`Se encontraron ${videos.length} videos en la base de datos.`);
 
     for (const file of videos) {
-        if (!file.hlsPath || !fs.existsSync(file.hlsPath)) continue;
+        if (!file.hlsPath) continue;
+        if (!fs.existsSync(file.hlsPath)) {
+            console.log(`[Ruta Inaccesible] La carpeta no existe en este servidor: ${file.hlsPath}`);
+            continue;
+        }
         
         const title = file.content?.translations?.[0]?.title || (file.episode ? `${file.episode.season.content?.translations?.[0]?.title || 'Serie'} - T${file.episode.season.number}E${file.episode.number}` : 'Desconocido');
         
-        // Buscar listas de audio
+        // Buscar listas de audio (todas las que empiecen con stream_ y no sean la de video)
         const filesInDir = fs.readdirSync(file.hlsPath);
-        const audioPlaylists = filesInDir.filter(f => f.startsWith('stream_Audio_') && f.endsWith('.m3u8'));
+        const audioPlaylists = filesInDir.filter(f => 
+            f.startsWith('stream_') && f.endsWith('.m3u8') && f !== 'stream_video.m3u8'
+        );
 
         if (audioPlaylists.length === 0) continue;
 
