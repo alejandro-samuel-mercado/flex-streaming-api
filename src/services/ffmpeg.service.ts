@@ -54,14 +54,16 @@ export class FFmpegService {
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
         const canCopyVideo = HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
 
-        const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
-        const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => 
-            HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
-            (s.channels === undefined || s.channels <= 2)
-        );
+        // FORZAMOS la re-codificación del audio a AAC siempre (canCopyAudio = false).
+        // Motivo crítico: Si copiamos el audio crudo ('-c:a copy'), FFmpeg genera fragmentos de audio
+        // desalineados en tiempo (ej. 10.7s) respecto al video (6s). Esto provoca que ExoPlayer en Android
+        // (TVs y celulares modernos como OnePlus) se congele cada 20 segundos al intentar sincronizar los buffers.
+        // Al forzar la conversión a AAC, FFmpeg logra cortar los fragmentos perfectamente a los 6 segundos.
+        const canCopyAudio = false;
+
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 
-        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
+        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (Forzando AAC para alineación HLS)`);
 
         if (canCopyVideo) {
             // ══════════════════════════════════════════════════════════════════
