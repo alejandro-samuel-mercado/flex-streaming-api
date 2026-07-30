@@ -85,9 +85,9 @@ async function inspectMovie(contentId: string): Promise<{ newStatus: ContentStat
     return { newStatus: 'PENDING', reason: 'HLS no encontrado en disco (enlace roto)' };
   }
 
-  // Sin portada o título → PENDING
+  // Sin portada o título → ACTIVE (pero marcamos como incompleto)
   if (!hasPoster || !hasTitle) {
-    return { newStatus: 'PENDING', reason: `incompleto: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
+    return { newStatus: 'ACTIVE', reason: `activo pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
   }
 
   // Si le falta la sinopsis pero tiene portada y video, lo dejamos ACTIVE pero lo marcamos en el reason
@@ -177,9 +177,9 @@ async function inspectSeries(contentId: string): Promise<{ newStatus: ContentSta
     return { newStatus: 'PENDING', reason: 'sin episodios físicos con video' };
   }
 
-  // Tiene episodios pero faltan datos mínimos → PENDING
+  // Tiene episodios pero faltan datos mínimos → ACTIVE (marcamos advertencia)
   if (!hasPoster || !hasTitle) {
-    return { newStatus: 'PENDING', reason: `tiene episodios pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
+    return { newStatus: 'ACTIVE', reason: `activo pero falta: ${[!hasPoster && 'portada', !hasTitle && 'título'].filter(Boolean).join(', ')}` };
   }
 
   // Tiene episodios, portada y título pero falta descripción → ACTIVE (pero marcamos que le falta sinopsis)
