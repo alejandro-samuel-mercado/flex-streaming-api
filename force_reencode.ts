@@ -23,7 +23,12 @@ async function main() {
     console.log(`🎬 Forzando re-codificación LENTA para: ${video.originalPath}`);
     
     // Wipe the old HLS folder
-    const outputFolder = video.outputPath;
+    const outputFolder = video.hlsPath;
+    if (!outputFolder) {
+        console.log("Error: hlsPath es nulo en la base de datos.");
+        return;
+    }
+
     if (fs.existsSync(outputFolder)) {
         fs.rmSync(outputFolder, { recursive: true, force: true });
         console.log("🗑️ Carpeta HLS anterior borrada.");
