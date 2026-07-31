@@ -7,7 +7,7 @@ async function main() {
     
     // Find the video in the database
     const video = await prisma.videoFile.findFirst({
-        where: { originalPath: { contains: 'kimetsu' }, type: 'MOVIE' }
+        where: { contentId: 'cms6jhmg', type: 'MOVIE' }
     });
 
     if (!video) {
