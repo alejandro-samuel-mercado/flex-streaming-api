@@ -33,7 +33,8 @@ export class FFmpegService {
     static async generateHLS(
         inputPath: string,
         outputFolder: string,
-        onProgress?: (percent: number) => void
+        onProgress?: (percent: number) => void,
+        forceReencode: boolean = false
     ): Promise<{ path: string; audioTracks: any[] }> {
         const resolvedInputPath = path.resolve(inputPath);
         const resolvedOutputFolder = path.resolve(outputFolder);
@@ -52,7 +53,7 @@ export class FFmpegService {
         // ── Detect if we can use fast copy path ───────────────────────────────
         const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
-        const canCopyVideo = HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
+        const canCopyVideo = forceReencode ? false : HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
 
         // FORZAMOS la re-codificación del audio a AAC siempre (canCopyAudio = false).
         // Motivo crítico: Si copiamos el audio crudo ('-c:a copy'), FFmpeg genera fragmentos de audio
