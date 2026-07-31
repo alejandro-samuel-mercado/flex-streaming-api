@@ -7,7 +7,7 @@ async function main() {
     
     // 1. Encontrar la serie incorrecta
     const wrongSeries = await prisma.content.findFirst({
-        where: { tmdbId: 68735, type: 'SERIES' },
+        where: { tmdbId: "68735", type: 'SERIES' },
         include: { episodes: true }
     });
 
