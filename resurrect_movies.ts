@@ -31,7 +31,8 @@ async function main() {
         const oldPath = `${dir}/${f}`;
         const newPath = `/home/media/peliculas/${f}`;
         console.log(`Moviendo de vuelta al escáner: ${f}`);
-        fs.renameSync(oldPath, newPath);
+        // Usamos mv en lugar de fs.renameSync para evitar el error de discos distintos (EXDEV)
+        execSync(`mv "${oldPath}" "${newPath}"`);
     }
 
     console.log("\n✅ ¡Películas resucitadas y listas para escanear!");
