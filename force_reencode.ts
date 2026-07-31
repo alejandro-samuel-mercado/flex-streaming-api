@@ -1,29 +1,32 @@
 import { FFmpegService } from './src/services/ffmpeg.service';
 import { prisma } from './src/shared/config/prisma';
 import fs from 'fs';
+import path from 'path';
 
 async function main() {
-    const contentId = 'cms6jhmg';
+    const searchString = process.argv[2];
+    if (!searchString) {
+        console.error("❌ Error: Debes pasar el nombre de la película como argumento.");
+        process.exit(1);
+    }
     
     // Find the video in the database by looking at originalPath
     const video = await prisma.videoFile.findFirst({
         where: { 
-            originalPath: { contains: 'kimetsu', mode: 'insensitive' },
-            type: 'MOVIE' 
+            originalPath: { contains: searchString, mode: 'insensitive' }
         }
     });
 
     if (!video) {
-        // Fallback: let's try just listing the first few movies to see what we have
-        const allMovies = await prisma.videoFile.findMany({ where: { type: 'MOVIE' }, take: 5, select: { originalPath: true, contentId: true } });
-        console.log("No se encontró 'kimetsu'. Muestra de películas en DB:", allMovies);
+        console.log(`❌ No se encontró ningún archivo en la base de datos que contenga '${searchString}'.`);
+        console.log(`⚠️ IMPORTANTE: Si acabas de borrar el archivo de la base de datos, primero debes volver a correr el escáner (escanear_peliculas.ts) para que lo registre, y una vez que aparezca en el panel, corres este comando.`);
         return;
     }
 
     // Check if the file still exists at the originalPath, or if it was moved to videos_subidos
     let actualInputPath = video.originalPath;
     if (!fs.existsSync(actualInputPath)) {
-        const fileName = require('path').basename(video.originalPath);
+        const fileName = path.basename(video.originalPath);
         const alternatePath = `/home/peliplus_gran_disco/videos_subidos/${fileName}`;
         if (fs.existsSync(alternatePath)) {
             actualInputPath = alternatePath;
@@ -36,10 +39,14 @@ async function main() {
     console.log(`🎬 Forzando re-codificación LENTA para: ${actualInputPath}`);
     
     // Wipe the old HLS folder
-    const outputFolder = video.hlsPath;
+    let outputFolder = video.hlsPath;
     if (!outputFolder) {
-        console.log("Error: hlsPath es nulo en la base de datos.");
-        return;
+        if (video.contentId) {
+            outputFolder = path.resolve(process.env.HLS_PATH || '/home/peliplus_gran_disco/hls', video.contentId);
+        } else {
+            console.log("Error: hlsPath es nulo en la base de datos y no se pudo deducir.");
+            return;
+        }
     }
 
     if (fs.existsSync(outputFolder)) {
