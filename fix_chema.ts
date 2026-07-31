@@ -8,27 +8,21 @@ async function main() {
     // 1. Encontrar la serie incorrecta
     const wrongSeries = await prisma.content.findFirst({
         where: { tmdbId: "68735", type: 'SERIES' },
-        include: { episodes: true }
+        include: { seasons: { include: { episodes: true } } }
     });
 
     if (wrongSeries) {
         console.log(`✅ Serie encontrada en DB con ID: ${wrongSeries.id}. Eliminando...`);
         
+        // Recopilar todos los IDs de episodios
+        const episodeIds = wrongSeries.seasons.flatMap((s: any) => s.episodes.map((e: any) => e.id));
+        
         // Eliminar VideoFiles asociados a los episodios
-        for (const ep of wrongSeries.episodes) {
-            await prisma.videoFile.deleteMany({ where: { episodeId: ep.id } });
+        if (episodeIds.length > 0) {
+            await prisma.videoFile.deleteMany({ where: { episodeId: { in: episodeIds } } });
         }
         
-        // Eliminar Episodios
-        await prisma.episode.deleteMany({ where: { contentId: wrongSeries.id } });
-        
-        // Eliminar Traducciones
-        await prisma.contentTranslation.deleteMany({ where: { contentId: wrongSeries.id } });
-        
-        // Eliminar Calidades
-        await prisma.videoQuality.deleteMany({ where: { contentId: wrongSeries.id } });
-        
-        // Eliminar la serie principal
+        // Eliminar la serie principal (esto hará cascade delete de seasons, episodes, translations, etc.)
         await prisma.content.delete({ where: { id: wrongSeries.id } });
         console.log("✅ Serie 'Hielo' eliminada de la base de datos por completo.");
     } else {
