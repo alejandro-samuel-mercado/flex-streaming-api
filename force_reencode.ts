@@ -5,13 +5,18 @@ import fs from 'fs';
 async function main() {
     const contentId = 'cms6jhmg';
     
-    // Find the video in the database
+    // Find the video in the database by looking at originalPath
     const video = await prisma.videoFile.findFirst({
-        where: { contentId: 'cms6jhmg', type: 'MOVIE' }
+        where: { 
+            originalPath: { contains: 'kimetsu', mode: 'insensitive' },
+            type: 'MOVIE' 
+        }
     });
 
     if (!video) {
-        console.log("No se encontró el video en la base de datos.");
+        // Fallback: let's try just listing the first few movies to see what we have
+        const allMovies = await prisma.videoFile.findMany({ where: { type: 'MOVIE' }, take: 5, select: { originalPath: true, contentId: true } });
+        console.log("No se encontró 'kimetsu'. Muestra de películas en DB:", allMovies);
         return;
     }
 
