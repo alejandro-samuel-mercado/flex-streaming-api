@@ -6,8 +6,13 @@ async function main() {
     console.log("🧹 FORZANDO LIMPIEZA DE CUALQUIER SERIE CHINA O EQUIVOCADA...");
     
     // 1. Borrar de la BD
-    await prisma.$executeRawUnsafe(`DELETE FROM "VideoFile" WHERE "originalPath" LIKE '%chema%'`);
-    await prisma.$executeRawUnsafe(`DELETE FROM "content" WHERE "tmdbId" IN ('69601', '68735')`);
+    try {
+        await prisma.$executeRawUnsafe(`DELETE FROM "video_files" WHERE "originalPath" LIKE '%chema%'`);
+        await prisma.$executeRawUnsafe(`DELETE FROM "content" WHERE "tmdbId" IN ('69601', '68735')`);
+        console.log("✅ Limpieza de BD completada.");
+    } catch (e) {
+        console.log("⚠️ Error limpiando BD (tal vez ya estaba limpia):", e);
+    }
     
     // 2. Renombrar la carpeta por la fuerza
     try {
