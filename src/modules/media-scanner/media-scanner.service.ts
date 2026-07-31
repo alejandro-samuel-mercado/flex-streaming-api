@@ -1207,9 +1207,9 @@ export class MediaScannerService {
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
             .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
         const slug = baseSlug + '-' + Math.random().toString(36).substring(2, 6);
-        const genreIds = await this._matchGenres(details.genres);
-        const actorIds = await this._matchActors(details.actors);
-        const directorIds = await this._matchDirectors(details.directors);
+        const genreIds = Array.from(new Set(await this._matchGenres(details.genres)));
+        const actorIds = Array.from(new Set(await this._matchActors(details.actors)));
+        const directorIds = Array.from(new Set(await this._matchDirectors(details.directors)));
 
         let content: any;
         const createData = {
