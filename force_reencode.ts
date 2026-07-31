@@ -20,7 +20,20 @@ async function main() {
         return;
     }
 
-    console.log(`🎬 Forzando re-codificación LENTA para: ${video.originalPath}`);
+    // Check if the file still exists at the originalPath, or if it was moved to videos_subidos
+    let actualInputPath = video.originalPath;
+    if (!fs.existsSync(actualInputPath)) {
+        const fileName = require('path').basename(video.originalPath);
+        const alternatePath = `/home/peliplus_gran_disco/videos_subidos/${fileName}`;
+        if (fs.existsSync(alternatePath)) {
+            actualInputPath = alternatePath;
+        } else {
+            console.log(`Error: No se encuentra el mp4 ni en ${video.originalPath} ni en ${alternatePath}`);
+            return;
+        }
+    }
+
+    console.log(`🎬 Forzando re-codificación LENTA para: ${actualInputPath}`);
     
     // Wipe the old HLS folder
     const outputFolder = video.hlsPath;
@@ -34,8 +47,8 @@ async function main() {
         console.log("🗑️ Carpeta HLS anterior borrada.");
     }
     
-    // Force re-encode
-    await FFmpegService.generateHLS(video.originalPath, outputFolder, (pct) => {
+    // Force re-encode using the actual path where the file is now
+    await FFmpegService.generateHLS(actualInputPath, outputFolder, (pct) => {
         process.stdout.write(`\r⏳ Progreso: ${pct}%   `);
     }, true); // true = forceReencode
 
