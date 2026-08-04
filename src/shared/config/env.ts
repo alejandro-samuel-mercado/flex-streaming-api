@@ -46,6 +46,7 @@ const envSchema = z.object({
 
     // Media Scanner
     MEDIA_SCAN_DIRS: z.string().optional().default(''),
+    FALLBACK_SCAN_PATH: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

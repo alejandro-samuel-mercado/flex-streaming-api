@@ -173,6 +173,14 @@ export class MediaScannerService {
     if (moviePath && fs.existsSync(moviePath)) {
       const movieFiles: ScannedFile[] = [];
       await this._scanMoviesRecursive(moviePath, movieFiles, emptySet, 0, 2);
+
+      // Fallback para buscar en la carpeta de respaldo (configurada en variables de entorno o por defecto)
+      const fallbackPath = env.FALLBACK_SCAN_PATH || path.join(path.dirname(moviePath), 'videos_subidos');
+      if (fs.existsSync(fallbackPath) && fallbackPath !== moviePath) {
+        console.log(`[MediaScanner] Buscando también en directorio de respaldo: ${fallbackPath}`);
+        await this._scanMoviesRecursive(fallbackPath, movieFiles, emptySet, 0, 2);
+      }
+
       allFiles.push(...movieFiles);
     }
 
@@ -229,6 +237,13 @@ export class MediaScannerService {
       await this._scanSeriesRecursive(dirPath, files, importedPaths, '', 0, 6);
     } else {
       await this._scanMoviesRecursive(dirPath, files, importedPaths, 0, maxDepth);
+      
+      // Fallback para buscar en la carpeta de respaldo
+      const fallbackPath = env.FALLBACK_SCAN_PATH || path.join(path.dirname(dirPath), 'videos_subidos');
+      if (fs.existsSync(fallbackPath) && fallbackPath !== dirPath) {
+        console.log(`[MediaScanner] Buscando también en directorio de respaldo: ${fallbackPath}`);
+        await this._scanMoviesRecursive(fallbackPath, files, importedPaths, 0, maxDepth);
+      }
     }
     files.sort((a, b) => a.fileName.localeCompare(b.fileName));
     return files;
