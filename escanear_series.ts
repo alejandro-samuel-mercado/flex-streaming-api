@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { MediaScannerService } from './src/modules/media-scanner/media-scanner.service';
 import { env } from './src/shared/config/env';
 import fs from 'fs';

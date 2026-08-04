@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { MediaScannerService } from './src/modules/media-scanner/media-scanner.service';
 import fs from 'fs';
 import path from 'path';
