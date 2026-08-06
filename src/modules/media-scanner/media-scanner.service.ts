@@ -518,7 +518,7 @@ export class MediaScannerService {
 
     // (Eliminado el bloque fs.promises.stat que fallaba para subcarpetas)
 
-    const existingVideo = await prisma.videoFile.findFirst({ 
+    let existingVideo = await prisma.videoFile.findFirst({ 
       where: { 
         originalPath: filePath
       },
@@ -533,6 +533,25 @@ export class MediaScannerService {
         }
       }
     });
+
+    // DETECCIÓN DE ARCHIVOS MOVIDOS:
+    // Si el script del servidor movió el archivo a otra partición (ej. videos_subidos),
+    // el filePath cambia pero el fileName suele ser idéntico. Lo buscamos y actualizamos la ruta.
+    if (!existingVideo) {
+      existingVideo = await prisma.videoFile.findFirst({
+        where: { originalPath: { endsWith: `/${fileName}` } },
+        include: {
+          content: true,
+          episode: { include: { season: { include: { content: true } } } }
+        }
+      });
+
+      if (existingVideo) {
+        console.log(`[MediaScanner] 🚚 Detectado archivo movido. Actualizando ruta en BD:\n   De: ${existingVideo.originalPath}\n   A:  ${filePath}`);
+        await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { originalPath: filePath } });
+        existingVideo.originalPath = filePath;
+      }
+    }
 
     if (existingVideo) {
       let isOrphaned = false;
