@@ -11,7 +11,7 @@ async function reprocesarSeries() {
 
     let whereClause: any = {
         type: 'EPISODE',
-        status: { in: ['COMPLETED', 'READY', 'FAILED', 'QUEUED'] } // Excluimos PROCESSING para no pisar
+        status: { in: ['COMPLETED', 'FAILED', 'QUEUED', 'PENDING'] } // Excluimos PROCESSING para no pisar
     };
 
     if (seriesTitle) {
