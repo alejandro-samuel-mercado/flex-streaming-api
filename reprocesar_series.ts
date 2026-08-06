@@ -1,11 +1,10 @@
 import 'dotenv/config';
 import { prisma } from './src/shared/config/prisma';
-import { videoQueue } from './src/services/queue.service';
+import { FFmpegService } from './src/services/ffmpeg.service';
 import fs from 'fs';
 import path from 'path';
 
 async function reprocesarSeries() {
-    // Permite pasar el nombre de la serie como argumento, ej: npx tsx reprocesar_series.ts "Soy Luna"
     let args = process.argv.slice(2);
     const isForce = args.includes('--force');
     if (isForce) {
@@ -13,19 +12,18 @@ async function reprocesarSeries() {
     }
     const seriesTitle = args.join(' ').trim();
 
-    console.log(`🔍 Buscando episodios de series para reprocesar (Subidos desde el 29 de Julio)...`);
+    console.log(`🔍 Buscando episodios de series para reprocesar silenciosamente (Desde 29 de Julio)...`);
     if (isForce) {
-        console.log("⚠️ ATENCIÓN: MODO FUERZA BRUTA (--force) ACTIVADO. Se re-codificará todo el video (SLOW PATH).");
+        console.log("⚠️ MODO FUERZA BRUTA (--force) ACTIVADO. Se re-codificará todo el video (SLOW PATH).");
     }
 
     let whereClause: any = {
         type: 'EPISODE',
-        status: { in: ['COMPLETED', 'FAILED', 'QUEUED', 'PENDING'] }, // Excluimos PROCESSING para no pisar
+        status: { in: ['COMPLETED', 'FAILED', 'QUEUED', 'PENDING', 'PROCESSING'] },
         createdAt: { gte: new Date('2026-07-29T00:00:00.000Z') }
     };
 
     if (seriesTitle) {
-        console.log(`Filtro activado: Buscando series que contengan "${seriesTitle}" en su título...`);
         whereClause.episode = {
             season: {
                 content: {
@@ -51,51 +49,49 @@ async function reprocesarSeries() {
     });
 
     if (videoFiles.length === 0) {
-        console.log("❌ No se encontraron episodios para reprocesar con esos criterios.");
+        console.log("❌ No se encontraron episodios.");
         return;
     }
 
-    console.log(`Encontrados ${videoFiles.length} episodios. Añadiendo a la cola de procesamiento (esto tomará unos 30 seg por episodio)...`);
+    console.log(`Encontrados ${videoFiles.length} episodios. Procesando uno por uno sin tocar la base de datos...\n`);
 
-    let encolados = 0;
+    let procesados = 0;
 
     for (const vf of videoFiles) {
         const title = vf.episode?.season?.content?.translations?.[0]?.title || 'Serie desconocida';
+        const seasonNum = vf.episode?.season?.number || '?';
+        const epNum = vf.episode?.number || '?';
         
-        // BORRAR LA CARPETA HLS VIEJA PARA EVITAR CONFLICTOS Y CACHÉ
-        if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+        console.log(`🎬 Procesando: [${title} - T${seasonNum}E${epNum}]`);
+        console.log(`   Archivo: ${vf.originalPath}`);
+
+        const outputFolder = vf.hlsPath || path.resolve(process.env.HLS_PATH || '/home/peliplus_gran_disco/hls', vf.episodeId || vf.contentId || 'unknown');
+
+        if (fs.existsSync(outputFolder)) {
             try {
-                fs.rmSync(vf.hlsPath, { recursive: true, force: true });
-                console.log(`   🗑️ Carpeta HLS anterior borrada: ${vf.hlsPath}`);
-            } catch (err: any) {
-                console.log(`   ⚠️ No se pudo borrar la carpeta HLS: ${err.message}`);
-            }
+                fs.rmSync(outputFolder, { recursive: true, force: true });
+                console.log(`   🗑️ Carpeta HLS anterior borrada.`);
+            } catch (err: any) {}
         }
 
-        // 1. Enviar el trabajo a BullMQ
-        await videoQueue.add('process-video', {
-            videoFileId: vf.id,
-            contentId: vf.episodeId || vf.contentId,
-            type: 'EPISODE',
-            videoPath: vf.originalPath,
-            forceReencode: isForce
-        });
-
-        // 2. Necesitamos poner el VideoFile en QUEUED obligatoriamente, de lo contrario 
-        // el Worker lo saltará al ver que dice "COMPLETED" (línea 130 de video.worker.ts).
-        // Esto NO altera ni borra la Serie, su título, descripción o fijados.
-        if (vf.status !== 'QUEUED') {
-            await prisma.videoFile.update({
-                where: { id: vf.id },
-                data: { status: 'QUEUED' }
-            });
+        try {
+            await FFmpegService.generateHLS(
+                vf.originalPath, 
+                outputFolder, 
+                (pct) => {
+                    process.stdout.write(`\r   ⏳ Progreso FFmpeg: ${pct}%   `);
+                }, 
+                isForce, 
+                'EPISODE'
+            );
+            console.log(`\n   ✅ HLS regenerado exitosamente.\n`);
+            procesados++;
+        } catch (err: any) {
+            console.log(`\n   ❌ Error procesando: ${err.message}\n`);
         }
-
-        encolados++;
-        console.log(`✅ [${title} - T${vf.episode?.seasonNumber}E${vf.episode?.episodeNumber}] Encolado: ${vf.originalPath}`);
     }
 
-    console.log(`\n🎉 Completado. Se enviaron ${encolados} episodios a la cola del servidor de Series.`);
+    console.log(`🎉 Completado. Se re-procesaron ${procesados} episodios silenciosamente.`);
 }
 
 reprocesarSeries().catch(console.error).finally(() => process.exit(0));
