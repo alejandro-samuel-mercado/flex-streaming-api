@@ -31,7 +31,7 @@ async function run() {
             const duplicates = group.slice(1); // Todos menos el original (el más viejo)
 
             for (const dup of duplicates) {
-                if (dup.status === 'PENDING') {
+                if (dup.status === 'PENDING' && !dup.isPinned) {
                     console.log(` 🗑️  Borrando duplicado PENDIENTE: ${dup.slug} (ID: ${dup.id})`);
                     
                     // Soft-delete al Content para que desaparezca del panel
@@ -47,7 +47,8 @@ async function run() {
                     
                     deletedCount++;
                 } else {
-                    console.log(` ⏩ Omitiendo duplicado NO PENDIENTE: ${dup.slug} (Estado: ${dup.status})`);
+                    const motivo = dup.isPinned ? 'FIJADO' : dup.status;
+                    console.log(` ⏩ Omitiendo duplicado seguro: ${dup.slug} (Estado: ${motivo})`);
                 }
             }
         }
