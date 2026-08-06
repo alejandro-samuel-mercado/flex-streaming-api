@@ -45,7 +45,10 @@ async function nukeSeries() {
             }
         }
 
-    console.log(`\n🎉 ¡COLA VACIADA Y DISCO LIMPIO! No se tocó la base de datos.`);
+        borrados++;
+    }
+
+    console.log(`\n🎉 ¡COLA VACIADA Y DISCO LIMPIO! No se tocó la base de datos. Se procesaron ${borrados} episodios.`);
     console.log("👉 Ahora puedes usar tu script manual para reprocesarlas tranquilamente sin interrupciones del worker.");
 }
 
