@@ -7,11 +7,12 @@ async function reprocesarSeries() {
     const args = process.argv.slice(2);
     const seriesTitle = args.join(' ').trim();
 
-    console.log("🔍 Buscando episodios de series para reprocesar...");
+    console.log("🔍 Buscando episodios de series para reprocesar (Subidos desde el 29 de Julio)...");
 
     let whereClause: any = {
         type: 'EPISODE',
-        status: { in: ['COMPLETED', 'FAILED', 'QUEUED', 'PENDING'] } // Excluimos PROCESSING para no pisar
+        status: { in: ['COMPLETED', 'FAILED', 'QUEUED', 'PENDING'] }, // Excluimos PROCESSING para no pisar
+        createdAt: { gte: new Date('2026-07-29T00:00:00.000Z') }
     };
 
     if (seriesTitle) {
