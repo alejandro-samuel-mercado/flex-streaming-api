@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { prisma } from './src/shared/config/prisma';
-import { videoQueue } from './src/shared/config/queue';
+import { videoQueue } from './src/services/queue.service';
 
 async function reprocesarSeries() {
     // Permite pasar el nombre de la serie como argumento, ej: npx tsx reprocesar_series.ts "Soy Luna"
