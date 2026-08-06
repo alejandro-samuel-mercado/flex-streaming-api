@@ -68,13 +68,10 @@ export class FFmpegService {
                 (s.channels === undefined || s.channels <= 2)
             );
         } else {
-            // COMPORTAMIENTO DE PELÍCULAS (NORMAL):
-            // Solo copiamos si es estrictamente AAC. Si es MP3, lo re-codificamos a AAC para
-            // prevenir los cuelgues en ExoPlayer (Android) cada 20 segundos.
-            canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
-                (s.codec_name?.toLowerCase() || '') === 'aac' &&
-                (s.channels === undefined || s.channels <= 2)
-            );
+            // COMPORTAMIENTO DE PELÍCULAS (NORMAL POST-29 JULIO):
+            // Forzamos siempre la re-codificación a AAC (canCopyAudio = false)
+            // Esto es exactamente lo que tenías antes de que yo tocara nada hoy.
+            canCopyAudio = false;
         }
 
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
