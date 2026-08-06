@@ -122,6 +122,28 @@ contentRouter.put('/:id', authenticate as RequestHandler, requireRole('ADMIN') a
   } catch (err) { next(err); }
 }) as RequestHandler);
 
+contentRouter.delete('/episode/:episodeId', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const episodeId = req.params.episodeId;
+    
+    // Borrar físicamente el HLS si es necesario (opcional)
+    const fs = await import('fs');
+    const videoFiles = await prisma.videoFile.findMany({ where: { episodeId } });
+    
+    for (const vf of videoFiles) {
+        if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+            try { fs.rmSync(vf.hlsPath, { recursive: true, force: true }); } catch (e) {}
+        }
+    }
+    
+    // Borrar los registros
+    await prisma.videoFile.deleteMany({ where: { episodeId } });
+    await prisma.episode.delete({ where: { id: episodeId } });
+
+    ok(res, { deleted: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
 contentRouter.delete('/:id', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
     const content = await prisma.content.findUnique({ where: { id: req.params.id } });

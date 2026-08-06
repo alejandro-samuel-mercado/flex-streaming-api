@@ -117,6 +117,7 @@ export class FFmpegService {
                         const name = audioStreams[i].tags?.title || `Audio`;
                         const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
+                        if (i === 0) varStreamMap += ',default:yes';
                     }
                 }
 
@@ -194,10 +195,10 @@ export class FFmpegService {
                     stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado por 20 min.')); }, 20 * 60 * 1000);
                 };
 
-                const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio,name:video';
+                const mapOptions = ['-map', '0:v:0', '-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio,name:1080p v:1,agroup:audio,name:720p';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0,name:video';
+                    varStreamMap = 'v:0,name:1080p v:1,name:720p';
                 } else {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);
@@ -205,6 +206,7 @@ export class FFmpegService {
                         const name = audioStreams[i].tags?.title || `Audio`;
                         const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
+                        if (i === 0) varStreamMap += ',default:yes';
                     }
                 }
 
@@ -212,19 +214,32 @@ export class FFmpegService {
                     .outputOptions([
                         '-y',
                         ...mapOptions,
-                        '-c:v', 'h264',
+                        
+                        // Calidad 1: Original / 1080p (Alto Bitrate)
+                        '-c:v:0', 'h264',
+                        '-b:v:0', '5000k', '-maxrate:v:0', '7000k', '-bufsize:v:0', '10000k',
+                        '-vf:v:0', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                        
+                        // Calidad 2: 720p (Bajo Bitrate)
+                        '-c:v:1', 'h264',
+                        '-b:v:1', '2500k', '-maxrate:v:1', '3500k', '-bufsize:v:1', '5000k',
+                        '-vf:v:1', 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                        
+                        // Configuraciones comunes de video
                         '-preset', 'veryfast',
-                        '-threads', '0',  // Use all available CPU threads
+                        '-threads', '0',
                         '-profile:v', 'main',
                         '-level', '4.0',
-                        '-vf', 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
                         '-pix_fmt', 'yuv420p',
                         '-r', fpsValue,
                         '-g', gopSize.toString(),
                         '-keyint_min', gopSize.toString(),
                         '-sc_threshold', '0',
-                        '-b:v', '2500k', '-maxrate', '3500k', '-bufsize', '5000k',
+                        
+                        // Configuraciones de audio (aplica a todos los audios mapeados)
                         '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
+                        
+                        // Configuraciones HLS
                         '-hls_time', '6',
                         '-hls_list_size', '0',
                         '-hls_playlist_type', 'vod',
