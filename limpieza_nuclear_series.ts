@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { prisma } from './src/shared/config/prisma';
-import { videoQueue } from './src/shared/config/queue';
+import { videoQueue } from './src/services/queue.service';
 import fs from 'fs';
 import path from 'path';
 
