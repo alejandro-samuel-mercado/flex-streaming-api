@@ -34,7 +34,8 @@ export class FFmpegService {
         inputPath: string,
         outputFolder: string,
         onProgress?: (percent: number) => void,
-        forceReencode: boolean = false
+        forceReencode: boolean = false,
+        contentType: 'MOVIE' | 'EPISODE' = 'MOVIE'
     ): Promise<{ path: string; audioTracks: any[] }> {
         const resolvedInputPath = path.resolve(inputPath);
         const resolvedOutputFolder = path.resolve(outputFolder);
@@ -55,16 +56,30 @@ export class FFmpegService {
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
         const canCopyVideo = forceReencode ? false : HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
 
-        // FORZAMOS la re-codificación del audio a AAC siempre (canCopyAudio = false).
-        // Motivo crítico: Si copiamos el audio crudo ('-c:a copy'), FFmpeg genera fragmentos de audio
-        // desalineados en tiempo (ej. 10.7s) respecto al video (6s). Esto provoca que ExoPlayer en Android
-        // (TVs y celulares modernos como OnePlus) se congele cada 20 segundos al intentar sincronizar los buffers.
-        // Al forzar la conversión a AAC, FFmpeg logra cortar los fragmentos perfectamente a los 6 segundos.
-        const canCopyAudio = false;
+        let canCopyAudio = false;
+
+        if (contentType === 'EPISODE') {
+            // COMPORTAMIENTO DE SERIES (COMO ANTES DEL 29 DE JULIO):
+            // Permitimos copiar tanto AAC como MP3 y MP2 para evitar la desincronización de PTS 
+            // con los Keyframes largos de las series, lo cual rompía el reproductor web.
+            const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
+            canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
+                HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
+                (s.channels === undefined || s.channels <= 2)
+            );
+        } else {
+            // COMPORTAMIENTO DE PELÍCULAS (NORMAL):
+            // Solo copiamos si es estrictamente AAC. Si es MP3, lo re-codificamos a AAC para
+            // prevenir los cuelgues en ExoPlayer (Android) cada 20 segundos.
+            canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
+                (s.codec_name?.toLowerCase() || '') === 'aac' &&
+                (s.channels === undefined || s.channels <= 2)
+            );
+        }
 
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 
-        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (Forzando AAC para alineación HLS)`);
+        console.log(`🎬 [FFmpeg] [${contentType}] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
 
         if (canCopyVideo) {
             // ══════════════════════════════════════════════════════════════════

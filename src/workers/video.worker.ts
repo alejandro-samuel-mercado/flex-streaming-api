@@ -190,10 +190,16 @@ export const videoWorker = new Worker(
         return { cancelled: true };
       }
 
-      const hlsResult = await FFmpegService.generateHLS(videoPath, outputFolder, (pct) => {
-        const jobProgress = 15 + Math.round(pct * 0.80);
-        onProgress(jobProgress);
-      });
+      const hlsResult = await FFmpegService.generateHLS(
+        videoPath, 
+        outputFolder, 
+        (pct) => {
+          const jobProgress = 15 + Math.round(pct * 0.80);
+          onProgress(jobProgress);
+        },
+        false, // forceReencode
+        jobType as 'MOVIE' | 'EPISODE'
+      );
       job.log(`HLS generated at ${hlsResult.path}`);
 
       // Final check before updating DB (in case of cancellation)
