@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import { prisma } from './src/shared/config/prisma';
 import { videoQueue } from './src/services/queue.service';
+import fs from 'fs';
+import path from 'path';
 
 async function reprocesarSeries() {
     // Permite pasar el nombre de la serie como argumento, ej: npx tsx reprocesar_series.ts "Soy Luna"
@@ -53,6 +55,16 @@ async function reprocesarSeries() {
     for (const vf of videoFiles) {
         const title = vf.episode?.season?.content?.translations?.[0]?.title || 'Serie desconocida';
         
+        // BORRAR LA CARPETA HLS VIEJA PARA EVITAR CONFLICTOS Y CACHÉ
+        if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+            try {
+                fs.rmSync(vf.hlsPath, { recursive: true, force: true });
+                console.log(`   🗑️ Carpeta HLS anterior borrada: ${vf.hlsPath}`);
+            } catch (err: any) {
+                console.log(`   ⚠️ No se pudo borrar la carpeta HLS: ${err.message}`);
+            }
+        }
+
         // 1. Enviar el trabajo a BullMQ
         await videoQueue.add('process-video', {
             videoFileId: vf.id,
