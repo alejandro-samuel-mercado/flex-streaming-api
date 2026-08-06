@@ -72,7 +72,7 @@ async function buildOutputFolder(
 export const videoWorker = new Worker(
   QUEUE_NAME,
   async (job: Job) => {
-    const { videoFileId, contentId, videoPath } = job.data;
+    const { videoFileId, contentId, videoPath, forceReencode } = job.data;
     const jobType = job.data.type || 'MOVIE';
 
     // Buscar el episodeId si existe
@@ -197,7 +197,7 @@ export const videoWorker = new Worker(
           const jobProgress = 15 + Math.round(pct * 0.80);
           onProgress(jobProgress);
         },
-        false, // forceReencode
+        !!forceReencode, // forceReencode
         jobType as 'MOVIE' | 'EPISODE'
       );
       job.log(`HLS generated at ${hlsResult.path}`);

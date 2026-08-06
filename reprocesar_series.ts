@@ -6,10 +6,17 @@ import path from 'path';
 
 async function reprocesarSeries() {
     // Permite pasar el nombre de la serie como argumento, ej: npx tsx reprocesar_series.ts "Soy Luna"
-    const args = process.argv.slice(2);
+    let args = process.argv.slice(2);
+    const isForce = args.includes('--force');
+    if (isForce) {
+        args = args.filter(a => a !== '--force');
+    }
     const seriesTitle = args.join(' ').trim();
 
-    console.log("🔍 Buscando episodios de series para reprocesar (Subidos desde el 29 de Julio)...");
+    console.log(`🔍 Buscando episodios de series para reprocesar (Subidos desde el 29 de Julio)...`);
+    if (isForce) {
+        console.log("⚠️ ATENCIÓN: MODO FUERZA BRUTA (--force) ACTIVADO. Se re-codificará todo el video (SLOW PATH).");
+    }
 
     let whereClause: any = {
         type: 'EPISODE',
@@ -70,7 +77,8 @@ async function reprocesarSeries() {
             videoFileId: vf.id,
             contentId: vf.episodeId || vf.contentId,
             type: 'EPISODE',
-            videoPath: vf.originalPath
+            videoPath: vf.originalPath,
+            forceReencode: isForce
         });
 
         // 2. Necesitamos poner el VideoFile en QUEUED obligatoriamente, de lo contrario 
