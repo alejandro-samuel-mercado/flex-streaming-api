@@ -53,8 +53,20 @@ export class FFmpegService {
 
         // ── Detect if we can use fast copy path ───────────────────────────────
         const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
+        const pixFmt = videoStream?.pix_fmt?.toLowerCase() || '';
+        const profile = String(videoStream?.profile || '').toLowerCase();
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
-        const canCopyVideo = forceReencode ? false : HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
+        
+        let isVideoHealthy = false;
+        if (HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c))) {
+            // Un video H.264 es sano para la web solo si usa colores a 8-bits (yuv420p)
+            // y no es un perfil exótico (High 10, etc).
+            if (pixFmt === 'yuv420p' && !profile.includes('10')) {
+                isVideoHealthy = true;
+            }
+        }
+
+        const canCopyVideo = forceReencode ? false : isVideoHealthy;
 
         let canCopyAudio = false;
 
