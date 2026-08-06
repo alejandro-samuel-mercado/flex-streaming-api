@@ -45,26 +45,8 @@ async function nukeSeries() {
             }
         }
 
-        // 4. Borrar el registro de la Base de Datos para que el Escáner lo vea como "Nuevo"
-        await prisma.videoFile.delete({
-            where: { id: vf.id }
-        });
-
-        // 5. Opcional: Borrar el episodio si quedó vacío
-        if (vf.episodeId) {
-            const count = await prisma.videoFile.count({ where: { episodeId: vf.episodeId } });
-            if (count === 0) {
-                try {
-                    await prisma.episode.delete({ where: { id: vf.episodeId } });
-                } catch(e) {}
-            }
-        }
-
-        borrados++;
-    }
-
-    console.log(`\n🎉 ¡LIMPIEZA NUCLEAR COMPLETADA! Se destruyeron ${borrados} episodios.`);
-    console.log("👉 Ya puedes correr tu escáner manual (npx tsx escanear_series.ts) para volver a subirlos limpios desde cero.");
+    console.log(`\n🎉 ¡COLA VACIADA Y DISCO LIMPIO! No se tocó la base de datos.`);
+    console.log("👉 Ahora puedes usar tu script manual para reprocesarlas tranquilamente sin interrupciones del worker.");
 }
 
 nukeSeries().catch(console.error).finally(() => process.exit(0));
