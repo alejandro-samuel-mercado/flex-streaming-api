@@ -52,8 +52,8 @@ export class FFmpegService {
 
         // ── Detect if we can use fast copy path ───────────────────────────────
         const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
-        const pixFmt = videoStream?.pix_fmt?.toLowerCase() || '';
-        const profile = videoStream?.profile?.toLowerCase() || '';
+        const pixFmt = String(videoStream?.pix_fmt || '').toLowerCase();
+        const profile = String(videoStream?.profile || '').toLowerCase();
         
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
         let canCopyVideo = false;
@@ -76,16 +76,16 @@ export class FFmpegService {
             }
         }
 
-        // FORZAMOS la re-codificación del audio a AAC siempre (canCopyAudio = false).
-        // Motivo crítico: Si copiamos el audio crudo ('-c:a copy'), FFmpeg genera fragmentos de audio
-        // desalineados en tiempo (ej. 10.7s) respecto al video (6s). Esto provoca que ExoPlayer en Android
-        // (TVs y celulares modernos como OnePlus) se congele cada 20 segundos al intentar sincronizar los buffers.
-        // Al forzar la conversión a AAC, FFmpeg logra cortar los fragmentos perfectamente a los 6 segundos.
-        const canCopyAudio = false;
+        // Si el audio original es AAC, lo podemos copiar directo sin problemas de alineación de HLS.
+        // Si copiamos MP3/AC3, ExoPlayer en Android se congela por fragmentos desalineados, así que esos los re-codificaremos.
+        const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
+            (s.codec_name?.toLowerCase() || '') === 'aac' &&
+            (s.channels === undefined || s.channels <= 2)
+        );
 
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 
-        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (Forzando AAC para alineación HLS)`);
+        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
 
         if (canCopyVideo) {
             // ══════════════════════════════════════════════════════════════════
