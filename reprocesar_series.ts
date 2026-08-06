@@ -16,16 +16,27 @@ async function reprocesarSeries() {
 
     if (seriesTitle) {
         console.log(`Filtro activado: Buscando series que contengan "${seriesTitle}" en su título...`);
-        whereClause.content = {
-            translations: { some: { title: { contains: seriesTitle, mode: 'insensitive' } } }
+        whereClause.episode = {
+            season: {
+                content: {
+                    translations: { some: { title: { contains: seriesTitle, mode: 'insensitive' } } }
+                }
+            }
         };
     }
 
     const videoFiles = await prisma.videoFile.findMany({
         where: whereClause,
         include: {
-            content: { include: { translations: true } },
-            episode: true
+            episode: {
+                include: {
+                    season: {
+                        include: {
+                            content: { include: { translations: true } }
+                        }
+                    }
+                }
+            }
         }
     });
 
@@ -39,7 +50,7 @@ async function reprocesarSeries() {
     let encolados = 0;
 
     for (const vf of videoFiles) {
-        const title = vf.content?.translations?.[0]?.title || 'Serie desconocida';
+        const title = vf.episode?.season?.content?.translations?.[0]?.title || 'Serie desconocida';
         
         // 1. Enviar el trabajo a BullMQ
         await videoQueue.add('process-video', {
