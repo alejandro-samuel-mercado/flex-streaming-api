@@ -396,6 +396,11 @@ export class StreamingService {
                     content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
                 }
 
+                // 3b. Inject RESOLUTION if completely missing (Fixes the "0p" bug in frontend)
+                if (content.includes('#EXT-X-STREAM-INF') && !content.includes('RESOLUTION=')) {
+                    content = content.replace(/(#EXT-X-STREAM-INF:.*)/g, '$1,RESOLUTION=1280x720');
+                }
+
                 // 4. Ensure DEFAULT=YES is present on the first audio track (only when no audioIndex override)
                 if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES') && audioIndex === null) {
                     content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
