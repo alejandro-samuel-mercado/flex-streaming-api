@@ -520,7 +520,7 @@ export class MediaScannerService {
 
     let existingVideo = await prisma.videoFile.findFirst({ 
       where: { 
-        originalPath: filePath
+        originalPath: { equals: filePath, mode: 'insensitive' }
       },
       include: {
         content: true,
@@ -539,7 +539,7 @@ export class MediaScannerService {
     // el filePath cambia pero el fileName suele ser idéntico. Lo buscamos y actualizamos la ruta.
     if (!existingVideo) {
       existingVideo = await prisma.videoFile.findFirst({
-        where: { originalPath: { endsWith: `/${fileName}` } },
+        where: { originalPath: { endsWith: `/${fileName}`, mode: 'insensitive' } },
         include: {
           content: true,
           episode: { include: { season: { include: { content: true } } } }
