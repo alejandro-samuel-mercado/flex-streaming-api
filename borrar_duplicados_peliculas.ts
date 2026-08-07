@@ -10,18 +10,17 @@ async function removeDuplicates() {
         include: { content: true }
     });
 
-    // 2. Agrupar por nombre de archivo Y película (para detectar copias en distintas carpetas)
+    // 2. Agrupar por Título y Año de lanzamiento (ignorando el nombre del archivo)
     const groups: Record<string, typeof videoFiles> = {};
     for (const vf of videoFiles) {
-        if (!vf.originalPath) continue;
+        if (!vf.content) continue;
         
-        // Extraemos solo el nombre del archivo (ej: "con amor.mp4")
-        const fileName = vf.originalPath.split('/').pop()?.toLowerCase() || '';
+        // Limpiamos el título para la comparación (todo minúsculas, sin espacios extra)
+        const titleLower = (vf.content.title || '').trim().toLowerCase();
+        const year = vf.content.releaseYear || 'unknown';
         
-        // Usamos el TMDB ID o el título como seguro para no borrar películas distintas que se llamen "video.mp4"
-        const safeKey = vf.content?.tmdbId || vf.content?.title || 'unknown';
-        
-        const groupKey = `${fileName}_${safeKey}`;
+        // Agrupamos usando "titulo_año"
+        const groupKey = `${titleLower}_${year}`;
         
         if (!groups[groupKey]) groups[groupKey] = [];
         groups[groupKey].push(vf);
