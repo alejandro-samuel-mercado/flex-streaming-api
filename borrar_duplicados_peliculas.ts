@@ -35,14 +35,20 @@ async function removeDuplicates() {
 
             // Ordenar para asegurar que conservamos el correcto
             files.sort((a, b) => {
-                // 1. Preferir borrar los que estén PENDING
+                // 1. Regla Suprema: Conservar SIEMPRE el que esté FIJADO (isPinned = true)
+                const aIsPinned = a.content?.isPinned === true;
+                const bIsPinned = b.content?.isPinned === true;
+                if (aIsPinned && !bIsPinned) return -1; // Conservamos A (lo ponemos al principio)
+                if (!aIsPinned && bIsPinned) return 1;  // Conservamos B (mandamos A al final)
+
+                // 2. Preferir borrar los que estén PENDING
                 const aIsPending = a.content?.status === 'PENDING';
                 const bIsPending = b.content?.status === 'PENDING';
                 
                 if (aIsPending && !bIsPending) return 1; // PENDING va al final (será borrado)
                 if (!aIsPending && bIsPending) return -1; // PENDING va al final (será borrado)
                 
-                // 2. Si ambos son iguales, preferimos conservar el más antiguo
+                // 3. Si ambos son iguales, preferimos conservar el más antiguo
                 return a.createdAt.getTime() - b.createdAt.getTime();
             });
 
