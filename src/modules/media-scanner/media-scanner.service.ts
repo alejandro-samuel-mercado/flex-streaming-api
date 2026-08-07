@@ -1146,9 +1146,16 @@ export class MediaScannerService {
       return { filePath, fileName, success: true, contentId, tmdbMatch };
     }
 
-    // Create VideoFile as QUEUED and enqueue for FFmpeg
-    const videoFile = await prisma.videoFile.create({
-      data: {
+    // Create or Update VideoFile (UPSERT) to prevent Unique Constraint crashes 
+    // if the file was previously mis-scanned as a MOVIE
+    const videoFile = await prisma.videoFile.upsert({
+      where: { originalPath: filePath },
+      update: {
+        contentId: null,
+        episodeId: episodeRecord.id,
+        type: 'EPISODE'
+      },
+      create: {
         contentId: null,
         episodeId: episodeRecord.id,
         type: 'EPISODE',
@@ -1159,14 +1166,15 @@ export class MediaScannerService {
       }
     });
 
-    const job = await addVideoJob({
-      videoFileId: videoFile.id,
-      contentId: episodeRecord.id, // worker uses this as the "owner" id
-      type: 'EPISODE',
-      videoPath: filePath
-    });
-
-    await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
+    if (videoFile.status === 'QUEUED' && !videoFile.processingJobId) {
+        const job = await addVideoJob({
+          videoFileId: videoFile.id,
+          contentId: episodeRecord.id, // worker uses this as the "owner" id
+          type: 'EPISODE',
+          videoPath: filePath
+        });
+        await prisma.videoFile.update({ where: { id: videoFile.id }, data: { processingJobId: job.id } });
+    }
 
     console.log(`📦 [MediaScanner] Enqueued raw series episode ${fileName} → S${episode.season}E${episode.episodeNumber} of "${episode.seriesFolderName}" (contentId: ${contentId})`);
 
