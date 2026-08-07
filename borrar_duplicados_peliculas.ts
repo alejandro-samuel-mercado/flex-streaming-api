@@ -10,17 +10,19 @@ async function removeDuplicates() {
         include: { content: true }
     });
 
-    // 2. Agrupar por Título y Año de lanzamiento (ignorando el nombre del archivo)
+    // 2. Agrupar por nombre exacto del archivo + TMDB ID (A prueba de balas)
     const groups: Record<string, typeof videoFiles> = {};
     for (const vf of videoFiles) {
-        if (!vf.content) continue;
+        if (!vf.originalPath) continue;
         
-        // Limpiamos el título para la comparación (todo minúsculas, sin espacios extra)
-        const titleLower = (vf.content.title || '').trim().toLowerCase();
-        const year = vf.content.releaseYear || 'unknown';
+        // Extraemos solo el nombre del archivo (ej: "con amor.mp4")
+        const fileName = vf.originalPath.split('/').pop()?.toLowerCase() || '';
         
-        // Agrupamos usando "titulo_año"
-        const groupKey = `${titleLower}_${year}`;
+        // La huella digital única (si no tiene TMDB ID, usamos el título exacto)
+        const safeKey = vf.content?.tmdbId || vf.content?.title || 'unknown';
+        
+        // Agrupamos usando "archivo_huella"
+        const groupKey = `${fileName}_${safeKey}`;
         
         if (!groups[groupKey]) groups[groupKey] = [];
         groups[groupKey].push(vf);
