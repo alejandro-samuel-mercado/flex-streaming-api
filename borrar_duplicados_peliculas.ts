@@ -10,19 +10,17 @@ async function removeDuplicates() {
         include: { content: true }
     });
 
-    // 2. Agrupar por nombre exacto del archivo + TMDB ID (A prueba de balas)
+    // 2. Agrupar EXCLUSIVAMENTE por TMDB ID (ignorando el nombre de archivo)
     const groups: Record<string, typeof videoFiles> = {};
     for (const vf of videoFiles) {
-        if (!vf.originalPath) continue;
+        if (!vf.content) continue;
         
-        // Extraemos solo el nombre del archivo (ej: "con amor.mp4")
-        const fileName = vf.originalPath.split('/').pop()?.toLowerCase() || '';
+        const tmdbId = vf.content.tmdbId;
+        // ¡SUPER IMPORTANTE! Si no tiene TMDB ID, lo ignoramos por completo
+        // Así evitamos el desastre de agrupar películas distintas como "desconocidas"
+        if (!tmdbId || tmdbId.trim() === '' || tmdbId === 'null') continue;
         
-        // La huella digital única (si no tiene TMDB ID, usamos el título exacto)
-        const safeKey = vf.content?.tmdbId || vf.content?.title || 'unknown';
-        
-        // Agrupamos usando "archivo_huella"
-        const groupKey = `${fileName}_${safeKey}`;
+        const groupKey = tmdbId;
         
         if (!groups[groupKey]) groups[groupKey] = [];
         groups[groupKey].push(vf);
