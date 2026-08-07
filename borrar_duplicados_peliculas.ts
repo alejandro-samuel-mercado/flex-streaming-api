@@ -33,8 +33,18 @@ async function removeDuplicates() {
             console.log(`\n⚠️  Encontrado archivo duplicado: ${files[0].originalPath}`);
             console.log(`   Tiene ${files.length} registros en la base de datos.`);
 
-            // Ordenar por fecha de creación (el más antiguo primero)
-            files.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+            // Ordenar para asegurar que conservamos el correcto
+            files.sort((a, b) => {
+                // 1. Preferir borrar los que estén PENDING
+                const aIsPending = a.content?.status === 'PENDING';
+                const bIsPending = b.content?.status === 'PENDING';
+                
+                if (aIsPending && !bIsPending) return 1; // PENDING va al final (será borrado)
+                if (!aIsPending && bIsPending) return -1; // PENDING va al final (será borrado)
+                
+                // 2. Si ambos son iguales, preferimos conservar el más antiguo
+                return a.createdAt.getTime() - b.createdAt.getTime();
+            });
 
             // Nos quedamos con el más antiguo (el original)
             const original = files[0];
