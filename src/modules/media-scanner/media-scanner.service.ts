@@ -1146,25 +1146,31 @@ export class MediaScannerService {
       return { filePath, fileName, success: true, contentId, tmdbMatch };
     }
 
-    // Create or Update VideoFile (UPSERT) to prevent Unique Constraint crashes 
-    // if the file was previously mis-scanned as a MOVIE
-    const videoFile = await prisma.videoFile.upsert({
-      where: { originalPath: filePath },
-      update: {
-        contentId: null,
-        episodeId: episodeRecord.id,
-        type: 'EPISODE'
-      },
-      create: {
-        contentId: null,
-        episodeId: episodeRecord.id,
-        type: 'EPISODE',
-        originalPath: filePath,
-        status: 'QUEUED',
-        fileSize: BigInt(fs.statSync(filePath).size),
-        sourceNode: env.WORKER_MODE || 'ALL'
-      }
-    });
+    // Manual Upsert: Find first, then update or create to avoid Prisma client unique constraint errors
+    let videoFile = await prisma.videoFile.findFirst({ where: { originalPath: filePath } });
+
+    if (videoFile) {
+        videoFile = await prisma.videoFile.update({
+            where: { id: videoFile.id },
+            data: {
+                contentId: null,
+                episodeId: episodeRecord.id,
+                type: 'EPISODE'
+            }
+        });
+    } else {
+        videoFile = await prisma.videoFile.create({
+            data: {
+                contentId: null,
+                episodeId: episodeRecord.id,
+                type: 'EPISODE',
+                originalPath: filePath,
+                status: 'QUEUED',
+                fileSize: BigInt(fs.statSync(filePath).size),
+                sourceNode: env.WORKER_MODE || 'ALL'
+            }
+        });
+    }
 
     if (videoFile.status === 'QUEUED' && !videoFile.processingJobId) {
         const job = await addVideoJob({
