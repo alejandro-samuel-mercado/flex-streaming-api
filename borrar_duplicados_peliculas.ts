@@ -10,13 +10,21 @@ async function removeDuplicates() {
         include: { content: true }
     });
 
-    // 2. Agrupar por ruta original
+    // 2. Agrupar por nombre de archivo Y película (para detectar copias en distintas carpetas)
     const groups: Record<string, typeof videoFiles> = {};
     for (const vf of videoFiles) {
         if (!vf.originalPath) continue;
-        const pathLower = vf.originalPath.toLowerCase(); // Case-insensitive grouping
-        if (!groups[pathLower]) groups[pathLower] = [];
-        groups[pathLower].push(vf);
+        
+        // Extraemos solo el nombre del archivo (ej: "con amor.mp4")
+        const fileName = vf.originalPath.split('/').pop()?.toLowerCase() || '';
+        
+        // Usamos el TMDB ID o el título como seguro para no borrar películas distintas que se llamen "video.mp4"
+        const safeKey = vf.content?.tmdbId || vf.content?.title || 'unknown';
+        
+        const groupKey = `${fileName}_${safeKey}`;
+        
+        if (!groups[groupKey]) groups[groupKey] = [];
+        groups[groupKey].push(vf);
     }
 
     let deletedCount = 0;
