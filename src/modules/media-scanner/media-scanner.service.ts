@@ -845,7 +845,7 @@ export class MediaScannerService {
             orderBy: { isPinned: 'desc' }
          });
          if (existing) {
-            await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
+            await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null } });
          }
       }
 
@@ -1204,7 +1204,7 @@ export class MediaScannerService {
               orderBy: { isPinned: 'desc' }
            });
            if (existing) {
-              await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null, status: 'PENDING' } });
+              await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null } });
            }
         }
 
@@ -1226,7 +1226,7 @@ export class MediaScannerService {
                    orderBy: { isPinned: 'desc' }
                 });
                 if (existingByImdb) {
-                    await prisma.content.update({ where: { id: existingByImdb.id }, data: { deletedAt: null, status: 'PENDING' } });
+                    await prisma.content.update({ where: { id: existingByImdb.id }, data: { deletedAt: null } });
                 }
             }
 
@@ -1399,7 +1399,7 @@ export class MediaScannerService {
         const existingContent = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
         if (existingContent) {
           if (existingContent.deletedAt) {
-            await prisma.content.update({ where: { id: existingContent.id }, data: { deletedAt: null, status: 'PENDING' } });
+            await prisma.content.update({ where: { id: existingContent.id }, data: { deletedAt: null } });
           }
           return existingContent.id;
         } else {
