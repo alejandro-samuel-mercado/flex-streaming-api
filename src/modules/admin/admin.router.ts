@@ -28,7 +28,8 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
             recentContent,
             processingVideos,
             topContent,
-            recentActivity
+            recentActivity,
+            pendingRequests
         ] = await Promise.all([
             prisma.user.count({ where: { deletedAt: null } }),
             prisma.videoFile.count({ where: { status: 'COMPLETED' } }), // Cuenta los videos/capítulos subidos y procesados
@@ -58,6 +59,15 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
                     content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } },
                     episode: { include: { season: { include: { content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } } } } } }
                 }
+            }),
+            prisma.contentRequest.findMany({
+                where: { status: 'PENDING' },
+                orderBy: { createdAt: 'desc' },
+                take: 5,
+                include: {
+                    user: { select: { name: true, username: true } },
+                    content: { select: { title: true } }
+                }
             })
         ]);
 
@@ -80,6 +90,15 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
             };
         });
 
+        const requestLogs = pendingRequests.map(r => ({
+            name: `${r.type === 'REQUEST' ? 'Solicitud' : 'Reporte'} de ${r.user?.name || r.user?.username}`,
+            status: 'PENDING',
+            time: r.createdAt.toISOString(),
+            type: 'CONTENT_REQUEST'
+        }));
+
+        const allActivity = [...activityLogs, ...requestLogs].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
+
         ok(res, {
             kpis: {
                 totalUsers,
@@ -95,7 +114,7 @@ adminRouter.get('/dashboard', (async (_req: AuthenticatedRequest, res: Response,
                 views: c.viewCount,
                 rating: c.rating
             })),
-            activity: activityLogs
+            activity: allActivity
         });
     } catch (err) { next(err); }
 }) as RequestHandler);

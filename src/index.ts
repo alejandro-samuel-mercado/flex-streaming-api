@@ -45,6 +45,7 @@ import { resellerRouter } from './modules/reseller/reseller.router';
 import { subscriptionPlansRouter } from './modules/subscription-plans/subscription-plans.router';
 import { creditPackagesRouter } from './modules/credit-packages/credit-packages.router';
 import { endUsersRouter } from './modules/end-users/end-users.router';
+import { requestsRouter } from './modules/requests/requests.router';
 import { tmdbRouter } from './modules/admin/tmdb.router';
 import { mediaScannerRouter } from './modules/media-scanner/media-scanner.router';
 import { backupRouter } from './modules/backup/backup.router';
@@ -260,6 +261,7 @@ app.use('/api/reseller', apiLimiter, resellerRouter);
 app.use('/api/subscription-plans', apiLimiter, subscriptionPlansRouter);
 app.use('/api/credit-packages', apiLimiter, creditPackagesRouter);
 app.use('/api/end-users', apiLimiter, endUsersRouter);
+app.use('/api/requests', apiLimiter, requestsRouter);
 
 // Health check
 app.get('/health', (_req, res) => {
