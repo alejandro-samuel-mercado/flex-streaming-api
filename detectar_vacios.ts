@@ -60,9 +60,9 @@ async function main() {
 
     if (missingContentIds.size > 0) {
         console.log('\n📝 Actualizando base de datos...');
-        await prisma.content.updateMany({
-            where: { id: { in: Array.from(missingContentIds) } },
-            data: { hasMissingFiles: true }
+        await prisma.$executeRawUnsafe(`UPDATE "Content" SET "hasMissingFiles" = true WHERE id IN (${Array.from(missingContentIds).map(id => `'${id}'`).join(",")})`); // await prisma.content.updateMany({
+            // where: { id: { in: Array.from(missingContentIds) } },
+            // data: { hasMissingFiles: true }
         });
         console.log('✅ Base de datos actualizada. Ahora puedes verlos en el panel.');
     } else {
