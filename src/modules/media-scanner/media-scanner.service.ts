@@ -816,9 +816,26 @@ export class MediaScannerService {
    */
   private static async _importHLSMovie(folderPath: string, folderName: string, m3u8Url: string): Promise<ImportResult> {
     const cleanName = this.cleanFileName(folderName);
-    let tmdbResult;
 
-    // Check if the folder name has a TMDB ID
+    // FIX: Check if this physical folder is already registered in the DB!
+    // If we don't check this, renaming a movie in the panel causes the scanner to not find it by title/TMDB,
+    // which results in creating a zombie duplicate movie and crashing on the VideoFile creation.
+    let existingVideo = await prisma.videoFile.findFirst({
+      where: { originalPath: { equals: folderPath, mode: 'insensitive' } },
+      include: { content: true }
+    });
+
+    if (existingVideo) {
+      if (existingVideo.type === 'MOVIE' && (!existingVideo.content || existingVideo.content.deletedAt !== null)) {
+         console.log(`[MediaScanner] 🗑️ Limpiando registro de video HLS huérfano (película eliminada o sin enlazar) para re-escanearlo: ${folderName}`);
+         await prisma.videoFile.delete({ where: { id: existingVideo.id } });
+      } else {
+         console.log(`⏭️  [MediaScanner] Skipping HLS movie "${folderName}" — already registered.`);
+         return { filePath: folderPath, fileName: folderName, success: true, contentId: existingVideo.contentId!, tmdbMatch: true };
+      }
+    }
+
+    let tmdbResult;
     const explicitTmdbId = this.extractTmdbId(folderName);
 
     if (explicitTmdbId) {
