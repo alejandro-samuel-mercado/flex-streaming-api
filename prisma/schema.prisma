@@ -101,7 +101,7 @@ enum CommentStatus {
 
 model User {
   id            String    @id @default(cuid())
-  phone         String    @unique
+  phone         String?   @unique
   username      String?   @unique
   passwordHash  String?
   name          String?
