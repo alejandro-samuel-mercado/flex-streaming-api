@@ -159,7 +159,10 @@ contentRouter.post('/:id/rescan', authenticate as RequestHandler, requireRole('A
         }
     });
 
-    if (!content) return res.status(404).json({ success: false, error: 'Content not found' });
+    if (!content) {
+        res.status(404).json({ success: false, error: 'Content not found' });
+        return;
+    }
 
     const videoFilesToDelete: any[] = [];
     if (content.type === 'MOVIE') {
