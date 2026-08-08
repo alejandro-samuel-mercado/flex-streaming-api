@@ -22,21 +22,25 @@ requestsRouter.get('/tmdb-search', (async (req, res, next) => {
     const movies = await TMDBService.searchWithFallback(q, 'es-ES', 'movie');
     const series = await TMDBService.searchWithFallback(q, 'es-ES', 'tv');
     
-    const results = [];
-    if (movies.bestMatch && movies.bestMatch.id) {
-       results.push({
-         tmdbId: String(movies.bestMatch.id),
-         title: movies.bestMatch.title || movies.bestMatch.name,
-         poster: movies.bestMatch.poster_path ? `https://image.tmdb.org/t/p/w500${movies.bestMatch.poster_path}` : null,
-         type: 'movie'
+    const results: any[] = [];
+    if (movies.results && movies.results.length > 0) {
+       movies.results.forEach(m => {
+          results.push({
+            tmdbId: String(m.id),
+            title: m.title || m.name,
+            poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null,
+            type: 'movie'
+          });
        });
     }
-    if (series.bestMatch && series.bestMatch.id) {
-       results.push({
-         tmdbId: String(series.bestMatch.id),
-         title: series.bestMatch.name || series.bestMatch.title,
-         poster: series.bestMatch.poster_path ? `https://image.tmdb.org/t/p/w500${series.bestMatch.poster_path}` : null,
-         type: 'tv'
+    if (series.results && series.results.length > 0) {
+       series.results.forEach(s => {
+          results.push({
+            tmdbId: String(s.id),
+            title: s.name || s.title,
+            poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : null,
+            type: 'tv'
+          });
        });
     }
     
@@ -64,7 +68,7 @@ requestsRouter.get('/db-search', (async (req, res, next) => {
            where: { type: 'POSTER' }
          }
       },
-      take: 10
+      take: 50
     });
     
     const results = contents.map(c => ({
