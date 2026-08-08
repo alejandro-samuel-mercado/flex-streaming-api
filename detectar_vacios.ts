@@ -5,12 +5,15 @@ import path from 'path';
 
 const prisma = new PrismaClient();
 
-// Rutas base que este servidor puede verificar localmente
-const LOCAL_PATHS = [
+// Rutas base posibles. Filtramos dinámicamente solo las que existan físicamente en ESTE servidor.
+const POSSIBLE_PATHS = [
     '/home/media/peliculas',
     '/home/media/series',
     '/home/peliplus_gran_disco/videos_subidos'
 ];
+const LOCAL_PATHS = POSSIBLE_PATHS.filter(p => {
+    try { return fs.statSync(p).isDirectory(); } catch { return false; }
+});
 
 function isLocalPath(filePath: string): boolean {
     if (!filePath) return false;
@@ -30,7 +33,10 @@ async function main() {
     let totalChecked = 0;
     let totalMissing = 0;
 
-    for (const vf of allVideos) {
+    for (let i = 0; i < allVideos.length; i++) {
+        const vf = allVideos[i];
+        if (i % 1000 === 0) console.log(`   ...procesando ${i} de ${allVideos.length} videos`);
+        
         if (vf.status !== 'COMPLETED' && vf.status !== 'READY') continue;
 
         const p = vf.hlsPath || vf.originalPath;
