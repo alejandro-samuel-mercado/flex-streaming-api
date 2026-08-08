@@ -884,15 +884,10 @@ export class MediaScannerService {
             return { filePath: folderPath, fileName: folderName, success: true, tmdbMatch: true };
         }
 
-        // 🛡️ GUARDIA CRÍTICA: Si el contenido está ACTIVO y FIJADO, NUNCA crear un nuevo VideoFile.
-        // El usuario lo editó manualmente y debemos respetar eso.
-        if (existing.isPinned && existing.status === 'ACTIVE') {
-            console.log(`📌 [MediaScanner] Skipping "${folderName}" — content is ACTIVE+PINNED. Manual edits are protected.`);
-            return { filePath: folderPath, fileName: folderName, success: true, contentId: existing.id, tmdbMatch: true };
-        }
-
+        // Si el contenido está fijado pero le falta el VideoFile (ej: después de re-escanear),
+        // SÍ se permite crear el VideoFile. Solo protegemos los METADATOS del Content, no el video.
         if (existing.isPinned) {
-            console.log(`📌 [MediaScanner] Content "${folderName}" is PINNED, restoring VideoFile link...`);
+            console.log(`📌 [MediaScanner] Content "${folderName}" is PINNED — restoring missing VideoFile link (metadata untouched).`);
         }
       } else {
         const lockKey = `tmdb-${match.id}`;
