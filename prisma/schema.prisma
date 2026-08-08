@@ -132,7 +132,7 @@ model User {
   endUserAccount      EndUserAccount?
 
   @@index([phone])
-  @@map("nexo_users")
+  @@map("users")
 }
 
 model Profile {
@@ -155,7 +155,7 @@ model Profile {
   comments      Comment[]
 
   @@index([userId])
-  @@map("nexo_profiles")
+  @@map("profiles")
 }
 
 model RefreshToken {
@@ -172,7 +172,7 @@ model RefreshToken {
   @@index([token])
   @@index([userId])
   @@index([endUserAccountId])
-  @@map("nexo_refresh_tokens")
+  @@map("refresh_tokens")
 }
 
 // ─── PLANS & MEMBERSHIPS ─────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ model Plan {
 
   memberships UserMembership[]
 
-  @@map("nexo_plans")
+  @@map("plans")
 }
 
 model UserMembership {
@@ -210,7 +210,7 @@ model UserMembership {
   plan Plan @relation(fields: [planId], references: [id])
 
   @@index([userId])
-  @@map("nexo_user_memberships")
+  @@map("user_memberships")
 }
 
 // ─── PLATFORMS (MAGISTV STYLE) ────────────────────────────────────────────────
@@ -226,7 +226,7 @@ model Platform {
 
   contents    Content[]
 
-  @@map("nexo_platforms")
+  @@map("platforms")
 }
 
 // ─── CONTENT (FILMS, SERIES, DOCUMENTARIES...) ───────────────────────────────
@@ -293,7 +293,7 @@ model Content {
   @@index([slug])
   @@index([featured])
   @@index([status])
-  @@map("nexo_contents")
+  @@map("contents")
 }
 
 model ContentTranslation {
@@ -308,7 +308,7 @@ model ContentTranslation {
 
   @@unique([contentId, language])
   @@index([contentId])
-  @@map("nexo_content_translations")
+  @@map("content_translations")
 }
 
 // ─── VIDEO FILES & HLS PIPELINE ──────────────────────────────────────────────
@@ -341,7 +341,7 @@ model VideoFile {
   @@index([episodeId])
   @@index([status])
   @@index([sourceNode])
-  @@map("nexo_video_files")
+  @@map("video_files")
 }
 
 model VideoQuality {
@@ -357,7 +357,7 @@ model VideoQuality {
   videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
 
   @@index([videoFileId])
-  @@map("nexo_video_qualities")
+  @@map("video_qualities")
 }
 
 model AudioTrack {
@@ -372,7 +372,7 @@ model AudioTrack {
   videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
 
   @@index([videoFileId])
-  @@map("nexo_audio_tracks")
+  @@map("audio_tracks")
 }
 
 model SubtitleTrack {
@@ -388,7 +388,7 @@ model SubtitleTrack {
   videoFile VideoFile @relation(fields: [videoFileId], references: [id], onDelete: Cascade)
 
   @@index([videoFileId])
-  @@map("nexo_subtitle_tracks")
+  @@map("subtitle_tracks")
 }
 
 // ─── SERIES, SEASONS, EPISODES ───────────────────────────────────────────────
@@ -406,7 +406,7 @@ model Season {
   episodes     Episode[]
 
   @@unique([contentId, number])
-  @@map("nexo_seasons")
+  @@map("seasons")
 }
 
 model SeasonTranslation {
@@ -419,7 +419,7 @@ model SeasonTranslation {
   season Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
 
   @@unique([seasonId, language])
-  @@map("nexo_season_translations")
+  @@map("season_translations")
 }
 
 model Episode {
@@ -436,7 +436,7 @@ model Episode {
   watchHistory WatchHistory[]
 
   @@unique([seasonId, number])
-  @@map("nexo_episodes")
+  @@map("episodes")
 }
 
 model EpisodeTranslation {
@@ -449,7 +449,7 @@ model EpisodeTranslation {
   episode Episode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
 
   @@unique([episodeId, language])
-  @@map("nexo_episode_translations")
+  @@map("episode_translations")
 }
 
 // ─── CATEGORIES, GENRES, TAGS ────────────────────────────────────────────────
@@ -462,7 +462,7 @@ model Genre {
 
   contents ContentGenre[]
 
-  @@map("nexo_genres")
+  @@map("genres")
 }
 
 model ContentGenre {
@@ -473,7 +473,7 @@ model ContentGenre {
   genre   Genre   @relation(fields: [genreId], references: [id], onDelete: Cascade)
 
   @@id([contentId, genreId])
-  @@map("nexo_content_genres")
+  @@map("content_genres")
 }
 
 model Tag {
@@ -483,7 +483,7 @@ model Tag {
 
   contents ContentTag[]
 
-  @@map("nexo_tags")
+  @@map("tags")
 }
 
 model ContentTag {
@@ -494,7 +494,7 @@ model ContentTag {
   tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([contentId, tagId])
-  @@map("nexo_content_tags")
+  @@map("content_tags")
 }
 
 model AgeRating {
@@ -503,7 +503,7 @@ model AgeRating {
   label    String
   contents Content[]
 
-  @@map("nexo_age_ratings")
+  @@map("age_ratings")
 }
 
 // ─── ACTORS & DIRECTORS ──────────────────────────────────────────────────────
@@ -522,7 +522,7 @@ model Actor {
   contents ContentActor[]
 
   @@index([name])
-  @@map("nexo_actors")
+  @@map("actors")
 }
 
 model Director {
@@ -539,7 +539,7 @@ model Director {
   contents ContentDirector[]
 
   @@index([name])
-  @@map("nexo_directors")
+  @@map("directors")
 }
 
 model ContentActor {
@@ -552,7 +552,7 @@ model ContentActor {
   actor   Actor   @relation(fields: [actorId], references: [id], onDelete: Cascade)
 
   @@id([contentId, actorId])
-  @@map("nexo_content_actors")
+  @@map("content_actors")
 }
 
 model ContentDirector {
@@ -563,7 +563,7 @@ model ContentDirector {
   director Director @relation(fields: [directorId], references: [id], onDelete: Cascade)
 
   @@id([contentId, directorId])
-  @@map("nexo_content_directors")
+  @@map("content_directors")
 }
 
 // ─── THUMBNAILS ──────────────────────────────────────────────────────────────
@@ -581,7 +581,7 @@ model Thumbnail {
   episode Episode? @relation(fields: [episodeId], references: [id])
 
   @@unique([contentId, type])
-  @@map("nexo_thumbnails")
+  @@map("thumbnails")
 }
 
 // ─── USER ACTIVITY ───────────────────────────────────────────────────────────
@@ -615,7 +615,7 @@ model WatchHistory {
   @@unique([profileId, contentId, episodeId])
   @@index([profileId])
   @@index([updatedAt])
-  @@map("nexo_watch_history")
+  @@map("watch_history")
 }
 
 model WatchSession {
@@ -633,7 +633,7 @@ model WatchSession {
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId])
-  @@map("nexo_watch_sessions")
+  @@map("watch_sessions")
 }
 
 model Favorite {
@@ -645,7 +645,7 @@ model Favorite {
   content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
   @@id([profileId, contentId])
-  @@map("nexo_favorites")
+  @@map("favorites")
 }
 
 model MyList {
@@ -657,7 +657,7 @@ model MyList {
   content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
   @@id([profileId, contentId])
-  @@map("nexo_my_list")
+  @@map("my_list")
 }
 
 // ─── REVIEWS & COMMENTS ─────────────────────────────────────────────────────
@@ -684,7 +684,7 @@ model Review {
 
   @@unique([profileId, contentId, parentId])
   @@index([contentId])
-  @@map("nexo_reviews")
+  @@map("reviews")
 }
 
 model Comment {
@@ -703,7 +703,7 @@ model Comment {
   replies Comment[] @relation("CommentReplies")
 
   @@index([contentId])
-  @@map("nexo_comments")
+  @@map("comments")
 }
 
 // ─── RECOMMENDATIONS ─────────────────────────────────────────────────────────
@@ -717,7 +717,7 @@ model RecommendationItem {
 
   content Content @relation(fields: [contentId], references: [id])
 
-  @@map("nexo_recommendation_items")
+  @@map("recommendation_items")
 }
 
 // ─── RENTALS ─────────────────────────────────────────────────────────────────
@@ -736,7 +736,7 @@ model Rental {
 
   @@index([userId])
   @@index([contentId])
-  @@map("nexo_rentals")
+  @@map("rentals")
 }
 
 // ─── ADVERTISING ─────────────────────────────────────────────────────────────
@@ -757,7 +757,7 @@ model Ad {
 
   targets AdTarget[]
 
-  @@map("nexo_ads")
+  @@map("ads")
 }
 
 model AdTarget {
@@ -768,7 +768,7 @@ model AdTarget {
   content Content @relation(fields: [contentId], references: [id], onDelete: Cascade)
 
   @@id([adId, contentId])
-  @@map("nexo_ad_targets")
+  @@map("ad_targets")
 }
 
 // ─── SITE CONFIG ─────────────────────────────────────────────────────────────
@@ -778,7 +778,7 @@ model SiteConfig {
   value     String
   updatedAt DateTime @updatedAt
 
-  @@map("nexo_site_config")
+  @@map("site_config")
 }
 
 // ─── UPLOADS ─────────────────────────────────────────────────────────────────
@@ -793,7 +793,7 @@ model Upload {
   uploadedBy   String?
   createdAt    DateTime @default(now())
 
-  @@map("nexo_uploads")
+  @@map("uploads")
 }
 
 // ─── RESELLER SYSTEM ─────────────────────────────────────────────────────────
@@ -848,7 +848,7 @@ model SubscriptionPlan {
   endUserAccounts EndUserAccount[]
   planHistory     EndUserPlanHistory[]
 
-  @@map("nexo_subscription_plans")
+  @@map("subscription_plans")
 }
 
 model CreditPackage {
@@ -863,7 +863,7 @@ model CreditPackage {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  @@map("nexo_credit_packages")
+  @@map("credit_packages")
 }
 
 model CreditTransaction {
@@ -883,7 +883,7 @@ model CreditTransaction {
   createdAt       DateTime                @default(now())
 
   @@index([userId])
-  @@map("nexo_credit_transactions")
+  @@map("credit_transactions")
 }
 
 model EndUserAccount {
@@ -921,7 +921,7 @@ model EndUserAccount {
 
   @@index([managedById])
   @@index([status])
-  @@map("nexo_end_user_accounts")
+  @@map("end_user_accounts")
 }
 
 model EndUserPlanHistory {
@@ -936,7 +936,7 @@ model EndUserPlanHistory {
   appliedAt         DateTime        @default(now())
 
   @@index([endUserAccountId])
-  @@map("nexo_end_user_plan_history")
+  @@map("end_user_plan_history")
 }
 
 model DeviceSession {
@@ -961,7 +961,7 @@ model DeviceSession {
   createdAt         DateTime        @default(now())
 
   @@index([endUserAccountId])
-  @@map("nexo_device_sessions")
+  @@map("device_sessions")
 }
 
 // ─── IMPORT REJECTIONS LOG ───────────────────────────────────────────────────
@@ -982,7 +982,7 @@ model RejectedImport {
 
   @@index([serverMode])
   @@index([createdAt])
-  @@map("nexo_rejected_imports")
+  @@map("rejected_imports")
 }
 
 // ─── CONTENT REQUESTS & REPORTS ──────────────────────────────────────────────
@@ -1024,5 +1024,5 @@ model ContentRequest {
   @@index([type])
   @@index([status])
   @@index([userId])
-  @@map("nexo_content_requests")
+  @@map("content_requests")
 }
