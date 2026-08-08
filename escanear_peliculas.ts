@@ -24,10 +24,10 @@ async function run() {
 
     console.log('🔍 Iniciando Escaneo de PELÍCULAS Manual...');
     try {
-        // Escaneamos las peliculas usando el directorio configurado
-        const moviePath = process.env.MEDIA_SCAN_DIRS || '/home/media/peliculas';
+        // La partición vieja (/home/media/peliculas) fue migrada al gran disco.
+        // Solo escaneamos el nuevo destino.
+        const moviePath = process.env.MEDIA_SCAN_DIRS || '/home/peliplus_gran_disco/videos_subidos';
         console.log(`Buscando en directorio: ${moviePath}`);
-
         // scanDirectories(moviePath, seriesPath) -> pasamos undefined a seriesPath
         const files = await MediaScannerService.scanDirectories(moviePath, undefined);
         console.log(`[MediaScanner] Escaneo completo: ${files.length} archivos de películas encontrados.`);

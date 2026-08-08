@@ -173,14 +173,6 @@ export class MediaScannerService {
     if (moviePath && fs.existsSync(moviePath)) {
       const movieFiles: ScannedFile[] = [];
       await this._scanMoviesRecursive(moviePath, movieFiles, emptySet, 0, 2);
-
-      // Fallback para buscar en la carpeta de respaldo (configurada en variables de entorno o por defecto)
-      const fallbackPath = env.FALLBACK_SCAN_PATH || path.join(path.dirname(moviePath), 'videos_subidos');
-      if (fs.existsSync(fallbackPath) && fallbackPath !== moviePath) {
-        console.log(`[MediaScanner] Buscando también en directorio de respaldo: ${fallbackPath}`);
-        await this._scanMoviesRecursive(fallbackPath, movieFiles, emptySet, 0, 2);
-      }
-
       allFiles.push(...movieFiles);
     }
 
@@ -237,13 +229,6 @@ export class MediaScannerService {
       await this._scanSeriesRecursive(dirPath, files, importedPaths, '', 0, 6);
     } else {
       await this._scanMoviesRecursive(dirPath, files, importedPaths, 0, maxDepth);
-      
-      // Fallback para buscar en la carpeta de respaldo
-      const fallbackPath = env.FALLBACK_SCAN_PATH || path.join(path.dirname(dirPath), 'videos_subidos');
-      if (fs.existsSync(fallbackPath) && fallbackPath !== dirPath) {
-        console.log(`[MediaScanner] Buscando también en directorio de respaldo: ${fallbackPath}`);
-        await this._scanMoviesRecursive(fallbackPath, files, importedPaths, 0, maxDepth);
-      }
     }
     files.sort((a, b) => a.fileName.localeCompare(b.fileName));
     return files;
@@ -538,6 +523,7 @@ export class MediaScannerService {
     // Si el script del servidor movió el archivo a otra partición (ej. videos_subidos),
     // el filePath cambia pero el fileName suele ser idéntico. Lo buscamos y actualizamos la ruta.
     if (!existingVideo) {
+      // Búsqueda 1: por nombre de carpeta/archivo al final de la ruta
       existingVideo = await prisma.videoFile.findFirst({
         where: { originalPath: { endsWith: `/${fileName}`, mode: 'insensitive' } },
         include: {
@@ -545,6 +531,28 @@ export class MediaScannerService {
           episode: { include: { season: { include: { content: true } } } }
         }
       });
+
+      // Búsqueda 2 (NUEVA): si el filePath es una CARPETA (peliculas HLS),
+      // buscar cualquier videoFile cuyo contenido ya esté enlazado a ese mismo basePath.
+      // Esto cubre el caso donde el usuario renombró la película en el panel pero
+      // el nombre de carpeta en disco no cambió.
+      if (!existingVideo) {
+        const baseName = path.basename(filePath);
+        existingVideo = await prisma.videoFile.findFirst({
+          where: {
+            originalPath: { contains: baseName, mode: 'insensitive' },
+            status: { not: 'FAILED' }
+          },
+          include: {
+            content: true,
+            episode: { include: { season: { include: { content: true } } } }
+          }
+        });
+        // Sólo usar este match si realmente apunta a un contenido válido activo
+        if (existingVideo && existingVideo.content?.deletedAt !== null) {
+          existingVideo = null;
+        }
+      }
 
       if (existingVideo) {
         console.log(`[MediaScanner] 🚚 Detectado archivo movido. Actualizando ruta en BD:\n   De: ${existingVideo.originalPath}\n   A:  ${filePath}`);
@@ -875,9 +883,16 @@ export class MediaScannerService {
             console.log(`⏭️  [MediaScanner] Skipping "${folderName}" — already has a video file processing or completed.`);
             return { filePath: folderPath, fileName: folderName, success: true, tmdbMatch: true };
         }
-        
+
+        // 🛡️ GUARDIA CRÍTICA: Si el contenido está ACTIVO y FIJADO, NUNCA crear un nuevo VideoFile.
+        // El usuario lo editó manualmente y debemos respetar eso.
+        if (existing.isPinned && existing.status === 'ACTIVE') {
+            console.log(`📌 [MediaScanner] Skipping "${folderName}" — content is ACTIVE+PINNED. Manual edits are protected.`);
+            return { filePath: folderPath, fileName: folderName, success: true, contentId: existing.id, tmdbMatch: true };
+        }
+
         if (existing.isPinned) {
-            console.log(`📌 [MediaScanner] Content "${folderName}" is PINNED, but missing VideoFile. Restoring VideoFile link...`);
+            console.log(`📌 [MediaScanner] Content "${folderName}" is PINNED, restoring VideoFile link...`);
         }
       } else {
         const lockKey = `tmdb-${match.id}`;
