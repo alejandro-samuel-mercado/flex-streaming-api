@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { prisma } from '../shared/config/prisma';
+import { generateSignedUrl } from '../services/token.service';
 
 export class FileIntegrityWorker {
     private static interval: NodeJS.Timeout | null = null;
@@ -122,32 +123,41 @@ export class FileIntegrityWorker {
             if (vf.originalPath && fs.existsSync(vf.originalPath)) return true;
 
             // 2. Chequeo remoto vía HTTP (Porque los workers tienen sus propios discos)
-            if (vf.masterPlaylist) {
-                let url = vf.masterPlaylist;
-                if (!url.startsWith('http')) {
-                    if (vf.sourceNode === 'MOVIES') {
-                        url = 'https://peliculas-streamflex.unixxtech.online' + (url.startsWith('/') ? '' : '/') + url;
-                    } else if (vf.sourceNode === 'SERIES') {
-                        url = 'https://series-streamflex.unixxtech.online' + (url.startsWith('/') ? '' : '/') + url;
-                    } else {
-                        url = 'https://api-streamflex.unixxtech.online' + (url.startsWith('/') ? '' : '/') + url;
-                    }
-                }
-                
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 5000);
-                    const res = await fetch(url, { method: 'HEAD', signal: controller.signal as any });
-                    clearTimeout(timeout);
-                    if (res.ok) return true;
-                } catch (e) {
-                    // Si hay error de red (worker caído, timeout), asumimos true para no generar falsos positivos.
-                    // Solo marcamos como fallido si responde explícitamente 404.
-                    return true;
-                }
+            let baseUrl = '';
+            if (vf.sourceNode === 'MOVIES') {
+                baseUrl = 'https://peliculas-streamflex.unixxtech.online';
+            } else if (vf.sourceNode === 'SERIES') {
+                baseUrl = 'https://series-streamflex.unixxtech.online';
+            } else {
+                baseUrl = 'https://api-streamflex.unixxtech.online';
             }
             
-            return false; // Si responde 404 o no tiene url, entonces sí falta el archivo.
+            let filename = 'master.m3u8';
+            if (vf.masterPlaylist) {
+                filename = vf.masterPlaylist.split('/').pop() || 'master.m3u8';
+            }
+
+            // Generamos un token válido para acceder al endpoint (como hace el reproductor)
+            const token = generateSignedUrl(vf.id, '127.0.0.1', 60);
+            const url = `${baseUrl}/api/stream/hls/${vf.id}/${filename}?token=${token}`;
+            
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 5000);
+                const res = await fetch(url, { method: 'HEAD', signal: controller.signal as any });
+                clearTimeout(timeout);
+                // Si el worker responde 200 (OK) o 206 (Partial Content), el archivo existe y es accesible
+                if (res.ok || res.status === 206) return true;
+                
+                // Si responde explícitamente 404, entonces sí falta el archivo.
+                if (res.status === 404) return false;
+
+                // Si responde otro error (ej. 502 Bad Gateway), asumimos true para no borrarlo por accidente
+                return true;
+            } catch (e) {
+                // Si hay error de red (worker caído, timeout), asumimos true para no generar falsos positivos.
+                return true;
+            }
         }
         
         // Si está en QUEUED o PROCESSING, el originalPath debe existir para poder procesarse
