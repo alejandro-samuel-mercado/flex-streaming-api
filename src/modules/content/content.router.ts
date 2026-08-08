@@ -28,6 +28,7 @@ const ContentFiltersSchema = z.object({
   sort: z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
   lang: z.string().default('es'),
   incomplete: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
+  hasMissingFiles: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
 });
 
 const ContentBulkActionSchema = z.object({
@@ -141,6 +142,50 @@ contentRouter.delete('/episode/:episodeId', authenticate as RequestHandler, requ
     await prisma.episode.delete({ where: { id: episodeId } });
 
     ok(res, { deleted: true });
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
+contentRouter.post('/:id/rescan', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const contentId = req.params.id;
+    const fs = await import('fs');
+    
+    // Buscar todos los video files asociados a este contenido (directamente o a través de episodios)
+    const content = await prisma.content.findUnique({
+        where: { id: contentId },
+        include: {
+            videoFiles: true,
+            seasons: { include: { episodes: { include: { videoFiles: true } } } }
+        }
+    });
+
+    if (!content) return res.status(404).json({ success: false, error: 'Content not found' });
+
+    const videoFilesToDelete: any[] = [];
+    if (content.type === 'MOVIE') {
+        videoFilesToDelete.push(...content.videoFiles);
+    } else {
+        for (const s of content.seasons) {
+            for (const e of s.episodes) {
+                videoFilesToDelete.push(...e.videoFiles);
+            }
+        }
+    }
+
+    let deletedCount = 0;
+    for (const vf of videoFilesToDelete) {
+        // Solo borramos la carpeta HLS generada. El originalPath (crudo) se mantiene para el re-escaneo.
+        if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+            try { fs.rmSync(vf.hlsPath, { recursive: true, force: true }); } catch (e) { console.error('Error deleting HLS path:', e); }
+        }
+        await prisma.videoFile.delete({ where: { id: vf.id } });
+        deletedCount++;
+    }
+
+    // Actualizar flag para que se note en el panel de una vez
+    await prisma.content.update({ where: { id: contentId }, data: { hasMissingFiles: true } as any });
+
+    ok(res, { success: true, deletedVideoFiles: deletedCount, message: 'Videos eliminados correctamente' });
   } catch (err) { next(err); }
 }) as RequestHandler);
 

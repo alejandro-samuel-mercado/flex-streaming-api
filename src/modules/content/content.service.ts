@@ -50,10 +50,11 @@ export class ContentService {
         lang: string;
         incomplete?: boolean;
         isPublic?: boolean;
+        hasMissingFiles?: boolean;
     }) {
         const {
             page, limit, search, type, status, genreId, tagId,
-            platformId, isFree, featured, sort, incomplete, minYear, isPublic
+            platformId, isFree, featured, sort, incomplete, minYear, isPublic, hasMissingFiles
         } = filters;
 
         const skip = (page - 1) * limit;
@@ -62,6 +63,10 @@ export class ContentService {
         const conditions: Prisma.ContentWhereInput[] = [
             { deletedAt: null }
         ];
+
+        if (hasMissingFiles) {
+            conditions.push({ hasMissingFiles: true } as any);
+        }
 
         if (status === 'WITH_ERRORS') {
             // Filtro especial: series con al menos un episodio fallido o sin videos

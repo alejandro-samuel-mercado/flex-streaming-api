@@ -306,6 +306,10 @@ async function bootstrap() {
         HealthInspectorWorker.start();
         console.log('🩺 Health Inspector worker initialized');
 
+        const { FileIntegrityWorker } = require('./workers/file-integrity.worker');
+        FileIntegrityWorker.start();
+        console.log('🛡️ File Integrity worker initialized');
+
         // Start auto-backup scheduler (reads config from DB)
         startAutoBackupScheduler().catch(err =>
             console.warn('[Backup] Scheduler startup skipped:', err?.message)
