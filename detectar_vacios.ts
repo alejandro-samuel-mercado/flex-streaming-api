@@ -23,19 +23,23 @@ function isLocalPath(filePath: string): boolean {
 async function main() {
     console.log('🔍 Iniciando detección ultra-rápida de Videos Vacíos...');
     
+    console.log('🔄 Limpiando marcas antiguas de la base de datos...');
+    await prisma.$executeRawUnsafe(`UPDATE "contents" SET "hasMissingFiles" = false`);
+
     // 1. Obtener todos los VideoFiles
     const allVideos = await prisma.videoFile.findMany({
         select: { id: true, contentId: true, episodeId: true, originalPath: true, hlsPath: true, status: true }
     });
 
     const missingContentIds = new Set<string>();
+    const missingEpisodeIds = new Set<string>();
 
     let totalChecked = 0;
     let totalMissing = 0;
 
     for (let i = 0; i < allVideos.length; i++) {
         const vf = allVideos[i];
-        if (i % 1000 === 0) console.log(`   ...procesando ${i} de ${allVideos.length} videos`);
+        if (i % 2500 === 0 && i > 0) console.log(`   ...procesando ${i} de ${allVideos.length} videos`);
         
         if (vf.status !== 'COMPLETED' && vf.status !== 'READY') continue;
 
@@ -47,14 +51,22 @@ async function main() {
             totalChecked++;
             if (!fs.existsSync(p)) {
                 totalMissing++;
-                // Si el episodio o película no existe físicamente, marcamos el contenido
+                // Agregamos a las listas, pero resolvemos la DB después para que el loop sea instantáneo
                 if (vf.contentId) missingContentIds.add(vf.contentId);
-                if (vf.episodeId) {
-                    const ep = await prisma.episode.findUnique({ where: { id: vf.episodeId }, select: { season: { select: { contentId: true } } } });
-                    if (ep?.season?.contentId) {
-                        missingContentIds.add(ep.season.contentId);
-                    }
-                }
+                if (vf.episodeId) missingEpisodeIds.add(vf.episodeId);
+            }
+        }
+    }
+
+    // Resolver los Content IDs de los episodios en una sola consulta masiva
+    if (missingEpisodeIds.size > 0) {
+        const episodes = await prisma.episode.findMany({
+            where: { id: { in: Array.from(missingEpisodeIds) } },
+            select: { season: { select: { contentId: true } } }
+        });
+        for (const ep of episodes) {
+            if (ep?.season?.contentId) {
+                missingContentIds.add(ep.season.contentId);
             }
         }
     }
