@@ -1,9 +1,9 @@
 import "dotenv/config";
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
-import path from 'path';
 
 const prisma = new PrismaClient();
+const mode = process.env.WORKER_MODE || 'API';
 
 // Rutas base posibles. Filtramos dinámicamente solo las que existan físicamente en ESTE servidor.
 const POSSIBLE_PATHS = [
@@ -21,10 +21,16 @@ function isLocalPath(filePath: string): boolean {
 }
 
 async function main() {
-    console.log('🔍 Iniciando detección ultra-rápida de Videos Vacíos...');
+    console.log(`🔍 Iniciando detección ultra-rápida de Videos Vacíos para el nodo: ${mode}...`);
     
-    console.log('🔄 Limpiando marcas antiguas de la base de datos...');
-    await prisma.$executeRawUnsafe(`UPDATE "contents" SET "hasMissingFiles" = false`);
+    console.log('🔄 Limpiando marcas antiguas de la base de datos (solo para este tipo de contenido)...');
+    if (mode === 'MOVIES') {
+        await prisma.$executeRawUnsafe(`UPDATE "contents" SET "hasMissingFiles" = false WHERE "type" = 'MOVIE'`);
+    } else if (mode === 'SERIES') {
+        await prisma.$executeRawUnsafe(`UPDATE "contents" SET "hasMissingFiles" = false WHERE "type" != 'MOVIE'`);
+    } else {
+        await prisma.$executeRawUnsafe(`UPDATE "contents" SET "hasMissingFiles" = false`);
+    }
 
     // 1. Obtener todos los VideoFiles
     const allVideos = await prisma.videoFile.findMany({
