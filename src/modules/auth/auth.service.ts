@@ -420,3 +420,25 @@ export async function findOrCreateGoogleUser(googleProfile: {
 
   return { user, accessToken, refreshToken };
 }
+
+export async function changePassword(userId: string, currentPasswordRaw: string, newPasswordRaw: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true },
+  });
+
+  if (!user || !user.passwordHash) {
+    throw new Error('User not found or has no password set');
+  }
+
+  const isValid = await bcrypt.compare(currentPasswordRaw, user.passwordHash);
+  if (!isValid) {
+    throw new Error('La contraseña actual es incorrecta');
+  }
+
+  const newPasswordHash = await bcrypt.hash(newPasswordRaw, 10);
+  await prisma.user.update({
+    where: { id: userId },
+    data: { passwordHash: newPasswordHash },
+  });
+}

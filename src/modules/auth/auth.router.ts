@@ -15,6 +15,7 @@ import {
     forgotPasswordSchema,
     resetPasswordSchema,
     refreshTokenSchema,
+    changePasswordSchema,
 } from './auth.schemas';
 import * as authService from './auth.service';
 
@@ -67,6 +68,29 @@ authRouter.post('/reset-password', async (req: Request, res: Response, next: Nex
         await authService.resetPassword(token, password);
         ok(res, { message: 'Password updated successfully' });
     } catch (err) {
+        next(err);
+    }
+});
+
+authRouter.post('/change-password', authenticate as RequestHandler, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const authReq = req as AuthenticatedRequest;
+        const userId = authReq.user!.id;
+        
+        if (userId.startsWith('VIRTUAL_')) {
+            res.status(403).json({ success: false, error: 'End users cannot change password this way' });
+            return;
+        }
+
+        const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+        
+        await authService.changePassword(userId, currentPassword, newPassword);
+        ok(res, { message: 'Password changed successfully' });
+    } catch (err: any) {
+        if (err.message === 'La contraseña actual es incorrecta') {
+            res.status(400).json({ success: false, error: err.message });
+            return;
+        }
         next(err);
     }
 });
