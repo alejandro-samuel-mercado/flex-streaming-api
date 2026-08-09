@@ -786,6 +786,7 @@ export class MediaScannerService {
         masterPlaylist: '', // Will be updated below
         hlsPath: path.dirname(episode.m3u8Path),
         fileSize: BigInt(0),
+        sourceNode: env.WORKER_MODE || 'ALL',
       }
     });
 

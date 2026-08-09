@@ -52,8 +52,7 @@ export async function register(input: RegisterInput) {
     },
     select: { id: true, phone: true, name: true, role: true },
   });
-
-  const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
+  const { accessToken, refreshToken } = generateTokens(user.id, user.phone || 'no-phone', user.role);
 
   await redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, user.id);
 
