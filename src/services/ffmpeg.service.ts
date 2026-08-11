@@ -127,7 +127,7 @@ export class FFmpegService {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
                         const name = audioStreams[i].tags?.title || `Audio`;
-                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
+                        const safeName = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                         if (i === 0) varStreamMap += ',default:yes';
                     }
@@ -216,7 +216,7 @@ export class FFmpegService {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
                         const name = audioStreams[i].tags?.title || `Audio`;
-                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
+                        const safeName = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
                         if (i === 0) varStreamMap += ',default:yes';
                     }
