@@ -156,7 +156,6 @@ export class ContentService {
 
         // 6. Search filter
         if (search) {
-            // Limpiamos puntuación y separamos por espacios (soporta espacios extra, comas, puntos, etc.)
             const cleanSearchWords = search
                 .replace(/[.,:;!?]/g, ' ')
                 .trim()
@@ -164,29 +163,41 @@ export class ContentService {
                 .filter(w => w.length > 0);
 
             if (cleanSearchWords.length > 0) {
+                const generateAccentVariations = (word: string): string[] => {
+                    const charMap: Record<string, string[]> = {
+                        'a': ['a', 'á'], 'e': ['e', 'é'], 'i': ['i', 'í'], 'o': ['o', 'ó'], 'u': ['u', 'ú'],
+                        'A': ['A', 'Á'], 'E': ['E', 'É'], 'I': ['I', 'Í'], 'O': ['O', 'Ó'], 'U': ['U', 'Ú']
+                    };
+                    let variations = [''];
+                    for (const char of word) {
+                        const mapped = charMap[char.toLowerCase()];
+                        if (mapped) {
+                            const newVars: string[] = [];
+                            for (const v of variations) {
+                                newVars.push(v + char); // keep original case of the base char
+                                newVars.push(v + (char === char.toLowerCase() ? mapped[1] : mapped[1].toUpperCase())); // apply accent matching case
+                            }
+                            variations = newVars;
+                        } else {
+                            for (let i = 0; i < variations.length; i++) {
+                                variations[i] += char;
+                            }
+                        }
+                    }
+                    return Array.from(new Set(variations));
+                };
+
                 const searchConditions = cleanSearchWords.map(word => {
                     const wordWithoutAccents = word.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                    const orConditions: any[] = [
-                        { translations: { some: { title: { contains: word, mode: 'insensitive' } } } },
-                        { translations: { some: { title: { contains: wordWithoutAccents, mode: 'insensitive' } } } }
-                    ];
-
-                    const addVariation = (char: string, accent: string) => {
-                        if (wordWithoutAccents.includes(char)) {
-                            orConditions.push({ translations: { some: { title: { contains: wordWithoutAccents.replace(new RegExp(char, 'g'), accent).replace(new RegExp(char.toUpperCase(), 'g'), accent.toUpperCase()), mode: 'insensitive' } } } });
-                        }
-                    };
-
-                    addVariation('a', 'á');
-                    addVariation('e', 'é');
-                    addVariation('i', 'í');
-                    addVariation('o', 'ó');
-                    addVariation('u', 'ú');
+                    const allVariations = generateAccentVariations(wordWithoutAccents);
+                    
+                    const orConditions = allVariations.map(variation => ({
+                        translations: { some: { title: { contains: variation, mode: 'insensitive' } } }
+                    }));
 
                     return { OR: orConditions };
                 });
 
-                // Todas las palabras que escribió el usuario deben estar en el título, sin importar el orden ni los acentos
                 conditions.push({ AND: searchConditions } as any);
             }
         }
