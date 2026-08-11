@@ -156,9 +156,39 @@ export class ContentService {
 
         // 6. Search filter
         if (search) {
-            conditions.push({
-                translations: { some: { title: { contains: search, mode: 'insensitive' } } }
-            });
+            // Limpiamos puntuación y separamos por espacios (soporta espacios extra, comas, puntos, etc.)
+            const cleanSearchWords = search
+                .replace(/[.,:;!?]/g, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(w => w.length > 0);
+
+            if (cleanSearchWords.length > 0) {
+                const searchConditions = cleanSearchWords.map(word => {
+                    const wordWithoutAccents = word.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    const orConditions: any[] = [
+                        { translations: { some: { title: { contains: word, mode: 'insensitive' } } } },
+                        { translations: { some: { title: { contains: wordWithoutAccents, mode: 'insensitive' } } } }
+                    ];
+
+                    const addVariation = (char: string, accent: string) => {
+                        if (wordWithoutAccents.includes(char)) {
+                            orConditions.push({ translations: { some: { title: { contains: wordWithoutAccents.replace(new RegExp(char, 'g'), accent).replace(new RegExp(char.toUpperCase(), 'g'), accent.toUpperCase()), mode: 'insensitive' } } } });
+                        }
+                    };
+
+                    addVariation('a', 'á');
+                    addVariation('e', 'é');
+                    addVariation('i', 'í');
+                    addVariation('o', 'ó');
+                    addVariation('u', 'ú');
+
+                    return { OR: orConditions };
+                });
+
+                // Todas las palabras que escribió el usuario deben estar en el título, sin importar el orden ni los acentos
+                conditions.push({ AND: searchConditions } as any);
+            }
         }
 
         // 7. Assemble the final where
