@@ -165,8 +165,8 @@ export class ContentService {
             if (cleanSearchWords.length > 0) {
                 const generateAccentVariations = (word: string): string[] => {
                     const charMap: Record<string, string[]> = {
-                        'a': ['a', 'á'], 'e': ['e', 'é'], 'i': ['i', 'í'], 'o': ['o', 'ó'], 'u': ['u', 'ú'],
-                        'A': ['A', 'Á'], 'E': ['E', 'É'], 'I': ['I', 'Í'], 'O': ['O', 'Ó'], 'U': ['U', 'Ú']
+                        'a': ['a', 'á'], 'e': ['e', 'é'], 'i': ['i', 'í'], 'o': ['o', 'ó'], 'u': ['u', 'ú'], 'n': ['n', 'ñ'],
+                        'A': ['A', 'Á'], 'E': ['E', 'É'], 'I': ['I', 'Í'], 'O': ['O', 'Ó'], 'U': ['U', 'Ú'], 'N': ['N', 'Ñ']
                     };
                     let variations = [''];
                     for (const char of word) {
