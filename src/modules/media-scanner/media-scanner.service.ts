@@ -118,29 +118,31 @@ export class MediaScannerService {
   }
 
   static extractTmdbId(fileName: string): number | null {
-    // Quitar extensión para facilitar la búsqueda al final del nombre
-    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+    // Quitar extensión para facilitar la búsqueda
+    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "").trim();
 
     // Patrón 1: "[TMDB-12345]" o "(tmdb 12345)" o "{tmdb_12345}"
     let m = nameWithoutExt.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
     if (m) return parseInt(m[1], 10);
 
-    // Patrón 2: ID al inicio SOLO si está seguido de guión bajo: "12345_nombre"
-    m = nameWithoutExt.match(/^(\d+)_/);
+    // Patrón 2: ID puro ("12345") de 3 o más dígitos
+    if (/^\d{3,}$/.test(nameWithoutExt)) {
+        return parseInt(nameWithoutExt, 10);
+    }
+
+    // Patrón 3: ID al inicio con nombre ("12345 Nombre" o "12345_Nombre" o "12345 - Nombre")
+    // Exigimos 4 o más dígitos para evitar confundir con años o números pequeños como "24"
+    m = nameWithoutExt.match(/^(\d{4,})[_\s-]/);
     if (m) return parseInt(m[1], 10);
 
-    // Patrón 3: ID al final exacto "Nombre - 12345" o "Nombre 12345" (evita años como 1999 o 2026)
+    // Patrón 4: ID al final ("Nombre 12345" o "Nombre_12345")
     m = nameWithoutExt.match(/[_\s-](\d+)$/);
     if (m) {
       const num = parseInt(m[1], 10);
+      // Evitar que detecte años al final como IDs (ej: "Avatar 2026")
       if (!(num >= 1900 && num <= 2100)) {
          return num;
       }
-    }
-    
-    // Patrón 4: "12345" solo números (si tiene 4 o más dígitos para evitar falsos positivos con series como "24")
-    if (/^\d{4,}$/.test(nameWithoutExt)) {
-        return parseInt(nameWithoutExt, 10);
     }
     
     return null;
