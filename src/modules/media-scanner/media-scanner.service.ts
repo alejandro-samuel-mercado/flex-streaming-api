@@ -118,16 +118,19 @@ export class MediaScannerService {
   }
 
   static extractTmdbId(fileName: string): number | null {
+    // Quitar extensión para facilitar la búsqueda al final del nombre
+    const nameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+
     // Patrón 1: "[TMDB-12345]" o "(tmdb 12345)" o "{tmdb_12345}"
-    let m = fileName.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
+    let m = nameWithoutExt.match(/[\[\(\{]tmdb[-_\s]?(\d+)[\]\)\}]/i);
     if (m) return parseInt(m[1], 10);
 
     // Patrón 2: ID al inicio SOLO si está seguido de guión bajo: "12345_nombre"
-    m = fileName.match(/^(\d+)_/);
+    m = nameWithoutExt.match(/^(\d+)_/);
     if (m) return parseInt(m[1], 10);
 
-    // Patrón 3: ID al final exacto "Nombre - 12345" (evita años como 1999 o 2026)
-    m = fileName.match(/[_\s-](\d+)$/);
+    // Patrón 3: ID al final exacto "Nombre - 12345" o "Nombre 12345" (evita años como 1999 o 2026)
+    m = nameWithoutExt.match(/[_\s-](\d+)$/);
     if (m) {
       const num = parseInt(m[1], 10);
       if (!(num >= 1900 && num <= 2100)) {
@@ -136,11 +139,8 @@ export class MediaScannerService {
     }
     
     // Patrón 4: "12345" solo números (si tiene 4 o más dígitos para evitar falsos positivos con series como "24")
-    if (/^\d{4,}$/.test(fileName)) {
-        const num = parseInt(fileName, 10);
-        if (!(num >= 1880 && num <= 2050)) {
-            return num;
-        }
+    if (/^\d{4,}$/.test(nameWithoutExt)) {
+        return parseInt(nameWithoutExt, 10);
     }
     
     return null;
