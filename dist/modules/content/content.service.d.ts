@@ -20,6 +20,7 @@ export declare class ContentService {
         lang: string;
         incomplete?: boolean;
         isPublic?: boolean;
+        hasMissingFiles?: boolean;
     }): Promise<{
         data: ({
             type: import(".prisma/client").$Enums.ContentType;
@@ -376,6 +377,7 @@ export declare class ContentService {
         revenue: bigint | null;
         isAdult: boolean;
         isPinned: boolean;
+        hasMissingFiles: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -642,6 +644,7 @@ export declare class ContentService {
         revenue: bigint | null;
         isAdult: boolean;
         isPinned: boolean;
+        hasMissingFiles: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -777,6 +780,7 @@ export declare class ContentService {
         revenue: bigint | null;
         isAdult: boolean;
         isPinned: boolean;
+        hasMissingFiles: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;
@@ -811,6 +815,7 @@ export declare class ContentService {
         revenue: bigint | null;
         isAdult: boolean;
         isPinned: boolean;
+        hasMissingFiles: boolean;
         subtitleLangs: string[];
         platformId: string | null;
         trailerUrl: string | null;

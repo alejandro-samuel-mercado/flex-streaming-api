@@ -47,6 +47,7 @@ const envSchema = zod_1.z.object({
     STORAGE_NODE_MOVIES_URL: zod_1.z.string().optional(),
     // Media Scanner
     MEDIA_SCAN_DIRS: zod_1.z.string().optional().default(''),
+    FALLBACK_SCAN_PATH: zod_1.z.string().optional(),
 });
 const parsed = envSchema.safeParse(process.env);
 if (!parsed.success) {

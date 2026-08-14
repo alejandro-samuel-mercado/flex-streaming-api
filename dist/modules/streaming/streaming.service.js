@@ -365,6 +365,10 @@ class StreamingService {
                 if (content.includes('AUDIO="audio"') && !content.includes('CODECS=')) {
                     content = content.replace(/AUDIO="audio"/g, 'CODECS="avc1.4d4028,mp4a.40.2",AUDIO="audio"');
                 }
+                // 3b. Inject RESOLUTION if completely missing (Fixes the "0p" bug in frontend)
+                if (content.includes('#EXT-X-STREAM-INF') && !content.includes('RESOLUTION=')) {
+                    content = content.replace(/(#EXT-X-STREAM-INF:.*)/g, '$1,RESOLUTION=1280x720');
+                }
                 // 4. Ensure DEFAULT=YES is present on the first audio track (only when no audioIndex override)
                 if (content.includes('TYPE=AUDIO') && !content.includes('DEFAULT=YES') && audioIndex === null) {
                     content = content.replace(/TYPE=AUDIO(.*?),URI=/i, 'TYPE=AUDIO$1,DEFAULT=YES,AUTOSELECT=YES,URI=');
@@ -431,7 +435,9 @@ class StreamingService {
         }
         else {
             headers['Content-Length'] = fs_1.default.statSync(resolvedPath).size.toString();
-            stream = fs_1.default.createReadStream(resolvedPath);
+            // Aumentamos el highWaterMark a 2MB para optimizar la lectura en discos lentos o de red
+            // y evitar el buffering (stuttering) en videos de alto bitrate.
+            stream = fs_1.default.createReadStream(resolvedPath, { highWaterMark: 2 * 1024 * 1024 });
         }
         return {
             status: 200,
@@ -457,7 +463,7 @@ class StreamingService {
                 return { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` }, stream: null };
             }
             const chunksize = (end - start) + 1;
-            const file = fs_1.default.createReadStream(filePath, { start, end });
+            const file = fs_1.default.createReadStream(filePath, { start, end, highWaterMark: 2 * 1024 * 1024 });
             return {
                 status: 206,
                 headers: {
@@ -475,7 +481,7 @@ class StreamingService {
                 'Content-Length': fileSize.toString(),
                 'Content-Type': 'video/mp4'
             },
-            stream: fs_1.default.createReadStream(filePath)
+            stream: fs_1.default.createReadStream(filePath, { highWaterMark: 2 * 1024 * 1024 })
         };
     }
     /**

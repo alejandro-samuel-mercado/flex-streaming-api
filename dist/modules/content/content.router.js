@@ -62,6 +62,7 @@ const ContentFiltersSchema = zod_1.z.object({
     sort: zod_1.z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),
     lang: zod_1.z.string().default('es'),
     incomplete: zod_1.z.preprocess((v) => v === undefined ? undefined : v === 'true', zod_1.z.boolean().optional()),
+    hasMissingFiles: zod_1.z.preprocess((v) => v === undefined ? undefined : v === 'true', zod_1.z.boolean().optional()),
 });
 const ContentBulkActionSchema = zod_1.z.object({
     action: zod_1.z.enum(['delete', 'changeStatus', 'pin', 'unpin']),
@@ -139,6 +140,63 @@ exports.contentRouter.get('/:id/related', (0, cache_middleware_1.cacheMiddleware
     }
 }));
 // ─── ADMIN ENDPOINTS ─────────────────────────────────────────────────────────
+exports.contentRouter.get('/export/excel', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
+    try {
+        const { type } = req.query;
+        const ExcelJS = require('exceljs');
+        // Fetch all content of this type
+        const data = await prisma_1.prisma.content.findMany({
+            where: {
+                deletedAt: null,
+                ...(type ? { type: type } : {})
+            },
+            include: {
+                genres: { include: { genre: true } }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Contenidos');
+        sheet.columns = [
+            { header: 'ID', key: 'id', width: 30 },
+            { header: 'Título', key: 'title', width: 40 },
+            { header: 'Título Original', key: 'originalTitle', width: 40 },
+            { header: 'Slug', key: 'slug', width: 35 },
+            { header: 'Tipo', key: 'type', width: 15 },
+            { header: 'Estado', key: 'status', width: 15 },
+            { header: 'Año', key: 'releaseYear', width: 10 },
+            { header: 'Duración (min)', key: 'duration', width: 15 },
+            { header: 'Categorías/Géneros', key: 'genres', width: 40 },
+            { header: 'Vistas', key: 'viewCount', width: 15 },
+            { header: 'Calificación', key: 'rating', width: 15 },
+            { header: 'Fecha de Creación', key: 'createdAt', width: 25 },
+        ];
+        data.forEach(item => {
+            sheet.addRow({
+                id: item.id,
+                title: item.title || '',
+                originalTitle: item.originalTitle || '',
+                slug: item.slug || '',
+                type: item.type,
+                status: item.status,
+                releaseYear: item.releaseYear || '',
+                duration: item.duration || '',
+                genres: item.genres.map((g) => g.genre?.name).filter(Boolean).join(', '),
+                viewCount: item.viewCount ? Number(item.viewCount) : 0,
+                rating: item.rating ? Number(item.rating) : 0,
+                createdAt: item.createdAt.toISOString()
+            });
+        });
+        sheet.getRow(1).font = { bold: true };
+        const buffer = await workbook.xlsx.writeBuffer();
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="export_${type || 'todos'}.xlsx"`);
+        res.send(Buffer.from(buffer));
+    }
+    catch (err) {
+        next(err);
+    }
+}));
 exports.contentRouter.post('/', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
     try {
         const data = await content_service_1.ContentService.createContent(req.body);
@@ -157,6 +215,78 @@ exports.contentRouter.put('/:id', auth_middleware_1.authenticate, (0, auth_middl
         }
         const data = await content_service_1.ContentService.updateContent(req.params.id, req.body);
         (0, api_response_1.ok)(res, data);
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.contentRouter.delete('/episode/:episodeId', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
+    try {
+        const episodeId = req.params.episodeId;
+        // Borrar físicamente el HLS si es necesario (opcional)
+        const fs = await Promise.resolve().then(() => __importStar(require('fs')));
+        const videoFiles = await prisma_1.prisma.videoFile.findMany({ where: { episodeId } });
+        for (const vf of videoFiles) {
+            if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+                try {
+                    fs.rmSync(vf.hlsPath, { recursive: true, force: true });
+                }
+                catch (e) { }
+            }
+        }
+        // Borrar los registros
+        await prisma_1.prisma.videoFile.deleteMany({ where: { episodeId } });
+        await prisma_1.prisma.episode.delete({ where: { id: episodeId } });
+        (0, api_response_1.ok)(res, { deleted: true });
+    }
+    catch (err) {
+        next(err);
+    }
+}));
+exports.contentRouter.post('/:id/rescan', auth_middleware_1.authenticate, (0, auth_middleware_1.requireRole)('ADMIN'), (async (req, res, next) => {
+    try {
+        const contentId = req.params.id;
+        const fs = await Promise.resolve().then(() => __importStar(require('fs')));
+        // Buscar todos los video files asociados a este contenido (directamente o a través de episodios)
+        const content = await prisma_1.prisma.content.findUnique({
+            where: { id: contentId },
+            include: {
+                videoFiles: true,
+                seasons: { include: { episodes: { include: { videoFiles: true } } } }
+            }
+        });
+        if (!content) {
+            res.status(404).json({ success: false, error: 'Content not found' });
+            return;
+        }
+        const videoFilesToDelete = [];
+        if (content.type === 'MOVIE') {
+            videoFilesToDelete.push(...content.videoFiles);
+        }
+        else {
+            for (const s of content.seasons) {
+                for (const e of s.episodes) {
+                    videoFilesToDelete.push(...e.videoFiles);
+                }
+            }
+        }
+        let deletedCount = 0;
+        for (const vf of videoFilesToDelete) {
+            // Solo borramos la carpeta HLS generada. El originalPath (crudo) se mantiene para el re-escaneo.
+            if (vf.hlsPath && fs.existsSync(vf.hlsPath)) {
+                try {
+                    fs.rmSync(vf.hlsPath, { recursive: true, force: true });
+                }
+                catch (e) {
+                    console.error('Error deleting HLS path:', e);
+                }
+            }
+            await prisma_1.prisma.videoFile.delete({ where: { id: vf.id } });
+            deletedCount++;
+        }
+        // Actualizar flag para que se note en el panel de una vez
+        await prisma_1.prisma.content.update({ where: { id: contentId }, data: { hasMissingFiles: true } });
+        (0, api_response_1.ok)(res, { success: true, deletedVideoFiles: deletedCount, message: 'Videos eliminados correctamente' });
     }
     catch (err) {
         next(err);

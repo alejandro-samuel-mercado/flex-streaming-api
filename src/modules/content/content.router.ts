@@ -104,6 +104,68 @@ contentRouter.get('/:id/related', cacheMiddleware('catalog'), (async (req, res, 
 
 // ─── ADMIN ENDPOINTS ─────────────────────────────────────────────────────────
 
+contentRouter.get('/export/excel', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const { type } = req.query;
+    const ExcelJS = require('exceljs');
+    
+    // Fetch all content of this type
+    const data = await prisma.content.findMany({
+      where: {
+         deletedAt: null,
+         ...(type ? { type: type as any } : {})
+      },
+      include: {
+         genres: { include: { genre: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Contenidos');
+
+    sheet.columns = [
+      { header: 'ID', key: 'id', width: 30 },
+      { header: 'Título', key: 'title', width: 40 },
+      { header: 'Título Original', key: 'originalTitle', width: 40 },
+      { header: 'Slug', key: 'slug', width: 35 },
+      { header: 'Tipo', key: 'type', width: 15 },
+      { header: 'Estado', key: 'status', width: 15 },
+      { header: 'Año', key: 'releaseYear', width: 10 },
+      { header: 'Duración (min)', key: 'duration', width: 15 },
+      { header: 'Categorías/Géneros', key: 'genres', width: 40 },
+      { header: 'Vistas', key: 'viewCount', width: 15 },
+      { header: 'Calificación', key: 'rating', width: 15 },
+      { header: 'Fecha de Creación', key: 'createdAt', width: 25 },
+    ];
+
+    data.forEach(item => {
+      sheet.addRow({
+        id: item.id,
+        title: item.title || '',
+        originalTitle: item.originalTitle || '',
+        slug: item.slug || '',
+        type: item.type,
+        status: item.status,
+        releaseYear: item.releaseYear || '',
+        duration: item.duration || '',
+        genres: item.genres.map((g: any) => g.genre?.name).filter(Boolean).join(', '),
+        viewCount: item.viewCount ? Number(item.viewCount) : 0,
+        rating: item.rating ? Number(item.rating) : 0,
+        createdAt: item.createdAt.toISOString()
+      });
+    });
+
+    sheet.getRow(1).font = { bold: true };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="export_${type || 'todos'}.xlsx"`);
+    res.send(Buffer.from(buffer));
+  } catch (err) { next(err); }
+}) as RequestHandler);
+
 contentRouter.post('/', authenticate as RequestHandler, requireRole('ADMIN') as RequestHandler, (async (req: AuthenticatedRequest, res, next) => {
   try {
     const data = await ContentService.createContent(req.body);

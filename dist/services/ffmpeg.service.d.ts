@@ -13,7 +13,7 @@ export declare class FFmpegService {
      * SLOW PATH (fallback): Only re-encodes if the source codec is not HLS-compatible
      * (e.g. VP9, AV1, HEVC with incompatible profile, etc.).
      */
-    static generateHLS(inputPath: string, outputFolder: string, onProgress?: (percent: number) => void): Promise<{
+    static generateHLS(inputPath: string, outputFolder: string, onProgress?: (percent: number) => void, forceReencode?: boolean, contentType?: 'MOVIE' | 'EPISODE'): Promise<{
         path: string;
         audioTracks: any[];
     }>;

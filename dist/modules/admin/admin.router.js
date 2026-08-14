@@ -52,7 +52,7 @@ exports.adminRouter.use((0, auth_middleware_1.requireRole)('ADMIN', 'SUPER_VENDO
 // ─── Dashboard KPIs ──────────────────────────────────────────────────────────
 exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
     try {
-        const [totalUsers, totalContent, activeMembers, totalViews, recentContent, processingVideos, topContent, recentActivity] = await Promise.all([
+        const [totalUsers, totalContent, activeMembers, totalViews, recentContent, processingVideos, topContent, recentActivity, pendingRequests] = await Promise.all([
             prisma_1.prisma.user.count({ where: { deletedAt: null } }),
             prisma_1.prisma.videoFile.count({ where: { status: 'COMPLETED' } }), // Cuenta los videos/capítulos subidos y procesados
             prisma_1.prisma.userMembership.count({ where: { isActive: true } }),
@@ -81,6 +81,15 @@ exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
                     content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } },
                     episode: { include: { season: { include: { content: { select: { slug: true, translations: { select: { title: true }, take: 1 } } } } } } }
                 }
+            }),
+            prisma_1.prisma.contentRequest.findMany({
+                where: { status: 'PENDING' },
+                orderBy: { createdAt: 'desc' },
+                take: 5,
+                include: {
+                    user: { select: { name: true, username: true } },
+                    content: { select: { title: true } }
+                }
             })
         ]);
         // Map recentActivity into a generic notification / activity shape
@@ -101,6 +110,13 @@ exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
                 type: 'VIDEO_PROCESSING'
             };
         });
+        const requestLogs = pendingRequests.map(r => ({
+            name: `${r.type === 'REQUEST' ? 'Solicitud' : 'Reporte'} de ${r.user?.name || r.user?.username}`,
+            status: 'PENDING',
+            time: r.createdAt.toISOString(),
+            type: 'CONTENT_REQUEST'
+        }));
+        const allActivity = [...activityLogs, ...requestLogs].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 10);
         (0, api_response_1.ok)(res, {
             kpis: {
                 totalUsers,
@@ -116,7 +132,7 @@ exports.adminRouter.get('/dashboard', (async (_req, res, next) => {
                 views: c.viewCount,
                 rating: c.rating
             })),
-            activity: activityLogs
+            activity: allActivity
         });
     }
     catch (err) {

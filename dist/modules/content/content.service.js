@@ -34,12 +34,15 @@ const CONTENT_LIST_SELECT = {
 };
 class ContentService {
     static async getAllContent(filters) {
-        const { page, limit, search, type, status, genreId, tagId, platformId, isFree, featured, sort, incomplete, minYear, isPublic } = filters;
+        const { page, limit, search, type, status, genreId, tagId, platformId, isFree, featured, sort, incomplete, minYear, isPublic, hasMissingFiles } = filters;
         const skip = (page - 1) * limit;
         // 1. Initialize an empty AND array
         const conditions = [
             { deletedAt: null }
         ];
+        if (hasMissingFiles) {
+            conditions.push({ hasMissingFiles: true });
+        }
         if (status === 'WITH_ERRORS') {
             // Filtro especial: series con al menos un episodio fallido o sin videos
             conditions.push({
@@ -89,22 +92,8 @@ class ContentService {
             });
         }
         // 3. Type condition
-        if (type) {
-            if (type === 'KIDS' || type === 'ANIMATION') {
-                conditions.push({
-                    OR: [
-                        { type: 'ANIMATION' },
-                        { type: 'KIDS' },
-                        { genres: { some: { genre: { name: { contains: 'Animac', mode: 'insensitive' } } } } },
-                        { genres: { some: { genre: { name: { contains: 'Infant', mode: 'insensitive' } } } } },
-                        { genres: { some: { genre: { name: { contains: 'Kids', mode: 'insensitive' } } } } }
-                    ]
-                });
-            }
-            else {
-                conditions.push({ type: type });
-            }
-        }
+        if (type)
+            conditions.push({ type: type });
         // 4. Platform filter - THE IMPORTANT ONE
         if (platformId && platformId !== 'null' && platformId !== 'undefined' && platformId !== '') {
             console.log(`[DEBUG] PLATFORM FILTER DETECTED: "${platformId}"`);
@@ -138,9 +127,46 @@ class ContentService {
         }
         // 6. Search filter
         if (search) {
-            conditions.push({
-                translations: { some: { title: { contains: search, mode: 'insensitive' } } }
-            });
+            const cleanSearchWords = search
+                .replace(/[.,:;!?]/g, ' ')
+                .trim()
+                .split(/\s+/)
+                .filter(w => w.length > 0);
+            if (cleanSearchWords.length > 0) {
+                const generateAccentVariations = (word) => {
+                    const charMap = {
+                        'a': ['a', 'á'], 'e': ['e', 'é'], 'i': ['i', 'í'], 'o': ['o', 'ó'], 'u': ['u', 'ú'], 'n': ['n', 'ñ'],
+                        'A': ['A', 'Á'], 'E': ['E', 'É'], 'I': ['I', 'Í'], 'O': ['O', 'Ó'], 'U': ['U', 'Ú'], 'N': ['N', 'Ñ']
+                    };
+                    let variations = [''];
+                    for (const char of word) {
+                        const mapped = charMap[char.toLowerCase()];
+                        if (mapped) {
+                            const newVars = [];
+                            for (const v of variations) {
+                                newVars.push(v + char); // keep original case of the base char
+                                newVars.push(v + (char === char.toLowerCase() ? mapped[1] : mapped[1].toUpperCase())); // apply accent matching case
+                            }
+                            variations = newVars;
+                        }
+                        else {
+                            for (let i = 0; i < variations.length; i++) {
+                                variations[i] += char;
+                            }
+                        }
+                    }
+                    return Array.from(new Set(variations));
+                };
+                const searchConditions = cleanSearchWords.map(word => {
+                    const wordWithoutAccents = word.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                    const allVariations = generateAccentVariations(wordWithoutAccents);
+                    const orConditions = allVariations.map(variation => ({
+                        translations: { some: { title: { contains: variation, mode: 'insensitive' } } }
+                    }));
+                    return { OR: orConditions };
+                });
+                conditions.push({ AND: searchConditions });
+            }
         }
         // 7. Assemble the final where
         const where = {

@@ -18,6 +18,7 @@ exports.logout = logout;
 exports.forgotPassword = forgotPassword;
 exports.resetPassword = resetPassword;
 exports.findOrCreateGoogleUser = findOrCreateGoogleUser;
+exports.changePassword = changePassword;
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const uuid_1 = require("uuid");
@@ -50,7 +51,7 @@ async function register(input) {
         },
         select: { id: true, phone: true, name: true, role: true },
     });
-    const { accessToken, refreshToken } = generateTokens(user.id, user.phone, user.role);
+    const { accessToken, refreshToken } = generateTokens(user.id, user.phone || 'no-phone', user.role);
     await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, user.id);
     await prisma_1.prisma.refreshToken.create({
         data: {
@@ -62,168 +63,164 @@ async function register(input) {
     return { user, accessToken, refreshToken };
 }
 async function login(input) {
-    // 1. Try finding in normal User table (identifier as username OR phone)
+    // 1. Try finding in EndUserAccount table FIRST (since 99% of streaming logins are EndUsers)
+    // Utiliza case-insensitive para evitar errores de mayúsculas en teclados móviles
+    const endUser = await prisma_1.prisma.endUserAccount.findFirst({
+        where: { username: { equals: input.username, mode: 'insensitive' } },
+        include: { user: true },
+    });
+    if (endUser) {
+        if (endUser.deletedAt) {
+            throw new error_handler_1.AppError(401, 'Account has been deleted', 'INVALID_CREDENTIALS');
+        }
+        const passwordValid = await bcrypt_1.default.compare(input.password, endUser.passwordHash);
+        if (!passwordValid)
+            throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
+        // Handle INACTIVE accounts with a plan: activate on first login
+        if (endUser.status === 'INACTIVE' && endUser.planId) {
+            const plan = await prisma_1.prisma.subscriptionPlan.findUnique({ where: { id: endUser.planId } });
+            if (plan) {
+                const now = new Date();
+                const totalDays = plan.durationDays + (plan.bonusDays ?? 0);
+                const endDate = new Date(now.getTime() + totalDays * 24 * 60 * 60 * 1000);
+                await prisma_1.prisma.endUserAccount.update({
+                    where: { id: endUser.id },
+                    data: {
+                        status: 'ACTIVE',
+                        startDate: now,
+                        endDate,
+                    },
+                });
+                // Update local reference for the response
+                endUser.status = 'ACTIVE';
+            }
+        }
+        // Handle DEMO accounts: check if demo period has expired
+        if (endUser.status === 'DEMO' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
+            await prisma_1.prisma.endUserAccount.update({
+                where: { id: endUser.id },
+                data: { status: 'EXPIRED' },
+            });
+            throw new error_handler_1.AppError(403, 'Demo period has expired', 'ACCOUNT_RESTRICTED');
+        }
+        // Block other restricted statuses
+        if (endUser.status === 'PAUSED' || endUser.status === 'EXPIRED') {
+            throw new error_handler_1.AppError(403, `Account is ${endUser.status.toLowerCase()}`, 'ACCOUNT_RESTRICTED');
+        }
+        // Block INACTIVE accounts without a plan
+        if (endUser.status === 'INACTIVE') {
+            throw new error_handler_1.AppError(403, 'Account has no active plan', 'ACCOUNT_RESTRICTED');
+        }
+        // Check if active account has expired
+        if (endUser.status === 'ACTIVE' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
+            await prisma_1.prisma.endUserAccount.update({
+                where: { id: endUser.id },
+                data: { status: 'EXPIRED' },
+            });
+            throw new error_handler_1.AppError(403, 'Account has expired', 'ACCOUNT_RESTRICTED');
+        }
+        // Device limits & Auto-disconnect logic
+        const deviceToken = input.deviceId || (0, uuid_1.v4)();
+        const deviceName = input.deviceName || 'Web Browser';
+        const deviceType = input.deviceType || 'WEB';
+        const activeSessions = await prisma_1.prisma.deviceSession.findMany({
+            where: { endUserAccountId: endUser.id, isActive: true },
+            orderBy: { lastSeen: 'asc' },
+        });
+        if (activeSessions.length >= endUser.maxDevices) {
+            const numToDisconnect = activeSessions.length - endUser.maxDevices + 1;
+            const sessionsToDisconnect = activeSessions.slice(0, numToDisconnect);
+            await prisma_1.prisma.deviceSession.updateMany({
+                where: { id: { in: sessionsToDisconnect.map((s) => s.id) } },
+                data: { isActive: false },
+            });
+        }
+        await prisma_1.prisma.deviceSession.upsert({
+            where: { deviceToken },
+            create: {
+                deviceToken,
+                deviceName,
+                deviceType,
+                isActive: true,
+                lastSeen: new Date(),
+                endUserAccountId: endUser.id,
+            },
+            update: {
+                isActive: true,
+                deviceName,
+                lastSeen: new Date(),
+                endUserAccountId: endUser.id,
+            },
+        });
+        // Ensure the endUser has a linked User record to support profiles, history, etc.
+        if (!endUser.userId) {
+            const clientEmail = `${endUser.username}@client.flex`;
+            // Check if user with this phone already exists (edge case)
+            let linkedUser = await prisma_1.prisma.user.findUnique({ where: { phone: clientEmail } });
+            if (!linkedUser) {
+                linkedUser = await prisma_1.prisma.user.create({
+                    data: {
+                        phone: clientEmail,
+                        name: endUser.username,
+                        role: 'END_USER',
+                        isActive: true,
+                        profiles: {
+                            create: {
+                                name: endUser.username,
+                                isKids: false,
+                            }
+                        }
+                    }
+                });
+            }
+            await prisma_1.prisma.endUserAccount.update({
+                where: { id: endUser.id },
+                data: { userId: linkedUser.id }
+            });
+            endUser.userId = linkedUser.id;
+            endUser.user = linkedUser;
+        }
+        else {
+            // Ensure they have at least one profile
+            const profileCount = await prisma_1.prisma.profile.count({ where: { userId: endUser.userId } });
+            if (profileCount === 0) {
+                await prisma_1.prisma.profile.create({
+                    data: {
+                        userId: endUser.userId,
+                        name: endUser.username,
+                    }
+                });
+            }
+        }
+        // Return a virtual user object for the token
+        // JWT sub = real User.id (not endUserAccount.id) so /auth/me can look up the User
+        const { accessToken, refreshToken } = generateTokens(endUser.userId, endUser.username, 'END_USER');
+        // Redis key stores VIRTUAL_<endUserAccount.id> so refresh can identify the account
+        await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, `VIRTUAL_${endUser.id}`);
+        await prisma_1.prisma.refreshToken.create({
+            data: {
+                token: refreshToken,
+                userId: endUser.userId, // real User.id for FK constraint
+                endUserAccountId: endUser.id, // endUserAccount.id for account association
+                expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
+            },
+        });
+        return {
+            user: { id: endUser.id, phone: endUser.username, name: endUser.username, role: 'END_USER' },
+            accessToken,
+            refreshToken,
+        };
+    }
+    // 2. If not found in EndUserAccount, fallback to normal User table
     let user = await prisma_1.prisma.user.findFirst({
         where: {
             OR: [
-                { username: input.username },
-                { phone: input.username }
+                { username: { equals: input.username, mode: 'insensitive' } },
+                { phone: { equals: input.username, mode: 'insensitive' } }
             ],
             deletedAt: null
         }
     });
-    // 2. If not found, try finding in EndUserAccount table (identifier as username)
-    if (!user) {
-        const endUser = await prisma_1.prisma.endUserAccount.findUnique({
-            where: { username: input.username },
-            include: { user: true },
-        });
-        if (endUser && endUser.deletedAt) {
-            throw new error_handler_1.AppError(401, 'Account has been deleted', 'INVALID_CREDENTIALS');
-        }
-        if (endUser) {
-            // If endUser exists but has no linked User record, we treat it as a virtual user for JWT
-            // Or we can check password against endUser.passwordHash
-            const passwordValid = await bcrypt_1.default.compare(input.password, endUser.passwordHash);
-            if (!passwordValid)
-                throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
-            // Handle INACTIVE accounts with a plan: activate on first login
-            if (endUser.status === 'INACTIVE' && endUser.planId) {
-                const plan = await prisma_1.prisma.subscriptionPlan.findUnique({ where: { id: endUser.planId } });
-                if (plan) {
-                    const now = new Date();
-                    const totalDays = plan.durationDays + (plan.bonusDays ?? 0);
-                    const endDate = new Date(now.getTime() + totalDays * 24 * 60 * 60 * 1000);
-                    await prisma_1.prisma.endUserAccount.update({
-                        where: { id: endUser.id },
-                        data: {
-                            status: 'ACTIVE',
-                            startDate: now,
-                            endDate,
-                        },
-                    });
-                    // Update local reference for the response
-                    endUser.status = 'ACTIVE';
-                }
-            }
-            // Handle DEMO accounts: check if demo period has expired
-            if (endUser.status === 'DEMO' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
-                await prisma_1.prisma.endUserAccount.update({
-                    where: { id: endUser.id },
-                    data: { status: 'EXPIRED' },
-                });
-                throw new error_handler_1.AppError(403, 'Demo period has expired', 'ACCOUNT_RESTRICTED');
-            }
-            // Block other restricted statuses
-            if (endUser.status === 'PAUSED' || endUser.status === 'EXPIRED') {
-                throw new error_handler_1.AppError(403, `Account is ${endUser.status.toLowerCase()}`, 'ACCOUNT_RESTRICTED');
-            }
-            // Block INACTIVE accounts without a plan
-            if (endUser.status === 'INACTIVE') {
-                throw new error_handler_1.AppError(403, 'Account has no active plan', 'ACCOUNT_RESTRICTED');
-            }
-            // Check if active account has expired
-            if (endUser.status === 'ACTIVE' && endUser.endDate && new Date(endUser.endDate) < new Date()) {
-                await prisma_1.prisma.endUserAccount.update({
-                    where: { id: endUser.id },
-                    data: { status: 'EXPIRED' },
-                });
-                throw new error_handler_1.AppError(403, 'Account has expired', 'ACCOUNT_RESTRICTED');
-            }
-            // Device limits & Auto-disconnect logic
-            const deviceToken = input.deviceId || (0, uuid_1.v4)();
-            const deviceName = input.deviceName || 'Web Browser';
-            const deviceType = input.deviceType || 'WEB';
-            const activeSessions = await prisma_1.prisma.deviceSession.findMany({
-                where: { endUserAccountId: endUser.id, isActive: true },
-                orderBy: { lastSeen: 'asc' },
-            });
-            if (activeSessions.length >= endUser.maxDevices) {
-                const numToDisconnect = activeSessions.length - endUser.maxDevices + 1;
-                const sessionsToDisconnect = activeSessions.slice(0, numToDisconnect);
-                await prisma_1.prisma.deviceSession.updateMany({
-                    where: { id: { in: sessionsToDisconnect.map((s) => s.id) } },
-                    data: { isActive: false },
-                });
-            }
-            await prisma_1.prisma.deviceSession.upsert({
-                where: { deviceToken },
-                create: {
-                    deviceToken,
-                    deviceName,
-                    deviceType,
-                    isActive: true,
-                    lastSeen: new Date(),
-                    endUserAccountId: endUser.id,
-                },
-                update: {
-                    isActive: true,
-                    deviceName,
-                    lastSeen: new Date(),
-                    endUserAccountId: endUser.id,
-                },
-            });
-            // Ensure the endUser has a linked User record to support profiles, history, etc.
-            if (!endUser.userId) {
-                const clientEmail = `${endUser.username}@client.flex`;
-                // Check if user with this phone already exists (edge case)
-                let linkedUser = await prisma_1.prisma.user.findUnique({ where: { phone: clientEmail } });
-                if (!linkedUser) {
-                    linkedUser = await prisma_1.prisma.user.create({
-                        data: {
-                            phone: clientEmail,
-                            name: endUser.username,
-                            role: 'END_USER',
-                            isActive: true,
-                            profiles: {
-                                create: {
-                                    name: endUser.username,
-                                    isKids: false,
-                                }
-                            }
-                        }
-                    });
-                }
-                await prisma_1.prisma.endUserAccount.update({
-                    where: { id: endUser.id },
-                    data: { userId: linkedUser.id }
-                });
-                endUser.userId = linkedUser.id;
-                endUser.user = linkedUser;
-            }
-            else {
-                // Ensure they have at least one profile
-                const profileCount = await prisma_1.prisma.profile.count({ where: { userId: endUser.userId } });
-                if (profileCount === 0) {
-                    await prisma_1.prisma.profile.create({
-                        data: {
-                            userId: endUser.userId,
-                            name: endUser.username,
-                        }
-                    });
-                }
-            }
-            // Return a virtual user object for the token
-            // JWT sub = real User.id (not endUserAccount.id) so /auth/me can look up the User
-            const { accessToken, refreshToken } = generateTokens(endUser.userId, endUser.username, 'END_USER');
-            // Redis key stores VIRTUAL_<endUserAccount.id> so refresh can identify the account
-            await redis_1.redis.setex(`${REFRESH_TOKEN_PREFIX}${refreshToken}`, REFRESH_TOKEN_TTL_SECONDS, `VIRTUAL_${endUser.id}`);
-            await prisma_1.prisma.refreshToken.create({
-                data: {
-                    token: refreshToken,
-                    userId: endUser.userId, // real User.id for FK constraint
-                    endUserAccountId: endUser.id, // endUserAccount.id for account association
-                    expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_SECONDS * 1000),
-                },
-            });
-            return {
-                user: { id: endUser.id, phone: endUser.username, name: endUser.username, role: 'END_USER' },
-                accessToken,
-                refreshToken,
-            };
-        }
-    }
-    // 3. Fallback to normal user logic if found in step 1
     if (!user || !user.passwordHash || !user.isActive) {
         throw new error_handler_1.AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     }
@@ -364,5 +361,23 @@ async function findOrCreateGoogleUser(googleProfile) {
         },
     });
     return { user, accessToken, refreshToken };
+}
+async function changePassword(userId, currentPasswordRaw, newPasswordRaw) {
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, passwordHash: true },
+    });
+    if (!user || !user.passwordHash) {
+        throw new Error('User not found or has no password set');
+    }
+    const isValid = await bcrypt_1.default.compare(currentPasswordRaw, user.passwordHash);
+    if (!isValid) {
+        throw new Error('La contraseña actual es incorrecta');
+    }
+    const newPasswordHash = await bcrypt_1.default.hash(newPasswordRaw, 10);
+    await prisma_1.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newPasswordHash },
+    });
 }
 //# sourceMappingURL=auth.service.js.map

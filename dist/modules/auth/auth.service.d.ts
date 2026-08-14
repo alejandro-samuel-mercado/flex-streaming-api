@@ -70,4 +70,5 @@ export declare function findOrCreateGoogleUser(googleProfile: {
     accessToken: string;
     refreshToken: string;
 }>;
+export declare function changePassword(userId: string, currentPasswordRaw: string, newPasswordRaw: string): Promise<void>;
 //# sourceMappingURL=auth.service.d.ts.map

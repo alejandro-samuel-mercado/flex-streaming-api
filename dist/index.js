@@ -81,6 +81,7 @@ const reseller_router_1 = require("./modules/reseller/reseller.router");
 const subscription_plans_router_1 = require("./modules/subscription-plans/subscription-plans.router");
 const credit_packages_router_1 = require("./modules/credit-packages/credit-packages.router");
 const end_users_router_1 = require("./modules/end-users/end-users.router");
+const requests_router_1 = require("./modules/requests/requests.router");
 const tmdb_router_1 = require("./modules/admin/tmdb.router");
 const media_scanner_router_1 = require("./modules/media-scanner/media-scanner.router");
 const backup_router_1 = require("./modules/backup/backup.router");
@@ -279,6 +280,7 @@ app.use('/api/reseller', apiLimiter, reseller_router_1.resellerRouter);
 app.use('/api/subscription-plans', apiLimiter, subscription_plans_router_1.subscriptionPlansRouter);
 app.use('/api/credit-packages', apiLimiter, credit_packages_router_1.creditPackagesRouter);
 app.use('/api/end-users', apiLimiter, end_users_router_1.endUsersRouter);
+app.use('/api/requests', apiLimiter, requests_router_1.requestsRouter);
 // Health check
 app.get('/health', (_req, res) => {
     res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
@@ -316,6 +318,9 @@ async function bootstrap() {
         const { HealthInspectorWorker } = require('./workers/health-inspector.worker');
         HealthInspectorWorker.start();
         console.log('🩺 Health Inspector worker initialized');
+        const { FileIntegrityWorker } = require('./workers/file-integrity.worker');
+        FileIntegrityWorker.start();
+        console.log('🛡️ File Integrity worker initialized');
         // Start auto-backup scheduler (reads config from DB)
         (0, backup_service_1.startAutoBackupScheduler)().catch(err => console.warn('[Backup] Scheduler startup skipped:', err?.message));
         console.log('💾 Backup scheduler initialized');

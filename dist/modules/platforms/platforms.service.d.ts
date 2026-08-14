@@ -43,6 +43,7 @@ export declare class PlatformsService {
             revenue: bigint | null;
             isAdult: boolean;
             isPinned: boolean;
+            hasMissingFiles: boolean;
             subtitleLangs: string[];
             platformId: string | null;
             trailerUrl: string | null;

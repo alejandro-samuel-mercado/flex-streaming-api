@@ -37,7 +37,7 @@ class FFmpegService {
      * SLOW PATH (fallback): Only re-encodes if the source codec is not HLS-compatible
      * (e.g. VP9, AV1, HEVC with incompatible profile, etc.).
      */
-    static async generateHLS(inputPath, outputFolder, onProgress) {
+    static async generateHLS(inputPath, outputFolder, onProgress, forceReencode = false, contentType = 'MOVIE') {
         const resolvedInputPath = path_1.default.resolve(inputPath);
         const resolvedOutputFolder = path_1.default.resolve(outputFolder);
         if (!fs_1.default.existsSync(resolvedOutputFolder)) {
@@ -50,13 +50,35 @@ class FFmpegService {
         const playlistPath = path_1.default.join(resolvedOutputFolder, 'master.m3u8');
         // ── Detect if we can use fast copy path ───────────────────────────────
         const videoCodec = videoStream?.codec_name?.toLowerCase() || '';
+        const pixFmt = videoStream?.pix_fmt?.toLowerCase() || '';
+        const profile = String(videoStream?.profile || '').toLowerCase();
         const HLS_COMPATIBLE_VIDEO = ['h264', 'avc', 'avc1', 'h265', 'hevc'];
-        const canCopyVideo = HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c));
-        const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
-        const canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
-            (s.channels === undefined || s.channels <= 2));
+        let isVideoHealthy = false;
+        if (HLS_COMPATIBLE_VIDEO.some(c => videoCodec.includes(c))) {
+            // Un video H.264 es sano para la web solo si usa colores a 8-bits (yuv420p)
+            // y no es un perfil exótico (High 10, etc).
+            if (pixFmt === 'yuv420p' && !profile.includes('10')) {
+                isVideoHealthy = true;
+            }
+        }
+        const canCopyVideo = forceReencode ? false : isVideoHealthy;
+        let canCopyAudio = false;
+        if (contentType === 'EPISODE') {
+            // COMPORTAMIENTO DE SERIES (COMO ANTES DEL 29 DE JULIO):
+            // Permitimos copiar tanto AAC como MP3 y MP2 para evitar la desincronización de PTS 
+            // con los Keyframes largos de las series, lo cual rompía el reproductor web.
+            const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
+            canCopyAudio = audioStreams.length > 0 && audioStreams.every(s => HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
+                (s.channels === undefined || s.channels <= 2));
+        }
+        else {
+            // COMPORTAMIENTO DE PELÍCULAS (NORMAL POST-29 JULIO):
+            // Forzamos siempre la re-codificación a AAC (canCopyAudio = false)
+            // Esto es exactamente lo que tenías antes de que yo tocara nada hoy.
+            canCopyAudio = false;
+        }
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
-        console.log(`🎬 [FFmpeg] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
+        console.log(`🎬 [FFmpeg] [${contentType}] Video codec: ${videoCodec} (copy: ${canCopyVideo}), Audio codecs: ${audioCodec} (copy: ${canCopyAudio})`);
         if (canCopyVideo) {
             // ══════════════════════════════════════════════════════════════════
             // FAST PATH: remux to HLS without re-encoding
@@ -89,8 +111,10 @@ class FFmpegService {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
                         const name = audioStreams[i].tags?.title || `Audio`;
-                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
+                        const safeName = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
+                        if (i === 0)
+                            varStreamMap += ',default:yes';
                     }
                 }
                 cmd
@@ -104,7 +128,7 @@ class FFmpegService {
                     '-hls_playlist_type', 'vod',
                     '-hls_flags', 'independent_segments',
                     '-hls_segment_type', 'mpegts',
-                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%05d.ts'),
                     '-master_pl_name', 'master.m3u8',
                     '-max_muxing_queue_size', '1024',
                 ])
@@ -165,43 +189,53 @@ class FFmpegService {
                     clearTimeout(stallTimeout);
                     stallTimeout = setTimeout(() => { cleanup(); cmd.kill('SIGKILL'); reject(new Error('[Timeout] Re-encode atascado por 20 min.')); }, 20 * 60 * 1000);
                 };
-                const mapOptions = ['-map', '0:v:0'];
-                let varStreamMap = 'v:0,agroup:audio,name:video';
+                const mapOptions = ['-map', '0:v:0', '-map', '0:v:0'];
+                let varStreamMap = 'v:0,agroup:audio,name:1080p v:1,agroup:audio,name:720p';
                 if (audioStreams.length === 0) {
-                    varStreamMap = 'v:0,name:video';
+                    varStreamMap = 'v:0,name:1080p v:1,name:720p';
                 }
                 else {
                     for (let i = 0; i < audioStreams.length; i++) {
                         mapOptions.push('-map', `0:a:${i}`);
                         const lang = audioStreams[i].tags?.language || `unk${i}`;
                         const name = audioStreams[i].tags?.title || `Audio`;
-                        const safeName = `${name.replace(/[,="' ]/g, '_')}_${i}`;
+                        const safeName = `${name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${i}`;
                         varStreamMap += ` a:${i},agroup:audio,language:${lang},name:${safeName}`;
+                        if (i === 0)
+                            varStreamMap += ',default:yes';
                     }
                 }
                 cmd
                     .outputOptions([
                     '-y',
                     ...mapOptions,
-                    '-c:v', 'h264',
+                    // Calidad 1: Original / 1080p (Alto Bitrate)
+                    '-c:v:0', 'h264',
+                    '-b:v:0', '5000k', '-maxrate:v:0', '7000k', '-bufsize:v:0', '10000k',
+                    '-vf:v:0', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                    // Calidad 2: 720p (Bajo Bitrate)
+                    '-c:v:1', 'h264',
+                    '-b:v:1', '2500k', '-maxrate:v:1', '3500k', '-bufsize:v:1', '5000k',
+                    '-vf:v:1', 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
+                    // Configuraciones comunes de video
                     '-preset', 'veryfast',
-                    '-threads', '0', // Use all available CPU threads
+                    '-threads', '0',
                     '-profile:v', 'main',
                     '-level', '4.0',
-                    '-vf', 'scale=w=1280:h=720:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2',
                     '-pix_fmt', 'yuv420p',
                     '-r', fpsValue,
                     '-g', gopSize.toString(),
                     '-keyint_min', gopSize.toString(),
                     '-sc_threshold', '0',
-                    '-b:v', '2500k', '-maxrate', '3500k', '-bufsize', '5000k',
+                    // Configuraciones de audio (aplica a todos los audios mapeados)
                     '-c:a', 'aac', '-b:a', '192k', '-ac', '2',
+                    // Configuraciones HLS
                     '-hls_time', '6',
                     '-hls_list_size', '0',
                     '-hls_playlist_type', 'vod',
                     '-hls_flags', 'independent_segments',
                     '-hls_segment_type', 'mpegts',
-                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%03d.ts'),
+                    '-hls_segment_filename', path_1.default.join(resolvedOutputFolder, 'stream_%v_%05d.ts'),
                     '-master_pl_name', 'master.m3u8',
                     '-max_muxing_queue_size', '1024',
                 ])

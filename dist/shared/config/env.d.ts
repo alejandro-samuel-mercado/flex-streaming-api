@@ -35,5 +35,6 @@ export declare const env: {
     TMDB_ACCESS_TOKEN?: string | undefined;
     STORAGE_NODE_SERIES_URL?: string | undefined;
     STORAGE_NODE_MOVIES_URL?: string | undefined;
+    FALLBACK_SCAN_PATH?: string | undefined;
 };
 //# sourceMappingURL=env.d.ts.map

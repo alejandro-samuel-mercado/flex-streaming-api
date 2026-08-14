@@ -53,10 +53,25 @@ exports.streamingRouter.get('/hls/:videoFileId/*', (async (req, res, next) => {
         }
         const ip = req.ip || req.socket.remoteAddress || '0.0.0.0';
         const audioIndex = req.query.audioIndex ? parseInt(req.query.audioIndex, 10) : null;
+        const startTime = Date.now();
         const result = await streaming_service_1.StreamingService.serveSegment(videoFileId, filePath, token, ip, audioIndex);
         if (result.stream) {
             res.writeHead(result.status, result.headers);
             result.stream.pipe(res);
+            // Diagnóstico de velocidad y cortes
+            res.on('finish', () => {
+                const duration = Date.now() - startTime;
+                // Si tarda más de 2000ms en enviar un fragmento, es posible que el disco/red esté saturado
+                if (duration > 2000 && filePath.endsWith('.ts')) {
+                    console.warn(`[Streaming] 🐢 Fragmento lento: ${filePath} tardó ${duration}ms en enviarse a ${ip}`);
+                }
+            });
+            req.on('close', () => {
+                if (!res.writableFinished) {
+                    const duration = Date.now() - startTime;
+                    console.error(`[Streaming] ❌ Conexión cortada por el cliente durante ${filePath} tras ${duration}ms (IP: ${ip})`);
+                }
+            });
         }
         else {
             res.status(result.status).end();

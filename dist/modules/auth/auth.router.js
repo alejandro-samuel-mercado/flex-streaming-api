@@ -98,6 +98,26 @@ exports.authRouter.post('/reset-password', async (req, res, next) => {
         next(err);
     }
 });
+exports.authRouter.post('/change-password', auth_middleware_1.authenticate, async (req, res, next) => {
+    try {
+        const authReq = req;
+        const userId = authReq.user.id;
+        if (userId.startsWith('VIRTUAL_')) {
+            res.status(403).json({ success: false, error: 'End users cannot change password this way' });
+            return;
+        }
+        const { currentPassword, newPassword } = auth_schemas_1.changePasswordSchema.parse(req.body);
+        await authService.changePassword(userId, currentPassword, newPassword);
+        (0, api_response_1.ok)(res, { message: 'Password changed successfully' });
+    }
+    catch (err) {
+        if (err.message === 'La contraseña actual es incorrecta') {
+            res.status(400).json({ success: false, error: err.message });
+            return;
+        }
+        next(err);
+    }
+});
 exports.authRouter.get('/me', auth_middleware_1.authenticate, async (req, res, next) => {
     try {
         const authReq = req;

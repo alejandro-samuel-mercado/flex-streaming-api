@@ -63,7 +63,7 @@ async function buildOutputFolder(jobType, videoFileId, contentId, episodeId) {
     }
 }
 exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
-    const { videoFileId, contentId, videoPath } = job.data;
+    const { videoFileId, contentId, videoPath, forceReencode } = job.data;
     const jobType = job.data.type || 'MOVIE';
     // Buscar el episodeId si existe
     const vfInitial = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId }, select: { episodeId: true } });
@@ -171,7 +171,8 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
         const hlsResult = await ffmpeg_service_1.FFmpegService.generateHLS(videoPath, outputFolder, (pct) => {
             const jobProgress = 15 + Math.round(pct * 0.80);
             onProgress(jobProgress);
-        });
+        }, !!forceReencode, // forceReencode
+        jobType);
         job.log(`HLS generated at ${hlsResult.path}`);
         // Final check before updating DB (in case of cancellation)
         const finalExists = await prisma_1.prisma.videoFile.findUnique({ where: { id: videoFileId } });
@@ -410,9 +411,9 @@ exports.videoWorker = new bullmq_1.Worker(QUEUE_NAME, async (job) => {
                     }
                 });
                 if (completedLeft === 0) {
-                    // No hay ningún video funcionando → bajar a PENDING
+                    // No hay ningún video funcionando y no está fijado → bajar a PENDING
                     await prisma_1.prisma.content.updateMany({
-                        where: { id: errContentId },
+                        where: { id: errContentId, isPinned: false },
                         data: { status: 'PENDING' }
                     });
                 }
@@ -503,7 +504,7 @@ exports.videoWorker.on('failed', async (job, err) => {
                 });
                 if (completedLeft === 0) {
                     await prisma_1.prisma.content.updateMany({
-                        where: { id: errContentId },
+                        where: { id: errContentId, isPinned: false },
                         data: { status: 'PENDING' }
                     });
                 }
