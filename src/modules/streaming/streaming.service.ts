@@ -634,6 +634,13 @@ export class StreamingService {
                         if (fs.existsSync(playlist)) {
                             return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
                         }
+                        
+                        // Fallback to raw MP4/MKV
+                        const files = fs.readdirSync(epFolderPath);
+                        const videoFile = files.find(f => f.endsWith('.mp4') || f.endsWith('.mkv'));
+                        if (videoFile) {
+                            return { status: 200, stream: fs.createReadStream(path.join(epFolderPath, videoFile)) };
+                        }
                     }
                 }
             }
@@ -676,6 +683,13 @@ export class StreamingService {
                                 const playlist = path.join(epDir, 'index.m3u8');
                                 if (fs.existsSync(playlist)) {
                                     return { status: 200, stream: StreamingService.spawnFfmpegMp4(playlist) };
+                                }
+                                
+                                // Fallback to raw MP4/MKV
+                                const files = fs.readdirSync(epDir);
+                                const videoFile = files.find(f => f.endsWith('.mp4') || f.endsWith('.mkv'));
+                                if (videoFile) {
+                                    return { status: 200, stream: fs.createReadStream(path.join(epDir, videoFile)) };
                                 }
                             }
                         }
