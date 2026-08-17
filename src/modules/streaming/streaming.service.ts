@@ -602,8 +602,21 @@ export class StreamingService {
             // Look up episode to get its contentId (series) from the DB
             const ep = await prisma.episode.findUnique({
                 where: { id: episodeId },
-                select: { id: true, number: true, season: { select: { number: true, contentId: true } } }
+                select: { 
+                    id: true, 
+                    number: true, 
+                    season: { select: { number: true, contentId: true } },
+                    videoFiles: { select: { originalPath: true } }
+                }
             }).catch(() => null);
+
+            // ── Strategy 0: Direct database path (fastest and most accurate)
+            if (ep?.videoFiles && ep.videoFiles.length > 0) {
+                const videoPath = ep.videoFiles[0].originalPath;
+                if (videoPath && fs.existsSync(videoPath)) {
+                    return { status: 200, stream: fs.createReadStream(videoPath) };
+                }
+            }
 
             const seriesContentId = ep?.season?.contentId;
 
@@ -654,8 +667,11 @@ export class StreamingService {
                 }).catch(() => null);
 
                 if (content?.tmdbId && ep?.season?.number !== undefined && ep?.number !== undefined) {
-                    const mediaSeriesDir = '/home/media/series';
-                    if (fs.existsSync(mediaSeriesDir)) {
+                    const mediaSeriesDirs = ['/home/media/series', '/home/series'];
+                    
+                    for (const mediaSeriesDir of mediaSeriesDirs) {
+                        if (!fs.existsSync(mediaSeriesDir)) continue;
+                        
                         // Find top-level folder starting with tmdbId_
                         const topDirs = fs.readdirSync(mediaSeriesDir);
                         const topMatch = topDirs.find(d => d.startsWith(`${content.tmdbId}_`));
@@ -695,6 +711,21 @@ export class StreamingService {
                         }
                     }
                 }
+            }
+
+            // ── Strategy 3: child_process find fallback
+            try {
+                const { execSync } = require('child_process');
+                const pathsToSearch = ['/home/media/series', '/home/series'].filter(p => fs.existsSync(p));
+                if (pathsToSearch.length > 0) {
+                    const searchCmd = `find ${pathsToSearch.join(' ')} -type f \\( -iname "*${episodeId}*" -o -iname "*${epPrefix}*" \\) -print -quit`;
+                    const foundFile = execSync(searchCmd, { encoding: 'utf-8' }).trim();
+                    if (foundFile && fs.existsSync(foundFile)) {
+                        return { status: 200, stream: fs.createReadStream(foundFile) };
+                    }
+                }
+            } catch (e) {
+                // Ignore find command errors
             }
 
             return { status: 404, stream: null, error: `Episode HLS not found for episodeId ${episodeId} (prefix: ${epPrefix})` };
