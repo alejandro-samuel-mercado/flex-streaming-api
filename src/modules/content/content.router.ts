@@ -23,6 +23,7 @@ const ContentFiltersSchema = z.object({
   featured: z.preprocess((v) => v === undefined ? undefined : v === 'true', z.boolean().optional()),
   minYear: z.coerce.number().optional(),
   maxYear: z.coerce.number().optional(),
+  year: z.coerce.number().optional(),
   minDuration: z.coerce.number().optional(),
   maxDuration: z.coerce.number().optional(),
   sort: z.enum(['recent', 'popular', 'rating', 'az', 'za', 'oldest']).default('recent'),

@@ -44,6 +44,7 @@ export class ContentService {
         featured?: boolean;
         minYear?: number;
         maxYear?: number;
+        year?: number;
         minDuration?: number;
         maxDuration?: number;
         sort: string;
@@ -54,7 +55,7 @@ export class ContentService {
     }) {
         const {
             page, limit, search, type, status, genreId, tagId,
-            platformId, isFree, featured, sort, incomplete, minYear, isPublic, hasMissingFiles
+            platformId, isFree, featured, sort, incomplete, minYear, maxYear, year, isPublic, hasMissingFiles
         } = filters;
 
         const skip = (page - 1) * limit;
@@ -139,8 +140,13 @@ export class ContentService {
             conditions.push({ featured });
         }
 
-        if (minYear !== undefined) {
-            conditions.push({ releaseYear: { gte: minYear } });
+        if (year !== undefined) {
+            conditions.push({ releaseYear: year });
+        } else if (minYear !== undefined || maxYear !== undefined) {
+            const yearCondition: any = {};
+            if (minYear !== undefined) yearCondition.gte = minYear;
+            if (maxYear !== undefined) yearCondition.lte = maxYear;
+            conditions.push({ releaseYear: yearCondition });
         }
 
         // 5d. Incomplete filter
