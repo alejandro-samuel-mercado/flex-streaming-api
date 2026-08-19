@@ -69,17 +69,35 @@ export async function register(input: RegisterInput) {
 
 export async function login(input: LoginInput) {
   // 1. Try finding in EndUserAccount table FIRST (since 99% of streaming logins are EndUsers)
-  // Utiliza case-insensitive para evitar errores de mayúsculas en teclados móviles
-  const endUser = await prisma.endUserAccount.findFirst({
-    where: { username: { equals: input.username, mode: 'insensitive' } },
+  let endUser = await prisma.endUserAccount.findFirst({
+    where: { username: { equals: input.username, mode: 'insensitive' }, deletedAt: null },
     include: { user: true },
   });
 
-  if (endUser) {
-    if (endUser.deletedAt) {
-      throw new AppError(401, 'Account has been deleted', 'INVALID_CREDENTIALS');
-    }
+  if (!endUser) {
+    const deletedEndUser = await prisma.endUserAccount.findFirst({
+      where: { username: { equals: input.username, mode: 'insensitive' }, deletedAt: { not: null } },
+    });
 
+    if (deletedEndUser) {
+      // Check if a valid Vendor exists before throwing the deleted error
+      const activeVendor = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { username: { equals: input.username, mode: 'insensitive' } },
+            { phone: { equals: input.username, mode: 'insensitive' } }
+          ],
+          deletedAt: null
+        }
+      });
+      if (!activeVendor) {
+        throw new AppError(401, 'Account has been deleted', 'INVALID_CREDENTIALS');
+      }
+      // If activeVendor exists, it will fall through to the User login block!
+    }
+  }
+
+  if (endUser) {
     const passwordValid = await bcrypt.compare(input.password, endUser.passwordHash);
     if (!passwordValid) throw new AppError(401, 'Invalid credentials', 'INVALID_CREDENTIALS');
     
