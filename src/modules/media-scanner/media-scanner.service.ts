@@ -543,12 +543,39 @@ export class MediaScannerService {
         }
       });
 
-      // NOTE: The old "Búsqueda 2" using `contains: baseName` was REMOVED.
-      // It caused false-positive matches when two different content items happened to share
-      // similar folder names (e.g. "Avatar" matching "Avatar 2"), which silently linked
-      // a physical file to the wrong content and created ghost duplicates on the next scan.
+      // DETECCIÓN DE CARPETAS HLS YA PROCESADAS:
+      // Cuando FFmpeg procesa un .mp4, guarda el resultado en una carpeta HLS.
+      // El VideoFile queda con originalPath = /ruta/Pelicula.mp4 y hlsPath = /hls/abc123/.
+      // Si el scanner detecta /hls/abc123/ como "carpeta nueva", no va a encontrar el
+      // VideoFile por originalPath. Buscamos también por hlsPath para evitar crear duplicados.
+      if (!existingVideo) {
+        existingVideo = await prisma.videoFile.findFirst({
+          where: {
+            OR: [
+              { hlsPath: { equals: filePath, mode: 'insensitive' } },
+              { hlsPath: { startsWith: filePath, mode: 'insensitive' } },
+            ]
+          },
+          include: {
+            content: true,
+            episode: { include: { season: { include: { content: true } } } }
+          }
+        });
+        if (existingVideo) {
+          console.log(`[MediaScanner] ✅ HLS folder "${fileName}" already registered via hlsPath. Skipping.`);
+          // Update originalPath to reflect the HLS folder path so future scans find it faster
+          if (existingVideo.originalPath !== filePath) {
+            await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { originalPath: filePath } });
+            existingVideo.originalPath = filePath;
+          }
+        }
+      }
 
-      if (existingVideo) {
+      // NOTE: The old "Búsqueda 2" using `contains: baseName` was REMOVED.
+      // It caused false-positive matches between similarly-named content.
+
+      if (existingVideo && !existingVideo.hlsPath) {
+        // Only log "moved" for non-HLS files (HLS detection logged above)
         console.log(`[MediaScanner] 🚚 Detectado archivo movido. Actualizando ruta en BD:\n   De: ${existingVideo.originalPath}\n   A:  ${filePath}`);
         await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { originalPath: filePath } });
         existingVideo.originalPath = filePath;
@@ -827,10 +854,16 @@ export class MediaScannerService {
     const cleanName = this.cleanFileName(folderName);
 
     // FIX: Check if this physical folder is already registered in the DB!
-    // If we don't check this, renaming a movie in the panel causes the scanner to not find it by title/TMDB,
-    // which results in creating a zombie duplicate movie and crashing on the VideoFile creation.
+    // Check both by originalPath AND by hlsPath (the latter catches files where
+    // originalPath was the raw .mp4 but is now the HLS folder after FFmpeg processing).
     let existingVideo = await prisma.videoFile.findFirst({
-      where: { originalPath: { equals: folderPath, mode: 'insensitive' } },
+      where: {
+        OR: [
+          { originalPath: { equals: folderPath, mode: 'insensitive' } },
+          { hlsPath: { equals: folderPath, mode: 'insensitive' } },
+          { hlsPath: { startsWith: folderPath, mode: 'insensitive' } },
+        ]
+      },
       include: { content: true }
     });
 
@@ -840,6 +873,10 @@ export class MediaScannerService {
          await prisma.videoFile.delete({ where: { id: existingVideo.id } });
       } else {
          console.log(`⏭️  [MediaScanner] Skipping HLS movie "${folderName}" — already registered.`);
+         // Sync originalPath if it was the raw file path before
+         if (existingVideo.originalPath !== folderPath) {
+           await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { originalPath: folderPath } });
+         }
          return { filePath: folderPath, fileName: folderName, success: true, contentId: existingVideo.contentId!, tmdbMatch: true };
       }
     }
