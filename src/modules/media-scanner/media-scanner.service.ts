@@ -1303,16 +1303,27 @@ export class MediaScannerService {
             }
         }
 
-        // 3. Double check existence by title and type
+        // 3. Check existence by title — but ONLY if the existing content has no tmdbId.
+        // If both contents have different tmdbIds, they are different titles even if they
+        // share the same display name (e.g. two versions of a series, dubbed vs original).
         const existingByTitle = await prisma.content.findFirst({
             where: {
                 translations: { some: { title: { equals: details.title, mode: 'insensitive' } } },
                 type: details.type,
-                deletedAt: null
+                deletedAt: null,
+                // Only match if tmdbId is null (unlinked) OR matches the one we're importing.
+                // Never merge two different tmdbIds under the same content entry.
+                OR: [
+                    { tmdbId: null },
+                    { tmdbId: String(details.tmdbId) },
+                ]
             }
         });
         if (existingByTitle) {
-            await prisma.content.update({ where: { id: existingByTitle.id }, data: { tmdbId: String(details.tmdbId) } });
+            // Only update tmdbId if it's missing, never overwrite a different one
+            if (!existingByTitle.tmdbId) {
+                await prisma.content.update({ where: { id: existingByTitle.id }, data: { tmdbId: String(details.tmdbId) } });
+            }
             return existingByTitle.id;
         }
 
