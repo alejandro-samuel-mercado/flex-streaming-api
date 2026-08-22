@@ -532,7 +532,9 @@ export class MediaScannerService {
     // Si el script del servidor movió el archivo a otra partición (ej. videos_subidos),
     // el filePath cambia pero el fileName suele ser idéntico. Lo buscamos y actualizamos la ruta.
     if (!existingVideo) {
-      // Búsqueda 1: por nombre de carpeta/archivo al final de la ruta
+      // DETECCIÓN DE ARCHIVOS MOVIDOS:
+      // Si el script del servidor movió el archivo a otra partición (ej. videos_subidos),
+      // el filePath cambia pero el fileName suele ser idéntico. Lo buscamos por nombre exacto.
       existingVideo = await prisma.videoFile.findFirst({
         where: { originalPath: { endsWith: `/${fileName}`, mode: 'insensitive' } },
         include: {
@@ -541,27 +543,10 @@ export class MediaScannerService {
         }
       });
 
-      // Búsqueda 2 (NUEVA): si el filePath es una CARPETA (peliculas HLS),
-      // buscar cualquier videoFile cuyo contenido ya esté enlazado a ese mismo basePath.
-      // Esto cubre el caso donde el usuario renombró la película en el panel pero
-      // el nombre de carpeta en disco no cambió.
-      if (!existingVideo) {
-        const baseName = path.basename(filePath);
-        existingVideo = await prisma.videoFile.findFirst({
-          where: {
-            originalPath: { contains: baseName, mode: 'insensitive' },
-            status: { not: 'FAILED' }
-          },
-          include: {
-            content: true,
-            episode: { include: { season: { include: { content: true } } } }
-          }
-        });
-        // Sólo usar este match si realmente apunta a un contenido válido activo
-        if (existingVideo && existingVideo.content?.deletedAt !== null) {
-          existingVideo = null;
-        }
-      }
+      // NOTE: The old "Búsqueda 2" using `contains: baseName` was REMOVED.
+      // It caused false-positive matches when two different content items happened to share
+      // similar folder names (e.g. "Avatar" matching "Avatar 2"), which silently linked
+      // a physical file to the wrong content and created ghost duplicates on the next scan.
 
       if (existingVideo) {
         console.log(`[MediaScanner] 🚚 Detectado archivo movido. Actualizando ruta en BD:\n   De: ${existingVideo.originalPath}\n   A:  ${filePath}`);
@@ -584,8 +569,10 @@ export class MediaScannerService {
          await prisma.videoFile.delete({ where: { id: existingVideo.id } });
          // Al borrarlo, permitimos que el código de abajo lo importe como nuevo
       } else {
+        // Content is valid and already linked. Always skip — even if it's FAILED.
+        // If the content is pinned (manually edited), this is the definitive guard
+        // that prevents the scanner from creating a duplicate with the old data.
         if (existingVideo.status === 'FAILED') {
-          // Retry failed processing jobs automatically if scanned again
           await prisma.videoFile.update({ where: { id: existingVideo.id }, data: { status: 'QUEUED' } });
           try {
             await addVideoJob({
@@ -627,35 +614,39 @@ export class MediaScannerService {
 
       if (existingDbByFolderName) {
           console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando a "${cleanName}".`);
-          if (episode?.m3u8Path) {
-              const alreadyHasVideo = await prisma.videoFile.findFirst({
-                  where: { contentId: existingDbByFolderName.id, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
-              });
-              if (!alreadyHasVideo) {
-                  const videoFile = await prisma.videoFile.create({
-                      data: {
-                          contentId: existingDbByFolderName.id,
-                          type: 'MOVIE',
-                          originalPath: filePath, // use folderPath for HLS
-                          status: 'COMPLETED',
-                          masterPlaylist: '',
-                          hlsPath: path.dirname(episode.m3u8Path),
-                          fileSize: BigInt(0),
-                          sourceNode: env.WORKER_MODE || 'ALL'
-                      }
-                  });
-                  const virtualMasterPath = `/api/stream/hls/${videoFile.id}/${path.basename(episode.m3u8Path)}`;
-                  await prisma.videoFile.update({
-                      where: { id: videoFile.id },
-                      data: { masterPlaylist: virtualMasterPath, qualities: { create: [{ resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: virtualMasterPath, codec: 'h264' }] } }
-                  });
-              }
-              // Keep content status as PENDING for admin review
-              return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
-          } else {
-              await this._createVideoAndEnqueue(existingDbByFolderName.id, filePath, contentType);
+
+          // If this content was manually edited (isPinned), check if it already has a video
+          // before adding another one. This is the primary guard against duplicates.
+          const alreadyHasActiveVideo = await prisma.videoFile.findFirst({
+              where: { contentId: existingDbByFolderName.id, status: { in: ['COMPLETED', 'PROCESSING', 'QUEUED'] } }
+          });
+          if (alreadyHasActiveVideo) {
+              console.log(`⏭️  [MediaScanner] Skipping "${cleanName}" — pinned content already has an active video.`);
               return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
           }
+
+          if (episode?.m3u8Path) {
+              const videoFile = await prisma.videoFile.create({
+                  data: {
+                      contentId: existingDbByFolderName.id,
+                      type: 'MOVIE',
+                      originalPath: filePath,
+                      status: 'COMPLETED',
+                      masterPlaylist: '',
+                      hlsPath: path.dirname(episode.m3u8Path),
+                      fileSize: BigInt(0),
+                      sourceNode: env.WORKER_MODE || 'ALL'
+                  }
+              });
+              const virtualMasterPath = `/api/stream/hls/${videoFile.id}/${path.basename(episode.m3u8Path)}`;
+              await prisma.videoFile.update({
+                  where: { id: videoFile.id },
+                  data: { masterPlaylist: virtualMasterPath, qualities: { create: [{ resolution: '720p', width: 1280, height: 720, bitrate: 2500000, playlistUrl: virtualMasterPath, codec: 'h264' }] } }
+              });
+          } else {
+              await this._createVideoAndEnqueue(existingDbByFolderName.id, filePath, contentType);
+          }
+          return { filePath, fileName, success: true, contentId: existingDbByFolderName.id, tmdbMatch: true };
       }
       // --- FIN MATCH INTELIGENTE ---
 

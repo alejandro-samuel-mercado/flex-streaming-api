@@ -546,6 +546,10 @@ export class ContentService {
             where: { id },
             data: {
                 ...(cleanContentData as Prisma.ContentUpdateInput),
+                // Auto-pin any content the admin edits manually.
+                // This activates all the scanner guards (isPinned checks) that
+                // prevent metadata from being overwritten on the next scan.
+                isPinned: true,
                 originalTitle: originalTitle !== undefined ? originalTitle : undefined,
                 budget: budget !== undefined ? (budget ? BigInt(budget) : null) : undefined,
                 revenue: revenue !== undefined ? (revenue ? BigInt(revenue) : null) : undefined,
