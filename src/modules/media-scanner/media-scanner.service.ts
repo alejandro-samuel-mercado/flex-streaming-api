@@ -1075,19 +1075,26 @@ export class MediaScannerService {
         }
 
         // MATCH INTELIGENTE POR NOMBRE DE CARPETA
-        const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
-        const existingDbByFolderName = await prisma.content.findFirst({
-            where: {
-                translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
-                type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
-                deletedAt: null
-            }
-        });
+        // ⚠️ Only use this when there is NO explicit tmdbSeriesId.
+        // If we have a tmdbSeriesId and didn't find it in the DB, we must fetch from TMDB
+        // and create a new entry — never match by folder name, which strips the ID and
+        // can merge two completely different series that share the same display name
+        // (e.g. iCarly 2007 vs iCarly 2021, both clean to "iCarly").
+        if (!episode.tmdbSeriesId) {
+          const seriesNameForMatch = this.cleanFileName(episode.seriesFolderName);
+          const existingDbByFolderName = await prisma.content.findFirst({
+              where: {
+                  translations: { some: { title: { equals: seriesNameForMatch, mode: 'insensitive' } } },
+                  type: { in: ['SERIES', 'ANIME', 'NOVELA'] },
+                  deletedAt: null
+              }
+          });
 
-        if (existingDbByFolderName) {
-            console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando a serie editada "${seriesNameForMatch}".`);
-            tmdbMatch = true;
-            return existingDbByFolderName.id;
+          if (existingDbByFolderName) {
+              console.log(`[MediaScanner] 💡 Match inteligente por nombre de carpeta: Enlazando a serie editada "${seriesNameForMatch}".`);
+              tmdbMatch = true;
+              return existingDbByFolderName.id;
+          }
         }
 
         if (episode.tmdbSeriesId) {
