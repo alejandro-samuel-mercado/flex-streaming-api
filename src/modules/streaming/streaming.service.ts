@@ -613,7 +613,7 @@ export class StreamingService {
             // ── Strategy 0: Direct database path (fastest and most accurate)
             if (ep?.videoFiles && ep.videoFiles.length > 0) {
                 const videoPath = ep.videoFiles[0].originalPath;
-                if (videoPath && fs.existsSync(videoPath)) {
+                if (videoPath && fs.existsSync(videoPath) && fs.statSync(videoPath).isFile()) {
                     return { status: 200, stream: fs.createReadStream(videoPath) };
                 }
             }
