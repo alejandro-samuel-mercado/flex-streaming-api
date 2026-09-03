@@ -70,21 +70,13 @@ export class FFmpegService {
 
         let canCopyAudio = false;
 
-        if (contentType === 'EPISODE') {
-            // COMPORTAMIENTO DE SERIES (COMO ANTES DEL 29 DE JULIO):
-            // Permitimos copiar tanto AAC como MP3 y MP2 para evitar la desincronización de PTS 
-            // con los Keyframes largos de las series, lo cual rompía el reproductor web.
-            const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
-            canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
-                HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
-                (s.channels === undefined || s.channels <= 2)
-            );
-        } else {
-            // COMPORTAMIENTO DE PELÍCULAS (NORMAL POST-29 JULIO):
-            // Forzamos siempre la re-codificación a AAC (canCopyAudio = false)
-            // Esto es exactamente lo que tenías antes de que yo tocara nada hoy.
-            canCopyAudio = false;
-        }
+        // Permitimos copiar tanto AAC como MP3 y MP2 para evitar la desincronización de PTS 
+        // con los Keyframes largos del video, lo cual rompe el reproductor web.
+        const HLS_COMPATIBLE_AUDIO = ['aac', 'mp3', 'mp2'];
+        canCopyAudio = audioStreams.length > 0 && audioStreams.every(s =>
+            HLS_COMPATIBLE_AUDIO.some(c => (s.codec_name?.toLowerCase() || '').includes(c)) &&
+            (s.channels === undefined || s.channels <= 2)
+        );
 
         const audioCodec = audioStreams.map(s => s.codec_name).join(',');
 
