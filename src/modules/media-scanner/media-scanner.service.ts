@@ -109,7 +109,7 @@ export class MediaScannerService {
 
   private static creatingContents = new Map<string, Promise<string>>();
   private static resolvingSeries = new Map<string, Promise<string | null>>();
-  private static resolvingMovies = new Map<string, Promise<string>>();
+  private static resolvingMovies = new Map<string, Promise<string | null>>();
 
   static getSuggestedDirectories(): string[] {
     const dirs = env.MEDIA_SCAN_DIRS;
@@ -583,18 +583,28 @@ export class MediaScannerService {
     }
 
     if (existingVideo) {
+      // Verificar si el contenido asociado fue eliminado por el admin (soft delete)
+      const contentDeletedByAdmin = 
+        (existingVideo.type === 'MOVIE' && existingVideo.content?.deletedAt !== null && existingVideo.content?.deletedAt !== undefined) ||
+        (existingVideo.type === 'EPISODE' && existingVideo.episode?.season?.content?.deletedAt !== null && existingVideo.episode?.season?.content?.deletedAt !== undefined);
+
+      if (contentDeletedByAdmin) {
+        console.log(`[MediaScanner] ⛔ Skipping "${fileName}" — contenido eliminado por admin (deletedAt set). No se resucitará.`);
+        return { filePath, fileName, success: false, tmdbMatch: false, error: 'Contenido eliminado por admin' };
+      }
+
+      // Solo tratar como huérfano si NO tiene content asociado (registro suelto sin content)
       let isOrphaned = false;
-      if (existingVideo.type === 'MOVIE' && (!existingVideo.content || existingVideo.content.deletedAt !== null)) {
+      if (existingVideo.type === 'MOVIE' && !existingVideo.content) {
          isOrphaned = true;
       }
-      if (existingVideo.type === 'EPISODE' && (!existingVideo.episode || !existingVideo.episode.season || !existingVideo.episode.season.content || existingVideo.episode.season.content.deletedAt !== null)) {
+      if (existingVideo.type === 'EPISODE' && (!existingVideo.episode || !existingVideo.episode.season || !existingVideo.episode.season.content)) {
          isOrphaned = true;
       }
 
       if (isOrphaned) {
-         console.log(`[MediaScanner] 🗑️ Limpiando registro de video huérfano (serie eliminada o sin enlazar) para re-escanearlo: ${fileName}`);
+         console.log(`[MediaScanner] 🗑️ Limpiando registro de video huérfano (sin content asociado) para re-escanearlo: ${fileName}`);
          await prisma.videoFile.delete({ where: { id: existingVideo.id } });
-         // Al borrarlo, permitimos que el código de abajo lo importe como nuevo
       } else {
         // Content is valid and already linked. Always skip — even if it's FAILED.
         // If the content is pinned (manually edited), this is the definitive guard
@@ -752,6 +762,10 @@ export class MediaScannerService {
         try {
           const details = await TMDBService.getFullDetails(episode.tmdbSeriesId, 'tv');
           contentId = await this._createSeriesContent(details);
+          if (!contentId) {
+            // Content was deleted by admin, skip
+            return { filePath: episodeFolderPath, fileName: folderName, success: false, tmdbMatch: true, error: 'Contenido eliminado por admin' };
+          }
           tmdbMatch = true;
         } catch (err: any) {
           console.warn(`[MediaScanner] TMDB fetch failed for series ${episode.tmdbSeriesId}: ${err.message}`);
@@ -868,8 +882,14 @@ export class MediaScannerService {
     });
 
     if (existingVideo) {
-      if (existingVideo.type === 'MOVIE' && (!existingVideo.content || existingVideo.content.deletedAt !== null)) {
-         console.log(`[MediaScanner] 🗑️ Limpiando registro de video HLS huérfano (película eliminada o sin enlazar) para re-escanearlo: ${folderName}`);
+      // Si el contenido fue eliminado por admin, NO resucitar
+      if (existingVideo.type === 'MOVIE' && existingVideo.content?.deletedAt) {
+         console.log(`[MediaScanner] ⛔ Skipping HLS "${folderName}" — contenido eliminado por admin. No se resucitará.`);
+         return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: false, error: 'Contenido eliminado por admin' };
+      }
+      // Solo tratar como huérfano si NO tiene content (registro suelto)
+      if (existingVideo.type === 'MOVIE' && !existingVideo.content) {
+         console.log(`[MediaScanner] 🗑️ Limpiando registro de video HLS huérfano (sin content asociado) para re-escanearlo: ${folderName}`);
          await prisma.videoFile.delete({ where: { id: existingVideo.id } });
       } else {
          console.log(`⏭️  [MediaScanner] Skipping HLS movie "${folderName}" — already registered.`);
@@ -908,7 +928,10 @@ export class MediaScannerService {
             orderBy: { isPinned: 'desc' }
          });
          if (existing) {
-            await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null } });
+            if (existing.deletedAt) {
+              console.log(`[MediaScanner] ⛔ Content con tmdbId ${match.id} fue eliminado por admin. No se resucitará.`);
+              return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: true, error: 'Contenido eliminado por admin' };
+            }
          }
       }
 
@@ -972,6 +995,9 @@ export class MediaScannerService {
 
           if (details) {
             contentId = await this._createSeriesContent(details);
+            if (!contentId) {
+              return { filePath: folderPath, fileName: folderName, success: false, tmdbMatch: true, error: 'Contenido eliminado por admin' };
+            }
           }
         }
       }
@@ -1275,8 +1301,9 @@ export class MediaScannerService {
               where: { tmdbId: String(details.tmdbId) },
               orderBy: { isPinned: 'desc' }
            });
-           if (existing) {
-              await prisma.content.update({ where: { id: existing.id }, data: { deletedAt: null } });
+           if (existing && existing.deletedAt) {
+              console.log(`[MediaScanner] ⛔ Content tmdbId=${details.tmdbId} eliminado por admin. No se resucitará.`);
+              return null as any;
            }
         }
 
@@ -1297,8 +1324,9 @@ export class MediaScannerService {
                    where: { imdbId: details.imdbId },
                    orderBy: { isPinned: 'desc' }
                 });
-                if (existingByImdb) {
-                    await prisma.content.update({ where: { id: existingByImdb.id }, data: { deletedAt: null } });
+                if (existingByImdb && existingByImdb.deletedAt) {
+                    console.log(`[MediaScanner] ⛔ Content imdbId=${details.imdbId} eliminado por admin. No se resucitará.`);
+                    return null as any;
                 }
             }
 
@@ -1482,7 +1510,8 @@ export class MediaScannerService {
         const existingContent = await prisma.content.findFirst({ where: { tmdbId: String(details.tmdbId) } });
         if (existingContent) {
           if (existingContent.deletedAt) {
-            await prisma.content.update({ where: { id: existingContent.id }, data: { deletedAt: null } });
+            console.log(`[MediaScanner] ⛔ Content tmdbId=${details.tmdbId} eliminado por admin. No se resucitará.`);
+            return null;
           }
           return existingContent.id;
         } else {
@@ -1493,7 +1522,10 @@ export class MediaScannerService {
     }
 
     const contentId = await this.resolvingMovies.get(movieKey);
-    if (!contentId) throw new Error('Failed to resolve movie content ID');
+    if (!contentId) {
+      console.log(`[MediaScanner] ⛔ Skipping "${fileName}" — contenido eliminado por admin o no se pudo resolver.`);
+      return { filePath, fileName, success: false, tmdbMatch: true, error: 'Contenido eliminado por admin' };
+    }
 
     await this._createVideoAndEnqueue(contentId, filePath, contentType);
     return { filePath, fileName, success: true, contentId, tmdbMatch: true };
